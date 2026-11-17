@@ -1,7 +1,8 @@
 # Daily: merge automated update PRs whose checks all passed, so nobody has to watch them.
-# - Update PRs: Dependabot (dependabot/*), GE-Proton (chore/proton-update-*) and the base
-#   refresh (chore/base-refresh-*). Merged when every check on the head commit completed
-#   without failing (at least one must have run); left alone while checks are running.
+# - Update PRs: Dependabot (dependabot/*), GE-Proton (chore/proton-update-*), Go
+#   (chore/go-update-*) and the base refresh (chore/base-refresh-*). Merged when every
+#   check on the head commit completed without failing (at least one must have run);
+#   left alone while checks are running.
 #   A failed check opens one issue per PR, which is the only thing to act on.
 # - The release PR (release-please--*) is merged too, so updates ship as an ark-cli release.
 # Merges made with GITHUB_TOKEN don't trigger push workflows, so after merging this starts
@@ -50,7 +51,7 @@ jobs:
           while IFS=$'\t' read -r number branch sha created url title; do
             case "$branch" in
               release-please--*) release_pr="$number"; continue ;;
-              dependabot/* | chore/proton-update-* | chore/base-refresh-*) ;;
+              dependabot/* | chore/proton-update-* | chore/base-refresh-* | chore/go-update-*) ;;
               *) continue ;;
             esac
             checks="$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \

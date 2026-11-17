@@ -8,11 +8,12 @@ and automated updates that merge themselves once their tests pass (see
 
 | Workflow | Triggers | Does |
 |---|---|---|
-| `.github/workflows/cli.yml` | PR / push to `main` touching `app/**`, `container/**` (embedded in `ark-cli`), `go.work*`, `.golangci.yml`; called by `release.yml` | `go vet` + `go test` for `app/ark-cli`, `app/pkg/ark`, `app/ark-web` and `container`; `golangci-lint` (`.golangci.yml`) failing on new findings only. On a release: builds `ark-cli-<version>-linux-amd64` (static, version stamped) and attaches it plus a `.sha256` to the GitHub release. |
+| `.github/workflows/cli.yml` | PR / push to `main` touching `app/**`, `container/**` (embedded in `ark-cli`), `go.work*`, `.golangci.yml`; called by `release.yml`; manual (started by `go-update.yml`) | `go vet` + `go test` for `app/ark-cli`, `app/pkg/ark`, `app/ark-web` and `container`; `golangci-lint` (`.golangci.yml`) failing on new findings only. On a release: builds `ark-cli-<version>-linux-amd64` (static, version stamped) and attaches it plus a `.sha256` to the GitHub release. |
 | `.github/workflows/image.yml` | PR / push to `main` touching `container/**`, container unit tests, `build-image.sh`; daily at 06:17 UTC; manual | Python unit tests (`tests/container/unit`) and `test_server_oom_report.py`, which triggers a real OOM kill in a `python:3.14-slim` container. Pushes to `main`, scheduled and manual runs, and Dependabot's Docker PRs then build the image and run the smoke tests; on `main` it publishes the ARK-free base image and opens an issue if the smoke tests fail (see below). |
 | `.github/workflows/python.yml` | PR / push to `main` touching `**.py`, `ruff.toml` | `ruff check` + `ruff format --check` (config: `ruff.toml`). |
 | `.github/workflows/base-refresh.yml` | 1st of each month; manual | Opens a PR bumping the base image's refresh line and starts the smoke tests on it. |
 | `.github/workflows/proton-update.yml` | Mondays; manual | Opens a PR for a newer GE-Proton release and starts the smoke tests on it. |
+| `.github/workflows/go-update.yml` | Tuesdays; manual | Opens a PR for a newer Go release in `go.work` and starts the CLI tests and lint on it. |
 | `.github/workflows/auto-merge.yml` | daily at 10:00 UTC; manual | Merges automated update PRs whose checks passed and the release PR; opens an issue for a failed one. |
 | `.github/workflows/release.yml` | push to `main`; manual (started by `auto-merge.yml`) | Maintains the release PR. Merging it tags `cli-v<semver>`, creates the GitHub release and calls `cli.yml` to attach the binary. |
 
@@ -134,6 +135,7 @@ Updates merge and release themselves; the only thing to act on is an issue.
 |---|---|---|
 | GE-Proton (`chore/proton-update-*`, `build(container):`) | `proton-update.yml`, Mondays | `image.yml` started on the branch: base + image build and smoke tests |
 | Base refresh (`chore/base-refresh-*`, `build(container):`) | `base-refresh.yml`, monthly | same |
+| Go (`chore/go-update-*`, `build:`) | `go-update.yml`, Tuesdays | `cli.yml` started on the branch: Go tests and lint |
 | Dependabot Docker (`dependabot/docker/*`) | Dependabot, weekly | `image.yml` on the PR, smoke tests included |
 | Dependabot Go, Actions, pip (`dependabot/*`) | Dependabot, weekly | the PR's normal checks (`cli.yml`, `image.yml` unit tests, `python.yml`) |
 

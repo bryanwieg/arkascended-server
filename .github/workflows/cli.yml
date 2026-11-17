@@ -21,6 +21,7 @@ on:
       - "go.work.sum"
       - ".github/workflows/cli.yml"
       - ".golangci.yml"
+  workflow_dispatch: # go-update.yml starts it on its branch
   workflow_call:
     inputs:
       tag:

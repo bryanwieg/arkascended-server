@@ -151,8 +151,9 @@ Override with the `COMPOSE_FILE` environment variable.
 - `.github/workflows/` — GitHub Actions: `cli.yml` (Go tests, CLI release
   binary), `image.yml` (container unit tests, build and smoke tests, base image
   publishing), `base-refresh.yml` (monthly base refresh PR), `proton-update.yml`
-  (GE-Proton update PR), `auto-merge.yml` (merges passing automated updates and
-  the release PR), `release.yml` (release-please) and `dependabot.yml`. See [ci.md](ci.md).
+  and `go-update.yml` (GE-Proton and Go update PRs), `auto-merge.yml` (merges
+  passing automated updates and the release PR), `release.yml` (release-please)
+  and `dependabot.yml`. See [ci.md](ci.md).
 - `release-please-config.json`, `.release-please-manifest.json` — release
   versioning for the CLI and container
 

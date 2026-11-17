@@ -11,6 +11,10 @@ updates:
     groups:
       go:
         patterns: ["*"]
+      # Security fixes get the same `deps:` title, so merging them releases ark-cli.
+      go-security:
+        applies-to: security-updates
+        patterns: ["*"]
     commit-message:
       prefix: deps
 
@@ -44,6 +48,10 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    # Stay on the Ubuntu LTS (24.04); only its digest moves. Non-LTS releases are short-lived.
+    ignore:
+      - dependency-name: ubuntu
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: build
       include: scope

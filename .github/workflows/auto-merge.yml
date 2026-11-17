@@ -1,0 +1,92 @@
+# Daily: merge automated update PRs whose checks all passed, so nobody has to watch them.
+# - Update PRs: Dependabot (dependabot/*), GE-Proton (chore/proton-update-*), Go
+#   (chore/go-update-*) and the base refresh (chore/base-refresh-*). Merged when every
+#   check on the head commit completed without failing (at least one must have run);
+#   left alone while checks are running.
+#   A failed check opens one issue per PR, which is the only thing to act on.
+# - The release PR (release-please--*) is merged too, so updates ship as an ark-cli release.
+# Merges made with GITHUB_TOKEN don't trigger push workflows, so after merging this starts
+# image.yml (publishes a changed base image) and release.yml (tags and builds the release).
+name: Auto-merge updates
+
+on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write # start image.yml and release.yml on main
+  checks: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge passing updates, report failing ones
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          label="automated-update"
+          gh label create "$label" --color FBCA04 --description "Automated update needing attention" >/dev/null 2>&1 || true
+
+          report_failure() { # $1 PR number, $2 PR title, $3 PR URL, $4 reason
+            local title="Automated update failed: $2 (#$1)"
+            local open
+            open="$(gh issue list --state open --label "$label" --json title \
+              --jq "map(select(.title == \"$title\")) | length")"
+            if [[ "$open" == 0 ]]; then
+              gh issue create --label "$label" --title "$title" \
+                --body "$3 was not merged: $4. Fix or close the PR, then close this issue."
+              echo "Reported #$1: $4" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          merged=0
+          release_pr=""
+          while IFS=$'\t' read -r number branch sha created url title; do
+            case "$branch" in
+              release-please--*) release_pr="$number"; continue ;;
+              dependabot/* | chore/proton-update-* | chore/base-refresh-* | chore/go-update-*) ;;
+              *) continue ;;
+            esac
+            checks="$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
+              --jq '[.check_runs[] | {status, conclusion}]')"
+            total="$(jq length <<<"$checks")"
+            pending="$(jq '[.[] | select(.status != "completed")] | length' <<<"$checks")"
+            failed="$(jq '[.[] | select(.conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not))] | length' <<<"$checks")"
+            if (( failed > 0 )); then
+              report_failure "$number" "$title" "$url" "$failed check(s) failed on $sha"
+            elif (( total == 0 )); then
+              # The update workflows start the checks themselves; none after a day means that failed.
+              if (( $(date +%s) - $(date -d "$created" +%s) > 86400 )); then
+                report_failure "$number" "$title" "$url" "no checks ran on $sha"
+              fi
+            elif (( pending > 0 )); then
+              echo "Waiting for #$number ($pending check(s) running)" >> "$GITHUB_STEP_SUMMARY"
+            elif gh pr merge "$number" --squash --subject "$title (#$number)" --body ""; then
+              merged=$((merged + 1))
+              echo "Merged #$number: $title" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Could not merge #$number yet (conflict or behind main); next run retries" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done < <(gh pr list --state open --limit 100 \
+            --json number,headRefName,headRefOid,createdAt,url,title \
+            --jq '.[] | [.number, .headRefName, .headRefOid, .createdAt, .url, .title] | @tsv')
+
+          # Last, so the release includes what merged before it. It changes only the
+          # changelog and version, and release-please updates it again on the next run.
+          if [[ -n "$release_pr" ]] && gh pr merge "$release_pr" --squash \
+            --subject "$(gh pr view "$release_pr" --json title --jq .title) (#$release_pr)" --body ""; then
+            merged=$((merged + 1))
+            echo "Merged release PR #$release_pr" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if (( merged > 0 )); then
+            gh workflow run image.yml --ref main
+            gh workflow run release.yml --ref main
+          fi

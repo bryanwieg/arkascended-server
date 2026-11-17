@@ -1,13 +1,15 @@
-# Keeps release PRs open for the CLI and the container (release-please), and
-# when one merges, tags it. A CLI release also builds and uploads the binary;
-# a container release is a tag and changelog only (images are built on each host).
+# Keeps the release PR open (release-please) and, when it merges, tags the release
+# and builds and uploads the ark-cli binary. One release covers app/ and container/:
+# the image recipe is embedded in ark-cli, so recipe changes ship only in a CLI release.
 # Reusable-workflow calls are needed because tags and releases created with
-# GITHUB_TOKEN do not trigger other workflows.
+# GITHUB_TOKEN do not trigger other workflows. workflow_dispatch: auto-merge.yml
+# starts it after merging, since merges by GITHUB_TOKEN don't trigger the push event.
 name: Release
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -19,7 +21,7 @@ jobs:
       issues: write
       pull-requests: write
     outputs:
-      cli_tag: ${{ steps.rp.outputs['app--release_created'] == 'true' && steps.rp.outputs['app--tag_name'] || '' }}
+      cli_tag: ${{ steps.rp.outputs.release_created == 'true' && steps.rp.outputs.tag_name || '' }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: rp

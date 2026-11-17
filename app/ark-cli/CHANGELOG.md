@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.3.0...cli-v0.3.1) (2026-11-17)
+
+
+### Image Build
+
+* move to Go 1.27 ([#13](https://github.com/bryanwieg/arkascended-server/issues/13)) ([0bf396c](https://github.com/bryanwieg/arkascended-server/commit/0bf396c7d8efb1c9ed1009cd53bdc50902b8eee9))
+
 ## 0.3.0 (2026-11-16)
 
 

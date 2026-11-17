@@ -1,0 +1,13 @@
+# ARK: Survival Ascended dedicated server files, split into layers, and nothing else.
+# Runtime images copy them in with COPY --from=<this image>:<Steam build ID>.
+# Build context: the output folder of download.sh.
+FROM scratch
+ARG ARK_STEAM_BUILD_ID
+LABEL ark.steam.build_id=${ARK_STEAM_BUILD_ID}
+# 3000:3000 is ark-user in the runtime image.
+COPY --chown=3000:3000 steam-client /home/ark-user/steam-client
+COPY --chown=3000:3000 layers/0 /home/ark-user/layers/0
+COPY --chown=3000:3000 layers/1 /home/ark-user/layers/1
+COPY --chown=3000:3000 layers/2 /home/ark-user/layers/2
+COPY --chown=3000:3000 layers/3 /home/ark-user/layers/3
+COPY --chown=3000:3000 layers/4 /home/ark-user/layers/4

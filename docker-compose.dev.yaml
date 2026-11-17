@@ -1,0 +1,63 @@
+services:
+  asa-server-1:
+    build:
+      context: .
+      dockerfile: container/dockerfile
+    image: ark-server:latest
+    container_name: ark-server-1
+    restart: "no"
+    stop_grace_period: 15m
+    stop_signal: SIGTERM
+    environment:
+      - TZ=America/Los_Angeles
+      - MAP_NAME=TheIsland_WP
+      - SESSION_NAME=Server_1_name
+      - SERVER_ADMIN_PASSWORD=MyPassword
+      - SERVER_PASSWORD=
+      - NoBattlEye=true
+      - ARK_SKIP_RAM_CHECK=1
+    ports:
+      - "27015:27015/udp"
+      - "27020:27020/tcp"
+    mem_reservation: 12G
+    volumes:
+      - "ark-server-1-saved:/home/ark-user/ark-server/ShooterGame/Saved"
+      - "ark-cluster-1:/home/ark-user/ark-server/ShooterGame/Saved/clusters"
+  # asa-server-2:
+  #   build:
+  #     context: .
+  #     dockerfile: container/dockerfile
+  #   image: ark-server:latest
+  #   container_name: ark-server-2
+  #   restart: unless-stopped
+  #   environment:
+  #     - TZ=America/Los_Angeles
+  #     - MAP_NAME=TheIsland
+  #     - SESSION_NAME=Server_2_name
+  #     - SERVER_ADMIN_PASSWORD=MyPassword
+  #     - SERVER_PASSWORD=ChangeMe
+  #   ports:
+  #     - "27017:27015/udp"
+  #     - "27021:27021/tcp"
+  #   volumes:
+  #     - "ark-server-2-saved:/home/ark-user/ark-server/ShooterGame/Saved"
+  #     - "ark-cluster-1:/home/ark-user/ark-server/ShooterGame/Saved/clusters"
+  #   mem_reservation: 12G
+#   ark-web:
+#     build:
+#       context: .
+#       dockerfile: app/ark-web/Dockerfile
+#     image: ark-web:latest
+#     container_name: ark-web
+#     restart: unless-stopped
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       - ARK_WEB_ADDR=0.0.0.0:8080
+#     volumes:
+#       - /var/run/docker.sock:/var/run/docker.sock
+#       - .:/workspace
+#     working_dir: /workspace
+volumes:
+  ark-server-1-saved: null
+  ark-cluster-1: null

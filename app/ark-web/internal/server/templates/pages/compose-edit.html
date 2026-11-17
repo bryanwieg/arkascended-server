@@ -1,0 +1,24 @@
+{{define "title"}}Compose — {{.Instance}} — ARK Manager{{end}}
+
+{{define "content"}}
+<h1>{{.Instance}}</h1>
+<p><a href="/instances/{{.Instance}}">← Back to instance</a></p>
+
+<article>
+  <h2>Edit {{.FilePath}}</h2>
+
+  {{if .Error}}
+  <p style="color:var(--pico-del-color)">{{.Error}}</p>
+  {{end}}
+
+  {{if .Saved}}
+  <p style="color:var(--pico-ins-color)">Saved successfully.</p>
+  {{end}}
+
+  <form hx-post="/instances/{{.Instance}}/compose"
+        hx-target="closest article" hx-swap="outerHTML">
+    <textarea name="content" rows="24" style="font-family:monospace;white-space:pre">{{.Content}}</textarea>
+    <button type="submit">Save</button>
+  </form>
+</article>
+{{end}}

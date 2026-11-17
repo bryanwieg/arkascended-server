@@ -1,0 +1,34 @@
+services:
+  {{INSTANCE}}:
+    image: {{IMAGE}}
+    container_name: {{INSTANCE}}
+    restart: unless-stopped
+    init: true
+    # stop_grace_period must be >= (SHUTDOWN_WARNING_MINUTES * 60) + GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS
+    #   + GRACEFUL_STOP_WAIT_SECONDS + FORCE_TERM_WAIT_SECONDS + overhead
+    stop_grace_period: 15m
+    stop_signal: SIGTERM
+    environment:
+      - TZ={{TZ}}
+      - MAP_NAME={{MAP_NAME}}
+      - SESSION_NAME={{SESSION_NAME}}
+      - SERVER_ADMIN_PASSWORD={{ADMIN_PASSWORD}}
+      - SERVER_PASSWORD={{SERVER_PASSWORD}}
+      - ASA_PORT={{ASA_PORT}}
+      - NoBattlEye=false
+      - ARK_SKIP_RAM_CHECK=0
+    ports:
+      - "{{ASA_PORT}}:{{ASA_PORT}}/udp"
+      # RCON is local-only by default; `ark-cli enable remote-rcon` publishes it on all interfaces.
+      - "127.0.0.1:{{RCON_HOST_PORT}}:27020/tcp"
+    labels:
+      ark.port.asa: "{{ASA_PORT}}"
+      ark.port.rcon: "{{RCON_HOST_PORT}}"
+    volumes:
+      - "{{INSTANCE}}-saved:/home/ark-user/ark-server/ShooterGame/Saved"
+      - "ark-cluster-1:/home/ark-user/ark-server/ShooterGame/Saved/clusters"
+    mem_reservation: 12G
+
+volumes:
+  {{INSTANCE}}-saved:
+  ark-cluster-1:

@@ -1,0 +1,160 @@
+package compose
+
+import (
+	"ark-cli/internal/core"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"pkg/ark"
+	"pkg/ark/runtime"
+)
+
+func DoRestartStartInstance(d *core.AppDeps, req runtime.StartCommandRequest) error {
+	if dep := d.RestartStartInstance; dep != nil {
+		return dep(req)
+	}
+	return RunStartRequest(d, startCommandRequest(req))
+}
+
+func DoRestartStopInstance(d *core.AppDeps, req runtime.StopCommandRequest) error {
+	if dep := d.RestartStopInstance; dep != nil {
+		return dep(req)
+	}
+	return runStopRequest(stopCommandRequest(req))
+}
+
+func RunRestart(d *core.AppDeps, args []string) error {
+	fs := core.NewCommandFlagSet(
+		"restart",
+		[]string{"restart instance --instance <instance|all> [options]"},
+		"Restart one or more compose services (stop then start).",
+	)
+	timeoutFlag := fs.String("timeout", "", "Time to allow for graceful shutdown (e.g. 5m, 30s). Forwarded to stop.")
+	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (forwarded to stop/start).")
+	instanceFlag := fs.String("instance", "", "Target instance name or 'all'.")
+	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
+		return err
+	}
+	instance := *instanceFlag
+	if instance == "" {
+		return errors.New("Error: --instance is required.")
+	}
+
+	timeout, err := parseTimeoutFlag(*timeoutFlag, false)
+	if err != nil {
+		return err
+	}
+	if err := DoRestartStopInstance(d, stopCommandRequest{
+		Instance:        instance,
+		ComposeFileFlag: *composeFileFlag,
+		Timeout:         timeout,
+	}); err != nil {
+		return err
+	}
+	if err := DoRestartStartInstance(d, startCommandRequest{
+		Instance:        instance,
+		ComposeFileFlag: *composeFileFlag,
+		// Restart uses the same readiness wait default as `start instance`.
+		WaitTimeout: DefaultStartReadyWaitTimeout,
+	}); err != nil {
+		return err
+	}
+	core.Infof("Restarted instance target %s\n", instance)
+	return nil
+}
+
+func RunSave(d *core.AppDeps, args []string) error {
+	fs := core.NewCommandFlagSet(
+		"save",
+		[]string{"save instance --instance <instance|all> [options]"},
+		"Trigger an in-game saveworld via RCON for one or more running services.",
+	)
+	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
+	instanceFlag := fs.String("instance", "", "Target instance name or 'all'.")
+	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
+		return err
+	}
+	instance := *instanceFlag
+	if instance == "" {
+		return errors.New("Error: --instance is required.")
+	}
+
+	composeFile, _, services, err := ResolveDockerComposeServiceTargets(d,
+		*composeFileFlag,
+		instance,
+		"Error: compose config has no services to save.",
+	)
+	if err != nil {
+		return err
+	}
+
+	// ark-rcon.py reads SERVER_ADMIN_PASSWORD from the container env, so the password stays off argv.
+	rconCmd := []string{"/usr/bin/python3.14", "/home/ark-user/scripts/runtime/ark-rcon.py", "saveworld"}
+	failures := 0
+	for _, service := range services {
+		var envVars []string
+		for _, key := range []string{"RCON_HOST", "RCON_PORT"} {
+			if v := os.Getenv(key); v != "" {
+				envVars = append(envVars, fmt.Sprintf("%s=%s", key, v))
+			}
+		}
+		result, err := d.ComposeService.Exec(d.Context(), composeFile, service,
+			rconCmd,
+			ark.ExecOptions{DisableTTY: true, Env: envVars},
+		)
+		if err != nil {
+			return err
+		}
+		if result.ExitCode != 0 {
+			failures++
+		}
+	}
+	if failures > 0 {
+		return fmt.Errorf("Error: failed to save %d service(s)", failures)
+	}
+	core.Infof("Triggered saveworld for %d service(s): %s\n", len(services), strings.Join(services, ", "))
+	return nil
+}
+
+func RunLogs(d *core.AppDeps, args []string) error {
+	fs := core.NewCommandFlagSet(
+		"logs",
+		[]string{"logs instance --instance <instance> [options]"},
+		"Show container logs for an instance.",
+	)
+	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
+	follow := fs.Bool("follow", false, "Follow log output.")
+	timestamps := fs.Bool("timestamps", false, "Include timestamps.")
+	tail := fs.Int("tail", 200, "Number of lines to show from the end of the logs.")
+	instanceFlag := fs.String("instance", "", "Target instance name.")
+	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
+		return err
+	}
+	instance := *instanceFlag
+	if instance == "" {
+		return errors.New("Error: --instance is required.")
+	}
+	if *tail < 0 {
+		return errors.New("Error: tail must be >= 0.")
+	}
+
+	if err := core.CurrentAppDeps().RuntimeHelper.EnsureDockerGroup(os.Stderr); err != nil {
+		return err
+	}
+	composeFile, _, err := ResolveRequiredServiceConfig(d, *composeFileFlag, instance, ResolveRequiredComposeConfig)
+	if err != nil {
+		return err
+	}
+
+	reader, err := d.ComposeService.Logs(d.Context(), composeFile, instance,
+		ark.LogOptions{Tail: *tail, Follow: *follow, Timestamps: *timestamps})
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	_, err = io.Copy(os.Stdout, reader)
+	return err
+}

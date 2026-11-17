@@ -1,0 +1,96 @@
+# CLI pipeline: vet + test on every change to the Go code; when called by
+# release.yml with a cli-v* tag, also builds the release binary and attaches
+# it to that GitHub release.
+name: CLI
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "container/**" # embedded in ark-cli
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/cli.yml"
+      - ".golangci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "container/**" # embedded in ark-cli
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/cli.yml"
+      - ".golangci.yml"
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to build and upload (e.g. cli-v0.1.0)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            go.work.sum
+            app/**/go.sum
+      - run: go vet ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...
+      - run: go test ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # only-new-issues reads the PR diff
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            go.work.sum
+            app/**/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+          # shortcut: existing findings are backlog; drop this once they are fixed.
+          only-new-issues: true
+          # go.work has no root module, so ./... matches nothing; list each module.
+          args: ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...
+
+  release:
+    needs: test
+    if: inputs.tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            go.work.sum
+            app/**/go.sum
+      - name: Build and upload linux/amd64 binary
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${TAG#cli-v}"
+          out="ark-cli-${version}-linux-amd64"
+          (cd app/ark-cli && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags "-s -w -X main.version=${version}" -o "${GITHUB_WORKSPACE}/${out}" .)
+          test "$("./${out}" --version)" = "${version}"
+          sha256sum "${out}" > "${out}.sha256"
+          gh release upload "${TAG}" "${out}" "${out}.sha256" --clobber

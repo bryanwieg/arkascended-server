@@ -1,0 +1,16 @@
+.ai-scratchpad/
+.git/
+.go-cache/
+.go-temp/
+.opencode/
+.pytest_cache/
+.tests/
+.venv/
+.vscode/
+.github/
+.ark-tmp/
+.ark-manage/
+.sandbox/
+backups/
+docs/
+tests/

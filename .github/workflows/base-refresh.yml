@@ -1,0 +1,39 @@
+# Monthly: bump the refresh line in container/base.dockerfile and open a PR. Merging it
+# changes the base image's tag, so the image workflow rebuilds the base with current
+# Ubuntu packages and publishes it. PRs opened with GITHUB_TOKEN don't trigger other
+# workflows; the merge to main does.
+name: Base image refresh
+
+on:
+  schedule:
+    - cron: "0 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bump the refresh line and open a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          month="$(date -u +%Y-%m)"
+          sed -i "s/^# refresh: .*/# refresh: $month/" container/base.dockerfile
+          if git diff --quiet; then
+            echo "Base already refreshed for $month" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          branch="chore/base-refresh-$month"
+          title="build(container): refresh the base image ($month)"
+          git switch -c "$branch"
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "$title"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" --title "$title" \
+            --body "Rebuilds the base image with current Ubuntu packages. Merging publishes it from the image workflow."

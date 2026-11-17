@@ -1,0 +1,38 @@
+# Keeps release PRs open for the CLI and the container (release-please), and
+# when one merges, tags it. A CLI release also builds and uploads the binary;
+# a container release is a tag and changelog only (images are built on each host).
+# Reusable-workflow calls are needed because tags and releases created with
+# GITHUB_TOKEN do not trigger other workflows.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      cli_tag: ${{ steps.rp.outputs['app--release_created'] == 'true' && steps.rp.outputs['app--tag_name'] || '' }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  cli:
+    needs: release-please
+    if: needs.release-please.outputs.cli_tag != ''
+    permissions:
+      contents: write
+      pull-requests: read # cli.yml's lint job (golangci-lint only-new-issues)
+    uses: ./.github/workflows/cli.yml
+    with:
+      tag: ${{ needs.release-please.outputs.cli_tag }}

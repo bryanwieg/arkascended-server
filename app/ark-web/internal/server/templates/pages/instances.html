@@ -1,0 +1,45 @@
+{{define "title"}}Instances — ARK Manager{{end}}
+
+{{define "content"}}
+<h1>Instances</h1>
+
+{{if .Error}}
+<article>
+  <p>{{.Error}}</p>
+</article>
+{{else}}
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Services}}
+    <tr>
+      <td>
+        <a href="/instances/{{.Name}}">{{.Name}}</a>
+      </td>
+      <td>{{.Status}}</td>
+      <td>
+        {{if eq .Status "running"}}
+        <button hx-post="/instances/{{.Name}}/stop"
+                hx-target="closest tr" hx-swap="outerHTML"
+                class="secondary">Stop</button>
+        {{else if eq .Status "exited"}}
+        <button hx-post="/instances/{{.Name}}/start"
+                hx-target="closest tr" hx-swap="outerHTML"
+                class="secondary">Start</button>
+        {{end}}
+      </td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{if not .Services}}
+<p>No instances found.</p>
+{{end}}
+{{end}}
+{{end}}

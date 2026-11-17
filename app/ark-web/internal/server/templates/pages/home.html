@@ -1,0 +1,25 @@
+{{define "title"}}ARK Manager{{end}}
+
+{{define "content"}}
+<h1>ARK Manager</h1>
+
+{{if .Error}}
+<article>
+  <p>{{.Error}}</p>
+</article>
+{{else}}
+<article>
+  <h2>Server Status</h2>
+  {{if .RunningServices}}
+  <p>{{len .RunningServices}} instance(s) running.</p>
+  <ul>
+    {{range .RunningServices}}
+    <li><a href="/instances/{{.}}">{{.}}</a></li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p>No instances running. <a href="/instances">Manage instances</a>.</p>
+  {{end}}
+</article>
+{{end}}
+{{end}}

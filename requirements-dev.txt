@@ -1,0 +1,4 @@
+pytest
+pytest-timeout>=2.1.0
+python-on-whales>=0.81.0
+pyyaml

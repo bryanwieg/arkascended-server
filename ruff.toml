@@ -1,0 +1,52 @@
+# Python lint and format config for container scripts, tests and run-tests.py.
+# Run: ruff check . && ruff format --check .
+target-version = "py314"
+line-length = 120
+extend-exclude = [".ai-scratchpad", ".tests", ".ark-tmp", ".ark-manage", "backups"]
+
+[lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "SIM",      # simplify
+  "C4",       # comprehensions
+  "RUF",      # ruff-specific
+  "PL",       # pylint
+  "PT",       # pytest style
+  "S",        # bandit security
+  "BLE",      # blind except
+  "T20",      # print: container scripts must use emit_event/emit_error/eprint
+  "PTH",      # prefer pathlib
+  "RET",      # return
+  "PIE",
+  "PERF",
+  "TRY",
+  "N",        # naming
+  "A",        # shadowed builtins
+  "ISC",      # implicit string concat
+  "LOG",
+  "G",        # logging format
+  "DTZ",      # naive datetimes
+  "FURB",
+  "TID",
+]
+ignore = [
+  "E501",     # the formatter owns line length; long strings and URLs stay
+  "PLR2004",  # magic values: ports, exit codes and sizes read fine inline
+  "PLR0913", "PLR0917", # argument counts: test helpers take many knobs
+  "PLC0415",  # imports inside functions keep container scripts' startup lean
+  "TRY003",   # messages at the raise site are clearer than custom exception classes
+  "TRY300",
+  "S603", "S607", # subprocess calls are the job of this project
+]
+
+[lint.per-file-ignores]
+"tests/**" = [
+  "S101",     # pytest uses assert
+  "S105", "S106", "S108", # fixed test passwords and paths
+  "T201",     # test runner output
+]
+"run-tests.py" = ["T201"] # CLI entry point prints to the console

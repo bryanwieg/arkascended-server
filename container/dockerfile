@@ -1,0 +1,42 @@
+# ARK server image: the base (base.dockerfile) plus one ARK build's server files.
+# BASE_IMAGE: ghcr.io/bryanwieg/ark-server-base:<tag> (pulled, or built from base.dockerfile).
+# ARK_FILES_IMAGE: the local server files image for the Steam build (files/build.sh).
+ARG BASE_IMAGE
+ARG ARK_FILES_IMAGE
+
+FROM ${ARK_FILES_IMAGE} AS ark_files
+
+FROM ${BASE_IMAGE} AS runtime
+
+# Proton's STEAM_COMPAT_CLIENT_INSTALL_PATH points at SteamCMD's client files.
+COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/steam-client /home/ark-user/.local/share/Steam
+COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/0 /home/ark-user/ark-server
+COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/1 /home/ark-user/ark-server
+COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/2 /home/ark-user/ark-server
+COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/3 /home/ark-user/ark-server
+COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/4 /home/ark-user/ark-server
+# After the ARK files, so our XAudio redist wins if ARK ever ships the same file.
+RUN cp /home/ark-user/redist/xaudio2_9redist.dll /home/ark-user/ark-server/ShooterGame/Binaries/Win64/
+
+COPY --chown=ark-user:ark-user --chmod=0755 scripts/installer/ark-image-labels.sh /home/ark-user/scripts/installer/ark-image-labels.sh
+COPY --chown=ark-user:ark-user --chmod=0755 scripts/runtime /home/ark-user/scripts/runtime
+
+# ARK writes its complete GameUserSettings.ini only on a clean shutdown. Generate it once in a
+# throwaway stage, so Proton's prefix files and ARK's logs stay out of the image.
+FROM runtime AS ini_defaults
+COPY --chown=ark-user:ark-user --chmod=0755 scripts/installer/generate-default-ini.py /home/ark-user/scripts/installer/generate-default-ini.py
+RUN python3.14 /home/ark-user/scripts/installer/generate-default-ini.py
+
+FROM runtime
+COPY --from=ini_defaults --chown=ark-user:ark-user /home/ark-user/config-defaults/GameUserSettings.ini /home/ark-user/config-defaults/GameUserSettings.ini
+
+RUN /home/ark-user/scripts/installer/ark-image-labels.sh
+
+ARG ARK_SERVER_VERSION=unknown
+ARG ARK_BUILD_ID=unknown
+LABEL org.opencontainers.image.version=$ARK_SERVER_VERSION \
+      org.opencontainers.image.description="Build ID: $ARK_BUILD_ID" \
+      io.ark.server.version=$ARK_SERVER_VERSION \
+      io.ark.server.build_id=$ARK_BUILD_ID
+
+ENTRYPOINT ["/home/ark-user/scripts/runtime/container-entrypoint.sh"]

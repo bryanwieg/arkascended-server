@@ -1,0 +1,4 @@
+# Keep local test byproducts out of the build context and the image.
+**/__pycache__
+# The server files submodule builds its own image; its download folder is ~12 GB.
+files/

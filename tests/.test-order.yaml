@@ -1,0 +1,31 @@
+# Test execution ordering rules.
+# Each group maps to a directory path relative to tests/.
+# Tests within each group run in the order listed. Each test depends on all
+# previous tests in the list passing. If one fails, the rest are skipped.
+#
+# Only tests listed here are subject to ordering. Unlisted tests run
+# unordered as pytest normally does.
+
+container/integration/slow:
+  - test_build_container_image
+  - test_ark_server_start_script
+  - test_rcon
+  - test_ark_server_start_integrated_init
+  - test_ark_server_stop_script
+  - test_ark_backup_script
+  - test_ark_restore_script
+  - test_ark_start_backup_stop_workflow
+  - test_dirty_stop
+  - test_runtime_signal_shutdown
+
+cli/integration/docker/slow:
+  - test_manage_start_stop
+  - test_manage_backup_restore
+  - test_manage_restart_single_instance
+  - test_manage_multi_instance_ops
+  - test_reconfigure_ports
+  - test_cli_stop
+  - test_update_instance_rollout
+  - test_manage_schedule_backup
+  - test_manage_instance_visibility
+  - test_update_local_check

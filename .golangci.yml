@@ -1,0 +1,86 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errname
+    - errorlint
+    - forbidigo
+    - gocritic
+    - gocyclo
+    - gosec
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - predeclared
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+  settings:
+    forbidigo:
+      # User-facing output must go through core.Infof/Infoln/Warnf
+      # (see docs/dev/explanation/logging-architecture.md).
+      forbid:
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: use core.Infof/Infoln/Warnf so spinner rendering and verbose mirroring keep working
+    gocyclo:
+      min-complexity: 30
+    gosec:
+      excludes:
+        - G301 # dir perms: instance dirs are shared with the container user
+        - G302 # file perms: same reason as G301
+        - G306 # WriteFile perms: same reason as G301
+        - G304 # file path from variable: the CLI reads user-supplied paths by design
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    staticcheck:
+      checks:
+        - all
+        # golangci-lint defaults:
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -ST1005 # user-facing errors deliberately start with "Error: ..."
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters: [gosec, gocyclo, forbidigo, noctx, errcheck]
+      - path: app/ark-cli/internal/core/ # implements the sanctioned output helpers
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

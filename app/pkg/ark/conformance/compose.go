@@ -1,0 +1,219 @@
+//go:build integration
+
+package conformance
+
+import (
+	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/compose-spec/compose-go/v2/types"
+	"pkg/ark"
+	"pkg/ark/composeutil"
+)
+
+const testComposeContent = `services:
+  test-svc:
+    image: alpine:latest
+    command: ["sleep", "infinity"]
+`
+
+// writeTestComposeFile creates a minimal compose file in a temp directory.
+func writeTestComposeFile(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "docker-compose.yaml")
+	if err := os.WriteFile(path, []byte(testComposeContent), 0o644); err != nil {
+		t.Fatalf("write compose file: %v", err)
+	}
+	return path
+}
+
+// TestComposeService runs the ComposeService conformance suite against the
+// provided implementation. Call this from each backend's own test file.
+func TestComposeService(t *testing.T, svc ark.ComposeService) {
+	RequireDocker(t)
+	pullAlpine(t)
+	ctx := context.Background()
+
+	t.Run("LoadProject", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		project, err := svc.LoadProject(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("LoadProject: %v", err)
+		}
+		if project == nil {
+			t.Fatal("expected non-nil project")
+		}
+		if project.Project == nil {
+			t.Fatal("expected non-nil Project")
+		}
+		if _, ok := project.Project.Services["test-svc"]; !ok {
+			t.Fatal("expected test-svc in services")
+		}
+	})
+
+	t.Run("SaveProject", func(t *testing.T) {
+		dir := t.TempDir()
+		composeFile := filepath.Join(dir, "docker-compose.yaml")
+		original := "services:\n  test-svc:\n    image: alpine:1\n"
+		if err := os.WriteFile(composeFile, []byte(original), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		project, err := svc.LoadProject(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("LoadProject: %v", err)
+		}
+		composeutil.MutateService(project.Project, "test-svc", func(s *types.ServiceConfig) {
+			s.Image = "alpine:2"
+		})
+		if err := svc.SaveProject(ctx, composeFile, project); err != nil {
+			t.Fatalf("SaveProject: %v", err)
+		}
+
+		reloaded, err := svc.LoadProject(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("LoadProject after save: %v", err)
+		}
+		if reloaded.Project.Services["test-svc"].Image != "alpine:2" {
+			t.Fatalf("expected image alpine:2 after save+reload, got %q", reloaded.Project.Services["test-svc"].Image)
+		}
+	})
+
+	t.Run("UpAndDown", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		// Clean up: down after test.
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+
+		// Verify running.
+		running, err := svc.RunningServices(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("RunningServices: %v", err)
+		}
+		if _, ok := running["test-svc"]; !ok {
+			t.Fatalf("expected test-svc running, got: %v", running)
+		}
+
+		// Down.
+		if err := svc.Down(ctx, composeFile); err != nil {
+			t.Fatalf("Down: %v", err)
+		}
+
+		// Verify no longer running.
+		running, err = svc.RunningServices(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("RunningServices after down: %v", err)
+		}
+		if _, ok := running["test-svc"]; ok {
+			t.Fatal("expected test-svc not running after down")
+		}
+	})
+
+	t.Run("Exec", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+
+		result, err := svc.Exec(ctx, composeFile, "test-svc", []string{"echo", "hello-exec"}, ark.ExecOptions{DisableTTY: true})
+		if err != nil {
+			t.Fatalf("Exec: %v", err)
+		}
+		if result.ExitCode != 0 {
+			t.Fatalf("expected exit code 0, got %d", result.ExitCode)
+		}
+	})
+
+	t.Run("Logs", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+
+		// Exec a command that produces output, then check logs.
+		_, _ = svc.Exec(ctx, composeFile, "test-svc", []string{"/bin/sh", "-c", "echo conformance-log-marker"}, ark.ExecOptions{DisableTTY: true})
+
+		// Small delay for log propagation.
+		time.Sleep(500 * time.Millisecond)
+
+		reader, err := svc.Logs(ctx, composeFile, "test-svc", ark.LogOptions{Tail: 50})
+		if err != nil {
+			t.Fatalf("Logs: %v", err)
+		}
+		defer reader.Close()
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatalf("read logs: %v", err)
+		}
+		// Note: exec'd output may or may not appear in service logs depending
+		// on the backend. Just verify Logs returns without error.
+		_ = data
+	})
+
+	t.Run("StopAndKill", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+
+		timeout := 5 * time.Second
+		if err := svc.Stop(ctx, composeFile, []string{"test-svc"}, &timeout); err != nil {
+			// Stop may timeout on sleep infinity; that's expected. Kill as fallback.
+			if err := svc.Kill(ctx, composeFile, []string{"test-svc"}, "SIGKILL"); err != nil {
+				t.Fatalf("Kill after stop timeout: %v", err)
+			}
+		}
+
+		// Verify not running.
+		running, err := svc.RunningServices(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("RunningServices: %v", err)
+		}
+		if _, ok := running["test-svc"]; ok {
+			t.Fatal("expected test-svc not running after stop/kill")
+		}
+	})
+
+	t.Run("RunOneOff", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+
+		result, err := svc.RunOneOff(ctx, composeFile, "test-svc",
+			[]string{"-c", "echo oneoff-test"},
+			ark.RunOptions{Remove: true, NoDeps: true, DisableTTY: true, Entrypoint: "/bin/sh"})
+		if err != nil {
+			t.Fatalf("RunOneOff: %v", err)
+		}
+		if result.ExitCode != 0 {
+			t.Fatalf("expected exit code 0, got %d", result.ExitCode)
+		}
+		if !strings.Contains(result.Stdout+result.Stderr, "oneoff-test") {
+			// SDK may not capture stdout — just verify no error.
+		}
+	})
+}

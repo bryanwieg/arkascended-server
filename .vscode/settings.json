@@ -1,0 +1,19 @@
+{
+    "go.testFlags": ["-v"],
+    "gopls": {
+        "build.workspaceFiles": ["go.work"]
+    },
+    "go.languageServerFlags": ["serve", "-mcp.listen=localhost:8092"],
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/tests"
+    ],
+    "python.testing.pytestArgs": [
+        "tests/app/ark_cli/integration",
+        "tests/app/ark_web/integration",
+        "tests/container/integration",
+        "tests/container/unit"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
+}

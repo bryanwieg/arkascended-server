@@ -1,0 +1,38 @@
+{{define "title"}}{{.Name}} — ARK Manager{{end}}
+
+{{define "content"}}
+<h1>{{.Name}}</h1>
+
+{{if .Error}}
+<article>
+  <p>{{.Error}}</p>
+</article>
+{{else}}
+<article>
+  <p><strong>Status:</strong> {{.Status}}</p>
+
+  <div style="display:flex; gap:0.5rem">
+    {{if eq .Status "running"}}
+    <button hx-post="/instances/{{.Name}}/stop"
+            hx-target="closest article" hx-swap="outerHTML"
+            class="secondary">Stop</button>
+    <button hx-post="/instances/{{.Name}}/restart"
+            hx-target="closest article" hx-swap="outerHTML"
+            class="secondary">Restart</button>
+    {{else}}
+    <button hx-post="/instances/{{.Name}}/start"
+            hx-target="closest article" hx-swap="outerHTML"
+            class="primary">Start</button>
+    {{end}}
+  </div>
+</article>
+
+<article>
+  <h2>Configuration</h2>
+  <ul>
+    <li><a href="/instances/{{.Name}}/compose">Edit docker-compose.yaml</a></li>
+    <li><a href="/instances/{{.Name}}/ini">Edit GameUserSettings.ini</a></li>
+  </ul>
+</article>
+{{end}}
+{{end}}

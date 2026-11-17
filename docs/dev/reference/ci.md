@@ -92,14 +92,33 @@ on it; it changes one comment line.
 
 ## Repository settings
 
-No secrets or variables are needed. The first publish creates the GHCR package
-`ark-server-base` linked to this repository (the base image's
-`org.opencontainers.image.source` label). Set its visibility to **Public** once
-(Packages → `ark-server-base` → Package settings): until then anonymous pulls
-fail and hosts build the base themselves.
+No secrets or variables are needed. The GHCR package `ark-server-base` is linked
+to this repository (the base image's `org.opencontainers.image.source` label) and
+public, so hosts pull it anonymously.
 
-Also enable **Settings → Actions → General → Allow GitHub Actions to create and
-approve pull requests**, or release-please can't open its PRs.
+Settings in use:
+
+- **Merges:** squash only, with the PR title as the commit subject and a blank
+  body; branches are deleted after merge.
+- **Ruleset `main`:** changes only through pull requests (no required approvals or
+  checks: workflows are path-filtered, so a required check could block docs-only
+  PRs); no force pushes or deletion.
+- **Actions:** the workflow token is read-only by default and may create pull
+  requests (release-please and `base-refresh.yml` need it); workflows from outside
+  contributors need approval before they run.
+- **Security:** secret scanning with push protection; Dependabot alerts and
+  security updates.
+- **Discussions** on (commercial-license requests, questions).
+
+## Dependabot
+
+`.github/dependabot.yml` opens one grouped PR per ecosystem each week: Go modules
+(`app/ark-cli`, `app/ark-web`, `app/pkg/ark`) titled `deps:`, which release-please
+releases as a CLI change; GitHub Actions titled `ci:`; Python test tooling titled
+`chore(deps):`; and the Docker base images in `app/ark-web/Dockerfile` and
+`container/files/steamcmd.dockerfile` titled `build(deps):`, which counts as a
+container release. The pinned build image in `container/base.dockerfile` is an
+`ARG`, which Dependabot can't update; bump it deliberately.
 
 Release PRs are opened with `GITHUB_TOKEN`, so the CLI and image workflows
 don't run on them. Their only changes are the changelog and version files.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.3.1...cli-v0.3.2) (2026-11-17)
+
+
+### Dependencies
+
+* bump the go-security group across 1 directory with 10 updates ([#18](https://github.com/bryanwieg/arkascended-server/issues/18)) ([146044d](https://github.com/bryanwieg/arkascended-server/commit/146044da5b26402c37b72f990b28235b7dd5ee1e))
+
 ## [0.3.1](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.3.0...cli-v0.3.1) (2026-11-17)
 
 

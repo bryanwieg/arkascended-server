@@ -46,6 +46,14 @@ jobs:
             fi
           }
 
+          close_issue() { # $1 PR number, $2 PR title: an earlier failure was fixed (e.g. a rebase)
+            gh issue list --state open --label "$label" --json number,title \
+              --jq ".[] | select(.title | endswith(\"(#$1)\")) | .number" |
+              while read -r issue; do
+                gh issue close "$issue" --comment "Resolved: #$1 passed its checks and was merged."
+              done
+          }
+
           merged=0
           release_pr=""
           while IFS=$'\t' read -r number branch sha created url title; do
@@ -71,6 +79,7 @@ jobs:
             elif gh pr merge "$number" --squash --subject "$title (#$number)" --body ""; then
               merged=$((merged + 1))
               echo "Merged #$number: $title" >> "$GITHUB_STEP_SUMMARY"
+              close_issue "$number" "$title"
             else
               echo "Could not merge #$number yet (conflict or behind main); next run retries" >> "$GITHUB_STEP_SUMMARY"
             fi

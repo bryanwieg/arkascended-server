@@ -47,12 +47,18 @@ jobs:
       - run: go test ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...
 
   lint:
+    # Not for releases: the released commit already passed on main, and a release run
+    # has no diff to limit the findings to.
+    if: ${{ !inputs.tag }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read # only-new-issues reads the PR diff
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Manual runs (go-update.yml's branches) compare against origin/main below.
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '1' }}
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.work
@@ -63,9 +69,13 @@ jobs:
         with:
           version: v2.15.0
           # shortcut: existing findings are backlog; drop this once they are fixed.
-          only-new-issues: true
+          # PRs and pushes report only new findings (from their diff); manual runs have no
+          # diff, so they report findings new since origin/main.
+          only-new-issues: ${{ github.event_name != 'workflow_dispatch' }}
           # go.work has no root module, so ./... matches nothing; list each module.
-          args: ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...
+          args: >-
+            ${{ github.event_name == 'workflow_dispatch' && '--new-from-rev=origin/main' || '' }}
+            ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...
 
   release:
     needs: test

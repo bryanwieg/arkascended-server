@@ -16,7 +16,7 @@ Estimated time: 40–60 minutes (mostly waiting for the image build and server s
 - Docker Engine installed and running
 - Docker Compose v2 plugin (`docker compose version` should work)
 - `ark-cli` binary on your PATH — download from the GitHub releases page, or
-  build from source with Go 1.25.6+ (see Step 1)
+  build from source with the Go version in `go.work` (see Step 1)
 - Your user in the `docker` group, or root access
 
 ## Step 1: Get the repo and build the CLI

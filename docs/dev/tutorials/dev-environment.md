@@ -5,7 +5,7 @@ This tutorial takes you from a fresh clone to a passing test run.
 ## Prerequisites
 
 - Docker Engine (with Compose v2 plugin) and access to the Docker socket
-- Go 1.25.6 or later (required to build the CLI from source; the minimum is set by `go.work`)
+- Go at the version in `go.work` or later (required to build the CLI from source)
 - Python 3.10 or later
 - `git`
 

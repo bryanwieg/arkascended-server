@@ -22,7 +22,7 @@ simple `ark-cli` command-line tool.
 [GitHub releases page](https://github.com/bryanwieg/arkascended-server/releases) and place it on your `PATH`.
 
 **Until releases are available** — clone the repo and build from source
-(requires Go 1.25.6+):
+(requires the Go version in `go.work`):
 
 ```sh
 git clone https://github.com/bryanwieg/arkascended-server.git && cd arkascended-server

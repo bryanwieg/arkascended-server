@@ -3,7 +3,8 @@
 #   (chore/go-update-*) and the base refresh (chore/base-refresh-*). Merged when every
 #   check on the head commit completed without failing (at least one must have run);
 #   left alone while checks are running.
-#   A failed check opens one issue per PR, which is the only thing to act on.
+#   A failed check, or a passing PR still unmergeable after 3 days, opens one issue per PR,
+#   which is the only thing to act on. Issues close themselves once their PR is merged or closed.
 # - The release PR (release-please--*) is merged too, so updates ship as an ark-cli release.
 # Merges made with GITHUB_TOKEN don't trigger push workflows, so after merging this starts
 # image.yml (publishes a changed base image) and release.yml (tags and builds the release).
@@ -46,14 +47,6 @@ jobs:
             fi
           }
 
-          close_issue() { # $1 PR number, $2 PR title: an earlier failure was fixed (e.g. a rebase)
-            gh issue list --state open --label "$label" --json number,title \
-              --jq ".[] | select(.title | endswith(\"(#$1)\")) | .number" |
-              while read -r issue; do
-                gh issue close "$issue" --comment "Resolved: #$1 passed its checks and was merged."
-              done
-          }
-
           merged=0
           release_pr=""
           while IFS=$'\t' read -r number branch sha created url title; do
@@ -79,7 +72,8 @@ jobs:
             elif gh pr merge "$number" --squash --subject "$title (#$number)" --body ""; then
               merged=$((merged + 1))
               echo "Merged #$number: $title" >> "$GITHUB_STEP_SUMMARY"
-              close_issue "$number" "$title"
+            elif (( $(date +%s) - $(date -d "$created" +%s) > 3 * 86400 )); then
+              report_failure "$number" "$title" "$url" "it passed its checks but could not be merged for 3 days (conflict?)"
             else
               echo "Could not merge #$number yet (conflict or behind main); next run retries" >> "$GITHUB_STEP_SUMMARY"
             fi
@@ -94,6 +88,19 @@ jobs:
             merged=$((merged + 1))
             echo "Merged release PR #$release_pr" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+          # Close failure issues whose PR is no longer open: merged, or closed (e.g. superseded
+          # by a Dependabot group). Runs after the merges above, so it also covers those.
+          gh issue list --state open --label "$label" --limit 100 --json number,title \
+            --jq '.[] | [.number, (.title | capture("\\(#(?<pr>[0-9]+)\\)$").pr // "")] | @tsv' |
+            while IFS=$'\t' read -r issue pr; do
+              [[ -n "$pr" ]] || continue
+              state="$(gh pr view "$pr" --json state --jq .state)"
+              if [[ "$state" != OPEN ]]; then
+                gh issue close "$issue" --comment "Resolved: #$pr is ${state,,}."
+                echo "Closed #$issue (#$pr ${state,,})" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            done
 
           if (( merged > 0 )); then
             gh workflow run image.yml --ref main

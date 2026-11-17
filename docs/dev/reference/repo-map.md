@@ -150,8 +150,9 @@ Override with the `COMPOSE_FILE` environment variable.
 - `.github/ci-integration.sh` is not wired into a workflow yet.
 - `.github/workflows/` — GitHub Actions: `cli.yml` (Go tests, CLI release
   binary), `image.yml` (container unit tests, build and smoke tests, base image
-  publishing), `base-refresh.yml` (monthly base refresh PR) and
-  `release.yml` (release-please). See [ci.md](ci.md).
+  publishing), `base-refresh.yml` (monthly base refresh PR), `proton-update.yml`
+  (GE-Proton update PR), `auto-merge.yml` (merges passing automated updates and
+  the release PR), `release.yml` (release-please) and `dependabot.yml`. See [ci.md](ci.md).
 - `release-please-config.json`, `.release-please-manifest.json` — release
   versioning for the CLI and container
 

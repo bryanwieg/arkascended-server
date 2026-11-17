@@ -55,7 +55,9 @@ jobs:
 
   smoke:
     needs: unit
-    if: github.event_name != 'pull_request'
+    # PRs run only the unit tests, except Dependabot's Docker updates, which change
+    # what the image is built from (auto-merge.yml merges them only if this passes).
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'dependabot/docker/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -174,4 +176,30 @@ jobs:
           else
             docker push "$BASE"
             echo "Published $BASE" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # A failing smoke run on main (daily, or after a merge) opens an issue, so nobody has
+  # to watch the runs: it is the early warning that a new ARK build breaks the image.
+  alert:
+    needs: smoke
+    if: failure() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Image smoke test failing on main"
+          number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")"
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --title "$title" --body "The image build or smoke tests failed on \`main\`: $RUN_URL
+
+          Hosts keep their current image until this is fixed. Close this issue once a run passes."
           fi

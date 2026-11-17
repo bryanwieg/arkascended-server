@@ -1,0 +1,54 @@
+# Weekly: if GloriousEggroll/proton-ge-custom has a newer GE-Proton release than
+# container/base.dockerfile's PROTON_VERSION, open a PR bumping it and start the image
+# build + smoke tests on its branch (PRs opened with GITHUB_TOKEN don't trigger CI, but
+# workflow_dispatch does). auto-merge.yml merges the PR once they pass.
+name: GE-Proton update
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write # start image.yml on the branch
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Open a PR for a newer GE-Proton
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          file=container/base.dockerfile
+          tag="$(gh api repos/GloriousEggroll/proton-ge-custom/releases/latest --jq .tag_name)"
+          # The tag comes from another repository: accept only the GE-Proton<major>-<minor> form.
+          if [[ ! "$tag" =~ ^GE-Proton([0-9]+-[0-9]+)$ ]]; then
+            echo "::error::unexpected GE-Proton release tag: '$tag'"
+            exit 1
+          fi
+          latest="${BASH_REMATCH[1]}"
+          current="$(sed -n 's/^ARG PROTON_VERSION=//p' "$file")"
+          newest="$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)"
+          if [[ "$latest" == "$current" || "$newest" == "$current" ]]; then
+            echo "GE-Proton $current is current (latest release: $latest)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          branch="chore/proton-update-$latest"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "Branch $branch already exists; its PR is pending" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          title="build(container): update GE-Proton to $latest"
+          sed -i "s/^ARG PROTON_VERSION=.*/ARG PROTON_VERSION=$latest/" "$file"
+          git switch -c "$branch"
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "$title"
+          git push -u origin "$branch"
+          gh pr create --base main --head "$branch" --title "$title" \
+            --body "GE-Proton $current → $latest ([release](https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/$tag)). The image build and smoke tests run on this branch; auto-merge.yml merges it when they pass."
+          gh workflow run image.yml --ref "$branch"

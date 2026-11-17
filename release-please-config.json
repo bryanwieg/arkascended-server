@@ -3,38 +3,18 @@
   "include-component-in-tag": true,
   "bump-minor-pre-major": true,
   "packages": {
-    "app": {
+    ".": {
       "component": "cli",
       "release-type": "go",
-      "changelog-path": "ark-cli/CHANGELOG.md",
-      "exclude-paths": [
-        "app/ark-web"
-      ]
-    },
-    "container": {
-      "component": "container",
-      "release-type": "simple",
+      "changelog-path": "app/ark-cli/CHANGELOG.md",
+      "exclude-paths": ["app/ark-web"],
       "changelog-sections": [
-        {
-          "type": "feat",
-          "section": "Features"
-        },
-        {
-          "type": "fix",
-          "section": "Bug Fixes"
-        },
-        {
-          "type": "perf",
-          "section": "Performance Improvements"
-        },
-        {
-          "type": "revert",
-          "section": "Reverts"
-        },
-        {
-          "type": "build",
-          "section": "Image Build"
-        }
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance Improvements" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "build", "section": "Image Build" }
       ]
     }
   }

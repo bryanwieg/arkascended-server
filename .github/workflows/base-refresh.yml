@@ -1,7 +1,7 @@
-# Monthly: bump the refresh line in container/base.dockerfile and open a PR. Merging it
-# changes the base image's tag, so the image workflow rebuilds the base with current
-# Ubuntu packages and publishes it. PRs opened with GITHUB_TOKEN don't trigger other
-# workflows; the merge to main does.
+# Monthly: bump the refresh line in container/base.dockerfile, open a PR and start the
+# image build + smoke tests on its branch (PRs opened with GITHUB_TOKEN don't trigger
+# CI, but workflow_dispatch does). auto-merge.yml merges the PR once they pass, which
+# changes the base image's tag, so main rebuilds and publishes the base.
 name: Base image refresh
 
 on:
@@ -10,6 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write # start image.yml on the branch
   contents: write
   pull-requests: write
 
@@ -36,4 +37,5 @@ jobs:
             commit -am "$title"
           git push -u origin "$branch"
           gh pr create --base main --head "$branch" --title "$title" \
-            --body "Rebuilds the base image with current Ubuntu packages. Merging publishes it from the image workflow."
+            --body "Rebuilds the base image with current Ubuntu packages. The image build and smoke tests run on this branch; auto-merge.yml merges it when they pass."
+          gh workflow run image.yml --ref "$branch"

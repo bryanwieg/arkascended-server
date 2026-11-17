@@ -104,5 +104,7 @@ jobs:
 
           if (( merged > 0 )); then
             gh workflow run image.yml --ref main
-            gh workflow run release.yml --ref main
           fi
+          # Always: a merge can succeed even when gh reports an error (e.g. a 502), and
+          # release-please does nothing when there is nothing to release.
+          gh workflow run release.yml --ref main

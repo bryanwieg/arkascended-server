@@ -1,0 +1,49 @@
+# Weekly version updates, one grouped PR per ecosystem. PR titles are Conventional
+# Commits because PRs are squash-merged with the title as the commit: release-please
+# releases the CLI on `deps:` and the container on `build:`; `ci:` and `chore:` don't
+# release. Security updates (repository setting) open PRs as soon as an alert appears.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories: ["/app/ark-cli", "/app/ark-web", "/app/pkg/ark"]
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        patterns: ["*"]
+    commit-message:
+      prefix: deps
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      python-dev:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # base.dockerfile's pinned build image is an ARG, which Dependabot can't update;
+  # it is bumped deliberately, and the monthly base refresh picks up Ubuntu updates.
+  - package-ecosystem: docker
+    directories: ["/app/ark-web", "/container/files"]
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]
+    commit-message:
+      prefix: build
+      include: scope

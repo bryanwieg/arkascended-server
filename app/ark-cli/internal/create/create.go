@@ -190,7 +190,7 @@ func RunCreate(d *core.AppDeps, args []string) error {
 	)
 
 	nameFlag := fs.String("name", "", "Instance name.")
-	mapName := fs.String("map-name", "", "Map name (default: TheIsland)")
+	mapName := fs.String("map-name", "", "Map name (default: "+defaultMap+")")
 	serverPassword := fs.String("server-password", "", "Server password")
 	adminPassword := fs.String("admin-password", "", "Server admin password")
 	asaPort := fs.Int("asa-port", 0, "Host UDP port to expose (default: auto)")

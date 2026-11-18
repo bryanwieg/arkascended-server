@@ -204,7 +204,7 @@ func TestSubcommandHelpShowsCanonicalSyntax(t *testing.T) {
 			name:  "remove",
 			run:   func(args []string) error { return remove.RunRemove(core.CurrentAppDeps(), args) },
 			args:  []string{"-h"},
-			wants: []string{"remove instance --instance <instance|all>"},
+			wants: []string{"remove instance --instance <instance>"},
 		},
 		{
 			name:  "remove schedule",

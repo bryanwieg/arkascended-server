@@ -49,7 +49,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "restart", Object: "instance", Route: "restart", Handler: compose.RunRestart, TopLevelHelp: []string{"restart instance --instance <inst|all>      Restart instance(s) (stop then start)"}},
 	{Verb: "save", Object: "instance", Route: "save", Handler: compose.RunSave, TopLevelHelp: []string{"save instance --instance <inst|all>         Trigger RCON saveworld"}},
 	{Verb: "logs", Object: "instance", Route: "logs", Handler: compose.RunLogs, TopLevelHelp: []string{"logs instance --instance <inst>             Show container logs for an instance"}},
-	{Verb: "wait", Object: "instance", Route: "wait", Handler: health.RunWait, TopLevelHelp: []string{"wait instance --instance <inst> --for <state>  Wait for ready or stopped state"}},
+	{Verb: "wait", Object: "instance", Route: "wait", Handler: health.RunWait, TopLevelHelp: []string{"wait instance --instance <inst> --for <state>  Wait for started, advertising (ready) or stopped"}},
 	{Verb: "validate", Object: "backup", Route: "validate_backup", Handler: backup.RunVerifyBackup, TopLevelHelp: []string{"validate backup --instance <inst> --backup <backup>  Validate SQLite integrity inside a backup archive"}},
 	{Verb: "prune", Object: "backups", Route: "prune_backups", Handler: backup.RunPruneBackups, TopLevelHelp: []string{"prune backups --instance <inst|cluster|all>  Apply retention policies without creating backups"}},
 	{Verb: "restore", Object: "backup", Route: "restore", Handler: backup.RunRestore, TopLevelHelp: []string{
@@ -80,7 +80,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "list", Object: "backups", Route: "list_backups", Handler: show.RunListBackups, TopLevelHelp: []string{"list backups --instance <inst|cluster|all>   List backups"}},
 	{Verb: "list", Object: "schedules", Route: "list_schedules", Handler: schedule.RunListSchedules, TopLevelHelp: []string{"list schedules                              List configured schedules"}},
 	{Verb: "teardown", Object: "instances", Route: "teardown_instances", Handler: remove.RunTeardown, TopLevelHelp: []string{"teardown instances                          Tear down the full compose project (compose down)"}},
-	{Verb: "remove", Object: "instance", Route: "remove", Handler: remove.RunRemove, TopLevelHelp: []string{"remove instance --instance <inst|all>       Remove one instance from compose and delete its saved volume"}},
+	{Verb: "remove", Object: "instance", Route: "remove", Handler: remove.RunRemove, TopLevelHelp: []string{"remove instance --instance <inst>           Remove one instance from compose and delete its saved volume"}},
 	{Verb: "remove", Object: "schedule", Route: "remove_schedule", Handler: schedule.RunRemoveSchedule, TopLevelHelp: []string{"remove schedule --name <name>               Remove a managed schedule"}},
 	{Verb: "validate", Object: "compose", Route: "validate_compose", Handler: health.RunValidateCompose, TopLevelHelp: []string{"validate compose                            Validate compose configuration"}},
 	{Verb: "validate", Object: "schedule", Route: "validate_schedule", Handler: schedule.RunValidateSchedule, TopLevelHelp: []string{"validate schedule [--name <name>]           Validate one or all schedules"}},

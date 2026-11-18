@@ -49,8 +49,8 @@ func (s removeCommandService) run(args []string) error {
 func runRemoveImpl(args []string) error {
 	fs := core.NewCommandFlagSet(
 		"remove",
-		[]string{"remove instance --instance <instance|all> [options]"},
-		"Remove one instance from compose and delete its saved volume (with backup by default), or bring the compose project down for 'all'.",
+		[]string{"remove instance --instance <instance> [options]"},
+		"Remove one instance from compose and delete its saved volume (with backup by default). Use 'teardown instances' for the whole project.",
 	)
 	instanceFlag := fs.String("instance", "", "Instance name.")
 	kill := fs.Bool("kill", false, "Kill the running service immediately before removal.")

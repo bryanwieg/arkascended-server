@@ -70,7 +70,7 @@ func ParseBackupCreateCommandRequest(args []string) (BackupCreateCommandRequest,
 		"Create backup archives for one instance, the shared cluster data, or all of them.",
 	)
 	instanceFlag := fs.String("instance", "", "Target instance name, 'cluster' (shared cluster data) or 'all'.")
-	dest := fs.String("dest", "", "Destination directory for backup archives (default: ~/ark-backups/<instance>).")
+	dest := fs.String("dest", "", "Destination directory for backup archives (default: <compose-dir>/backups/<instance>, or $ARK_BACKUP_DIR/<instance>).")
 	name := fs.String("name", "", "Backup name prefix.")
 	format := fs.String("format", "tar.gz", "Archive format.")
 	retainCount := fs.Int("retain-count", 20, "Max backups to keep per instance (0 disables count-based pruning).")

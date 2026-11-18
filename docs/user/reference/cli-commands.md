@@ -188,7 +188,8 @@ refused unless `--kill`. `--instance all` is rejected; use
 
 ### teardown instances
 
-Stop all services and run compose down for the project. Prompts for
+Stop all services and run compose down for the project: containers and
+networks are removed, named volumes (saves, cluster data) are kept. Prompts for
 confirmation on a TTY; without a TTY, `--skip-confirm` is required.
 
 Flags: `--skip-confirm`, `--compose-file`.

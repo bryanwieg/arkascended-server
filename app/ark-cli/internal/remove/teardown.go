@@ -14,7 +14,7 @@ func RunTeardown(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"teardown instances",
 		[]string{"teardown instances [options]"},
-		"Stop all services and remove networks and volumes for this compose project (compose down).",
+		"Stop all services and remove their containers and networks (compose down). Named volumes, including saves, are kept.",
 	)
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	skipConfirm := fs.Bool("skip-confirm", false, "Skip interactive confirmation prompt.")
@@ -23,7 +23,7 @@ func RunTeardown(d *core.AppDeps, args []string) error {
 	}
 
 	if !*skipConfirm {
-		core.Warnf("Warning: this will stop all services and remove networks and volumes for this compose project. This cannot be undone.\n")
+		core.Warnf("Warning: this will stop all services and remove their containers and networks. Named volumes (saves) are kept.\n")
 		if core.IsInteractiveTerminal() {
 			if !promptTeardownConfirm(os.Stdin) {
 				core.Infof("Teardown cancelled.\n")

@@ -70,11 +70,11 @@ required. Refuses a running instance unless `--force`.
 | `--map-name` | `MAP_NAME`. Only allowed when it equals the current value (or none is set); changing the map of an existing instance is an error. |
 | `--session-name` | `SESSION_NAME`. |
 | `--admin-password` | `SERVER_ADMIN_PASSWORD`. |
-| `--server-password` | `SERVER_PASSWORD`. |
-| `--mods` | `MOD_IDS`: comma-separated CurseForge mod IDs. |
-| `--cluster-id` | `CLUSTER_ID` (letters, digits, `_`, `-`). Instances with the same ID share transfers. |
+| `--server-password` | `SERVER_PASSWORD`. `--server-password ""` clears it (no join password). |
+| `--mods` | `MOD_IDS`: comma-separated CurseForge mod IDs. `""` clears it. |
+| `--cluster-id` | `CLUSTER_ID` (letters, digits, `_`, `-`). Instances with the same ID share transfers. `""` clears it. |
 | `--asa-port` | Published game UDP port (host and container port kept equal). |
-| `--rcon-port` | Published RCON TCP host port (maps to container 27020/tcp). |
+| `--rcon-port` | Published RCON TCP host port (maps to the container's `RCON_PORT`, default 27020/tcp). |
 | `--force` | Allow changes while running; a restart is still needed to apply them. |
 | `--restart` | After saving, restart the instance if it was running. A stopped instance is not started. |
 | `--compose-file` | |
@@ -82,6 +82,7 @@ required. Refuses a running instance unless `--force`.
 ```sh
 ark-cli reconfigure instance --instance asa-server-1 --mods 940975,1386057 --cluster-id my-cluster
 ark-cli reconfigure instance --instance asa-server-1 --rcon-port 28020 --force --restart
+ark-cli reconfigure instance --instance asa-server-1 --server-password ""   # make the server public
 ```
 
 ### enable / disable remote-rcon
@@ -423,8 +424,8 @@ exclusive). Unset flags keep their current value.
 Two modes; `--port` and `--instance` are mutually exclusive.
 
 - Instance mode (`--instance`): checks the game UDP port (from the
-  `ark.port.asa` label or port binding) and the host port published for RCON
-  container port 27020/tcp. The instance must be running unless `--listen`. If
+  `ark.port.asa` label or port binding) and the host port published for the
+  RCON container port (`RCON_PORT`, default 27020/tcp). The instance must be running unless `--listen`. If
   RCON is published on `127.0.0.1` only, a note says CLOSED from remote is
   expected.
 - Port mode (`--port`): checks one port without reading compose.

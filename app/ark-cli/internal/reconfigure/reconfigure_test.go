@@ -195,6 +195,36 @@ func TestRunReconfigureUpdatesTargetEnvironmentValues(t *testing.T) {
 	}
 }
 
+func TestRunReconfigureExplicitEmptyClearsValues(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n    environment:\n" +
+		"      - SERVER_PASSWORD=ServerPass123\n      - MOD_IDS=940975\n      - CLUSTER_ID=c1\n      - TZ=UTC\n"
+	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	withPatchedAppDeps(t, nil, func() {
+		if err := RunReconfigure(core.CurrentAppDeps(), []string{
+			"--compose-file", composePath, "--instance", "asa1",
+			"--server-password", "", "--mods", "", "--cluster-id", "", "--tz", "",
+		}); err != nil {
+			t.Fatalf("runReconfigure: %v", err)
+		}
+	})
+	project, err := testutil.LoadComposeFromPathForTest(composePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := composeutil.EnvAsMap(project.Services["asa1"].Environment)
+	for _, k := range []string{"SERVER_PASSWORD", "MOD_IDS", "CLUSTER_ID"} {
+		if env[k] != "" {
+			t.Fatalf("%s = %q, want cleared", k, env[k])
+		}
+	}
+	if env["TZ"] != "UTC" {
+		t.Fatalf("TZ = %q; an empty non-clearable flag must stay a no-op", env["TZ"])
+	}
+}
+
 func TestRunReconfigureRejectsWhenNoSettingFlagsProvided(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"

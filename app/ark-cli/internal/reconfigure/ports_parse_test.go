@@ -73,6 +73,33 @@ func TestRunReconfigureUpdatesShortSyntaxPorts(t *testing.T) {
 	}
 }
 
+// A custom RCON_PORT moves RCON inside the container; --rcon-port must update
+// the binding to that port, not add a dead one for 27020.
+func TestRunReconfigureRCONPortFollowsRCONPortEnv(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n" +
+		"    environment:\n      - RCON_PORT=27030\n" +
+		"    ports:\n      - \"27015:27015/udp\"\n      - \"127.0.0.1:27030:27030/tcp\"\n"
+	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	withPatchedAppDeps(t, nil, func() {
+		if err := RunReconfigure(core.CurrentAppDeps(), []string{
+			"--compose-file", composePath, "--instance", "asa1", "--rcon-port", "28020",
+		}); err != nil {
+			t.Fatalf("runReconfigure: %v", err)
+		}
+	})
+	project, err := testutil.LoadComposeFromPathForTest(composePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(portConfigsToStrings(project.Services["asa1"].Ports), "\n")
+	if !strings.Contains(joined, "127.0.0.1:28020:27030/tcp") || strings.Contains(joined, "27020/tcp") {
+		t.Fatalf("expected RCON binding 28020->27030, got:\n%s", joined)
+	}
+}
+
 func TestRunReconfigureUpdatesLongSyntaxPorts(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	seed := "" +

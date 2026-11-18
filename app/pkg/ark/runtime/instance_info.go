@@ -174,6 +174,20 @@ func ServiceASAPort(service types.ServiceConfig) int {
 	return port
 }
 
+// RCONContainerPort is the port RCON listens on inside the container: the
+// service's RCON_PORT (the entrypoint writes it to the INI), else 27020.
+func RCONContainerPort(service types.ServiceConfig) int {
+	if raw, ok := composeutil.EnvValue(service.Environment, "RCON_PORT"); ok {
+		if port, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && port > 0 && port <= 65535 {
+			return port
+		}
+	}
+	return DefaultRCONContainerPort
+}
+
+// DefaultRCONContainerPort is the container's RCON port when RCON_PORT is unset.
+const DefaultRCONContainerPort = 27020
+
 // InstanceHasEnabledScheduleInFile checks if any backup schedule is enabled for the instance.
 func InstanceHasEnabledScheduleInFile(file schedule.ScheduleFile, instance string) bool {
 	for _, s := range file.Schedules {

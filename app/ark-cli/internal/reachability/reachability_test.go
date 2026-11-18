@@ -403,17 +403,17 @@ func TestRunCheckReachabilityInstanceWithListenSkipsServiceRunning(t *testing.T)
 
 func TestRconLocalOnly(t *testing.T) {
 	ports := testPorts("27015:27015/udp", "27020:27020/tcp")
-	if rconLocalOnly(ports) {
+	if rconLocalOnly(ports, 27020) {
 		t.Fatal("expected all-interfaces RCON binding to be reported as remote-reachable")
 	}
 	for _, ip := range []string{"127.0.0.1", "::1"} {
 		ports[1].HostIP = ip
-		if !rconLocalOnly(ports) {
+		if !rconLocalOnly(ports, 27020) {
 			t.Fatalf("expected %s RCON binding to be local-only", ip)
 		}
 	}
 	ports[1].HostIP = "192.168.1.10"
-	if rconLocalOnly(ports) {
+	if rconLocalOnly(ports, 27020) {
 		t.Fatal("expected LAN-IP RCON binding not to be treated as local-only")
 	}
 }

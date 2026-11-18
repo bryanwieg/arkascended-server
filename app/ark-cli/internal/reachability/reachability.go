@@ -138,13 +138,14 @@ func buildInstancePortCheckTargets(d *core.AppDeps, composeFileFlag, instance, w
 	if asaPort <= 0 {
 		return nil, fmt.Errorf("Error: failed to resolve ASA game port from compose config")
 	}
-	rconPort, err := host.ResolveHostPortByTarget(service.Ports, 27020, "tcp")
+	rconTarget := runtime.RCONContainerPort(service)
+	rconPort, err := host.ResolveHostPortByTarget(service.Ports, rconTarget, "tcp")
 	if err != nil {
-		return nil, fmt.Errorf("Error: failed to resolve RCON port from compose config: %v", err)
+		return nil, fmt.Errorf("Error: no compose binding for RCON container port %d/tcp (RCON_PORT): %w", rconTarget, err)
 	}
 	targets := []host.PortCheckTarget{
 		{Label: "ASA", Protocol: host.ProtocolUDP, ContainerPort: asaPort, HostPort: asaPort},
-		{Label: "RCON", Protocol: host.ProtocolTCP, ContainerPort: 27020, HostPort: rconPort},
+		{Label: "RCON", Protocol: host.ProtocolTCP, ContainerPort: rconTarget, HostPort: rconPort},
 	}
 	switch strings.ToLower(strings.TrimSpace(which)) {
 	case "all":
@@ -155,17 +156,17 @@ func buildInstancePortCheckTargets(d *core.AppDeps, composeFileFlag, instance, w
 	default:
 		return nil, errors.New("Error: --ports must be one of: asa, rcon, all.")
 	}
-	if targets[len(targets)-1].Label == "RCON" && rconLocalOnly(service.Ports) {
+	if targets[len(targets)-1].Label == "RCON" && rconLocalOnly(service.Ports, rconTarget) {
 		core.Infof("Note: RCON for %s is published on 127.0.0.1 only, so CLOSED from remote or another host is expected.\n"+
 			"Run 'ark-cli enable remote-rcon --instance %s' to allow remote RCON access.\n", instance, instance)
 	}
 	return targets, nil
 }
 
-// rconLocalOnly reports whether the RCON binding (container port 27020/tcp) is published on loopback only.
-func rconLocalOnly(ports []types.ServicePortConfig) bool {
+// rconLocalOnly reports whether the RCON binding (container port rconTarget/tcp) is published on loopback only.
+func rconLocalOnly(ports []types.ServicePortConfig, rconTarget int) bool {
 	for _, p := range ports {
-		if p.Target == 27020 && host.NormalizePortProtocol(p.Protocol) == host.ProtocolTCP {
+		if int(p.Target) == rconTarget && host.NormalizePortProtocol(p.Protocol) == host.ProtocolTCP {
 			return net.ParseIP(p.HostIP).IsLoopback()
 		}
 	}

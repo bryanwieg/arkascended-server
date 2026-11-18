@@ -27,7 +27,7 @@ error.
 | Variable | Default | Effect |
 |---|---|---|
 | `ASA_PORT` | `27015` | UDP game port the server binds (`?Port=`). Change with `ark-cli reconfigure instance --asa-port`, which keeps `ASA_PORT`, the port binding and the `ark.port.asa` label in sync. |
-| `RCON_PORT` | `27020` | RCON port inside the container: written to `RCONPort` in `GameUserSettings.ini` on start and used by the stop/save/backup scripts. The compose binding publishes container port `27020/tcp`; if you change this, edit the binding to match. |
+| `RCON_PORT` | `27020` | RCON port inside the container: written to `RCONPort` in `GameUserSettings.ini` on start and used by the stop/save/backup scripts. If you change this, edit the compose binding's container port to match; `reconfigure instance --rcon-port` and `check reachability` then use the new port, and `check reachability` errors if no binding matches. |
 | `RCON_HOST` | `localhost` | Host the in-container RCON client connects to. |
 
 The UDP binding must be 1:1 (`<ASA_PORT>:<ASA_PORT>/udp`). ASA registers its

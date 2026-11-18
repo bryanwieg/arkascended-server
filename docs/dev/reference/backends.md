@@ -1,74 +1,82 @@
 # Backend Reference
 
-Interfaces, constructors, and conformance tests for the SDK backend
-(`app/pkg/ark/sdkbackend/`). For background, see the
+Interfaces, constructors and conformance tests for the SDK backend
+(`app/pkg/ark/sdkbackend/`). Background:
 [SDK backend explanation](../explanation/backends.md).
 
 ## Interfaces
 
+All methods take `context.Context` first. Backends map native errors to the
+sentinels in `app/pkg/ark/errors.go` for `errors.Is`: `ErrNotFound` (missing
+container, image or volume) and `ErrConflict` (in use).
+
 ### ContainerEngine
 
-Defined in `app/pkg/ark/engine.go`. Methods:
+`app/pkg/ark/engine.go`.
 
-- `InspectState` — check if a container is running
-- `RemoveContainer` — remove a stopped container
-- `ContainerLogs` — fetch container logs
-- `ImageExists` — check if an image is available locally
-- `PullImage` — pull an image from its registry (anonymously); errors from the pull are returned
-- `ImageLabels` — read labels from an image
-- `BuildImage` — build an image from a Dockerfile
-- `ReadFileFromImage` — read a file from an image's filesystem
-- `ImageTags` — list a repository's local tags and their image IDs
-- `RemoveImage` — remove one tag without force; never deletes an image a container uses (`ErrConflict`)
-- `ImagesInUse` — IDs of the images any container (running or stopped, any project) uses
-- `PruneDangling` — remove untagged images and build cache nothing uses
-- `VolumeMountpoint` — get the mount path of a named volume
-- `RemoveVolume` — remove a named volume
-- `CopyFromContainer` — copy a file from a running container
-
-All methods take `context.Context` as the first argument. Backends map native
-errors to sentinel `ErrNotFound` for `errors.Is` branching.
+| Method | Behavior |
+|--------|----------|
+| `InspectState` | Runtime state of a container. `ErrNotFound` if missing |
+| `RemoveContainer` | Force-remove a container. `ErrNotFound` if missing |
+| `ContainerLogs` | Reader for combined stdout/stderr |
+| `ImageExists` | Whether an image exists locally |
+| `ImageLabels` | OCI labels of an image. `ErrNotFound` if missing |
+| `PullImage` | Pull a reference anonymously; returns errors reported during the pull |
+| `BuildImage` | Build an image from a `BuildRequest` |
+| `ReadFileFromImage` | Read a file via a throwaway container (removed afterwards) |
+| `ImageTags` | Local tags of a repository, full reference to image ID |
+| `RemoveImage` | Remove one tag, no force. Removing the last tag of an image a container uses returns `ErrConflict`; `ErrNotFound` if the reference is missing |
+| `ImagesInUse` | IDs of images any container uses (running or stopped, any project) |
+| `PruneDangling` | Remove untagged images and unused build cache |
+| `VolumeMountpoint` | Host path of a named volume; `("", false)` if missing |
+| `RemoveVolume` | Remove a named volume. `ErrNotFound` if missing, `ErrConflict` if in use |
+| `CopyFromContainer` | Copy a file or directory from a container to a host path |
 
 ### ComposeService
 
-Defined in `app/pkg/ark/compose_service.go`. Methods grouped by concern:
+`app/pkg/ark/compose_service.go`.
 
-- **Project**: `LoadProject`, `SaveProject` — parse and write compose YAML.
-  `SaveProject` writes only changes to a service's image, environment, labels
-  and ports, as line edits that keep the rest of the file byte for byte, and
-  refuses anything else (see
-  [design decisions](../explanation/design-decisions.md#why-yaml-ast-editing-instead-of-template-replacement))
-- **Lifecycle**: `Up`, `Stop`, `Kill`, `Down`, `Remove`, `Create` — container
-  lifecycle
-- **Status**: `RunningServices`, `ExitedServices`, `AllServices` — query state
-- **Exec**: `Exec`, `ExecInteractive`, `RunOneOff`, `RunOneOffDetached`,
-  `RunOneOffInteractive` — run commands in or alongside containers
-- **Logs**: `Logs` — stream or fetch container logs
-- **Copy**: `CopyFromService` — copy files from a service
+| Group | Methods |
+|-------|---------|
+| Project | `LoadProject`, `SaveProject` |
+| Lifecycle | `Up`, `Stop`, `Kill`, `Down`, `Remove`, `Create` |
+| Status | `RunningServices`, `ExitedServices`, `AllServices` |
+| Exec | `Exec`, `ExecInteractive`, `RunOneOff`, `RunOneOffDetached`, `RunOneOffInteractive` |
+| Logs | `Logs` |
+| Copy | `CopyFromService` |
+
+`SaveProject` writes only changes to a service's image, environment, labels
+and ports, as line edits that keep the rest of the file byte for byte, and
+refuses anything else (see
+[design decisions](../explanation/design-decisions.md#why-yaml-ast-editing-instead-of-template-replacement)).
+New services are added with `runtime.InsertService` on the raw YAML instead.
 
 ## Constructors
 
-- Default constructors use `DOCKER_HOST`. When the runtime is Podman, `app.go`
-  detects the socket via `host.HasPodmanService()` and sets `DOCKER_HOST`
-  before initializing the SDK.
-- `NewSDKEngineWithSocket(logger, socketPath)` and
-  `NewSDKComposeWithSocket(logger, socketPath)` take an explicit socket path,
-  bypassing `DOCKER_HOST`. Used by the Podman conformance tests.
+| Constructor | Socket |
+|-------------|--------|
+| `NewSDKEngine(logger)`, `NewSDKCompose(logger)` | `DOCKER_HOST` or the default socket |
+| `NewSDKEngineWithSocket(logger, socket)`, `NewSDKComposeWithSocket(logger, socket)` | Explicit socket URI. The compose variant sets `DOCKER_HOST` process-wide |
+
+For Podman, `app/ark-cli/app.go` finds the rootless socket with
+`host.HasPodmanService()`, sets `DOCKER_HOST`, then calls the default
+constructors. The `WithSocket` variants are used by the Podman conformance
+tests.
 
 ## Conformance tests
 
-Shared contract tests live in `app/pkg/ark/conformance/`; the runners live in
-`app/pkg/ark/sdkbackend_test/`. All are tagged `//go:build integration` and
-exercise a real daemon.
+Shared contract tests in `app/pkg/ark/conformance/`:
+`conformance.TestContainerEngine(t, engine)` and
+`conformance.TestComposeService(t, svc)`. Runners in
+`app/pkg/ark/sdkbackend_test/`. All tagged `//go:build integration`; they need
+a real daemon.
 
-| Test | Target |
-|------|--------|
-| `TestSDKEngineConformance` | Docker (default socket) |
-| `TestSDKComposeConformance` | Docker (default socket) |
-| `TestContainerEngine_Podman` | Podman (detected socket) |
-| `TestComposeService_Podman` | Podman (detected socket) |
-
-Podman tests auto-skip when the Podman socket is not available. Run with:
+| Test | Target | Skips when |
+|------|--------|------------|
+| `TestSDKEngineConformance` | Docker (default socket) | No reachable daemon |
+| `TestSDKComposeConformance` | Docker (default socket) | No reachable daemon |
+| `TestContainerEngine_Podman` | Podman (rootless socket) | No rootless socket, or init fails |
+| `TestComposeService_Podman` | Podman (rootless socket) | No rootless socket, or init fails |
 
 ```bash
 cd app/pkg/ark && go test -tags integration -v ./sdkbackend_test/
@@ -76,12 +84,13 @@ cd app/pkg/ark && go test -tags integration -v ./sdkbackend_test/
 
 ## Podman requirements
 
-- Podman 5.0+
-- Rootless Podman only (`$XDG_RUNTIME_DIR/podman/podman.sock`)
-- Podman system service running (`systemctl --user start podman.socket`)
-- Rootful Podman (`/run/podman/podman.sock`) is detected but rejected
+- Podman 5.0+ (Docker 28.0+), checked by `ValidateDaemonVersion`.
+- A compose provider: `podman compose version` must succeed
+  (`RuntimeHelper.ValidateComposeProvider`, run on every command).
+- Rootless only: `$XDG_RUNTIME_DIR/podman/podman.sock` (falls back to
+  `/run/user/<uid>` when `XDG_RUNTIME_DIR` is unset).
+- System service running: `systemctl --user start podman.socket`.
+- Rootful socket `/run/podman/podman.sock` alone is detected and rejected.
 
-The SDK talks to Podman through its Docker v1.40 compatibility API. Container
-inspect/remove/logs, image inspect/labels/build, volume inspect/remove, compose
-load/save/up/down/stop/kill, and compose exec/run/logs/copy all use standard
-Docker API endpoints that Podman implements.
+The SDK reaches Podman through its Docker-compatible API; the same backend
+code serves both runtimes.

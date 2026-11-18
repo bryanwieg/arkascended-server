@@ -50,7 +50,7 @@ pre-update backup, starts the old image and records the attempt. It prints
 `Update of <name> to <new> failed; rolled back to <old>: <reason>`, skips the
 remaining instances and exits with code 1.
 
-The pre-update backup is `<instance>-pre-update.tar.gz` in the instance's
+The pre-update backup is `<instance>-pre-update-<YYYYMMDD-HHMMSS>.tar.gz` in the instance's
 backup directory.
 
 ## Alerts

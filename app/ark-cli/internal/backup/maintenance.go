@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"pkg/ark"
 	pkgbackup "pkg/ark/backup"
@@ -159,7 +158,10 @@ func pruneBackupsForService(d *core.AppDeps, backupRoot, service string, policy 
 		core.Infof("Nothing to prune for %s\n", service)
 		return nil
 	}
-	if err := d.BackupService.ApplyRetention(destDir, service, policy); err != nil {
+	// Same lock as create/restore so prune never deletes an archive mid-write or mid-restore.
+	if err := pkgbackup.WithInstanceLock(destDir, service, 0, func() error {
+		return d.BackupService.ApplyRetention(destDir, service, policy)
+	}); err != nil {
 		return err
 	}
 	core.Infof("Pruned backups for %s\n", service)
@@ -180,43 +182,4 @@ func dryRunRetention(destDir, instance string, policy pkgbackup.RetentionPolicy)
 		}
 	}
 	return nil
-}
-
-func withInstanceBackupLock(lockDir, instance string, timeout time.Duration, fn func() error) error {
-	if err := os.MkdirAll(lockDir, 0o755); err != nil {
-		return err
-	}
-	lockPath := filepath.Join(lockDir, fmt.Sprintf(".%s-backup.lock", instance))
-	deadline := time.Now().Add(timeout)
-	firstAttempt := true
-	var spinStop func()
-	for {
-		handle, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			if spinStop != nil {
-				spinStop()
-			}
-			_, _ = fmt.Fprintf(handle, "pid=%d started=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
-			_ = handle.Close()
-			defer os.Remove(lockPath)
-			return fn()
-		}
-		if !os.IsExist(err) {
-			if spinStop != nil {
-				spinStop()
-			}
-			return err
-		}
-		if timeout == 0 || time.Now().After(deadline) {
-			if spinStop != nil {
-				spinStop()
-			}
-			return fmt.Errorf("Error: backup lock is held for %s: %s", instance, lockPath)
-		}
-		if firstAttempt {
-			firstAttempt = false
-			spinStop = compose.StartBackupLockSpinner(instance)
-		}
-		time.Sleep(2 * time.Second)
-	}
 }

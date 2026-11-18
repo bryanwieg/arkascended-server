@@ -38,7 +38,8 @@ func BuildArtifactPaths(
 	}
 	namePrefix := fmt.Sprintf("%s-backup-%s", target, timestamp)
 	if nameOverride != "" {
-		namePrefix = fmt.Sprintf("%s-%s", target, nameOverride)
+		// Timestamped so retention orders it by age, not ahead of every regular backup.
+		namePrefix = fmt.Sprintf("%s-%s-%s", target, nameOverride, timestamp)
 	}
 	filename := namePrefix + "." + format
 	containerPath := filepath.ToSlash(filepath.Join("/home/ark-user/maintenance", filename))

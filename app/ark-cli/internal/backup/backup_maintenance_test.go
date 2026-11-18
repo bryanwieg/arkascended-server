@@ -20,13 +20,26 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
-func TestWithInstanceBackupLockFailsWhenHeld(t *testing.T) {
-	lockDir := t.TempDir()
-	lockPath := filepath.Join(lockDir, ".asa1-backup.lock")
-	if err := os.WriteFile(lockPath, []byte("held"), 0o600); err != nil {
+func TestRunPruneBackupsFailsWhenLockHeld(t *testing.T) {
+	backupRoot := t.TempDir()
+	lockDir := filepath.Join(backupRoot, "asa1")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(lockDir, "asa1-backup-20240101-000000.tar.gz")
+	if err := os.WriteFile(archive, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lockDir, ".asa1-backup.lock"), []byte("held"), 0o600); err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
-	err := withInstanceBackupLock(lockDir, "asa1", 0, func() error { return nil })
+	setEnv(t, "ARK_BACKUP_DIR", backupRoot)
+	var err error
+	withPatchedAppDeps(t, func(d *core.AppDeps) {
+		d.BackupService = pkgbackup.New(nil, nil, nil, nil, slog.Default())
+	}, func() {
+		err = RunPruneBackups(core.CurrentAppDeps(), []string{"--instance", "asa1"})
+	})
 	if err == nil {
 		t.Fatal("expected lock-held error")
 	}

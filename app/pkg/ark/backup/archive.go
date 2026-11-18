@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -20,8 +21,9 @@ type ArchiveEntry struct {
 	sortKey archiveSortValue
 }
 
-// TimestampPattern matches the -backup-YYYYMMDD-HHMMSS suffix in archive names.
-var TimestampPattern = regexp.MustCompile(`-backup-(\d{8}-\d{6})$`)
+// TimestampPattern matches the -YYYYMMDD-HHMMSS suffix every archive name ends
+// with (regular, --name, pre-update and pre-restore).
+var TimestampPattern = regexp.MustCompile(`-(\d{8}-\d{6})$`)
 
 // ErrArchiveNotFound builds an error for a missing backup archive.
 func ErrArchiveNotFound(backupsDir, backupName string) error {
@@ -87,12 +89,7 @@ func ListArchives(backupsDir string) ([]string, error) {
 		}
 	}
 	sort.Slice(archives, func(i, j int) bool {
-		left := archives[i].sortKey
-		right := archives[j].sortKey
-		if left.priority != right.priority {
-			return left.priority > right.priority
-		}
-		return left.value > right.value
+		return archives[i].sortKey.newerThan(archives[j].sortKey)
 	})
 	files := make([]string, 0, len(archives))
 	for _, archive := range archives {
@@ -103,33 +100,39 @@ func ListArchives(backupsDir string) ([]string, error) {
 
 // CompareArchiveSort compares two backup archives for sort ordering (newest first).
 func CompareArchiveSort(left string, leftInfo os.FileInfo, right string, rightInfo os.FileInfo) bool {
-	leftKey := archiveSortKey(left, leftInfo)
-	rightKey := archiveSortKey(right, rightInfo)
-	if leftKey.priority != rightKey.priority {
-		return leftKey.priority > rightKey.priority
-	}
-	return leftKey.value > rightKey.value
+	return archiveSortKey(left, leftInfo).newerThan(archiveSortKey(right, rightInfo))
 }
 
 type archiveSortValue struct {
 	priority int
 	value    int64
+	mtime    int64 // tiebreak: archives written in the same second share a name timestamp
+}
+
+func (k archiveSortValue) newerThan(o archiveSortValue) bool {
+	if k.priority != o.priority {
+		return k.priority > o.priority
+	}
+	if k.value != o.value {
+		return k.value > o.value
+	}
+	return k.mtime > o.mtime
 }
 
 func archiveSortKey(path string, info os.FileInfo) archiveSortValue {
-	base := filepath.Base(path)
-	stem := TrimArchiveSuffix(base)
+	var mtime int64
+	if info != nil {
+		mtime = info.ModTime().UnixNano()
+	}
+	stem := TrimArchiveSuffix(filepath.Base(path))
 	match := TimestampPattern.FindStringSubmatch(stem)
 	if len(match) > 1 {
 		flattened := strings.ReplaceAll(match[1], "-", "")
 		if parsed, err := strconv.ParseInt(flattened, 10, 64); err == nil {
-			return archiveSortValue{priority: 1, value: parsed}
+			return archiveSortValue{priority: 1, value: parsed, mtime: mtime}
 		}
 	}
-	if info != nil {
-		return archiveSortValue{priority: 0, value: info.ModTime().Unix()}
-	}
-	return archiveSortValue{priority: 0, value: 0}
+	return archiveSortValue{priority: 0, value: mtime / int64(time.Second), mtime: mtime}
 }
 
 // IsArchiveForInstance checks if a filename matches the backup naming pattern

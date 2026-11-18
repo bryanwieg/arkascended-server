@@ -266,6 +266,31 @@ func TestRestoreAutoStartCallsUp(t *testing.T) {
 	}
 }
 
+func TestRestoreFailsWhenBackupLockHeld(t *testing.T) {
+	tmpDir := t.TempDir()
+	backupsDir := filepath.Join(tmpDir, "asa1")
+	os.MkdirAll(backupsDir, 0o755)
+	os.WriteFile(filepath.Join(backupsDir, "asa1-backup-20260101-120000.tar.gz"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(backupsDir, ".asa1-backup.lock"), []byte("held"), 0o600)
+
+	compose := &arktest.MockCompose{
+		RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
+			return map[string]struct{}{}, nil
+		},
+		RunOneOffFn: func(context.Context, string, string, []string, ark.RunOptions) (ark.ExecResult, error) {
+			t.Fatal("restore ran while the backup lock was held")
+			return ark.ExecResult{}, nil
+		},
+	}
+	s := newTestService(compose, &arktest.MockEngine{})
+	_, err := s.Restore(context.Background(), RestoreRequest{
+		ComposeFile: "compose.yaml", Service: "asa1", Archive: "latest", BackupRoot: tmpDir,
+	})
+	if err == nil || !strings.Contains(err.Error(), "backup lock is held") {
+		t.Fatalf("err = %v, want lock-held error", err)
+	}
+}
+
 // --- Cleanup tests ---
 
 func TestCleanupArtifactSourceEphemeralRemovesContainer(t *testing.T) {
@@ -608,7 +633,7 @@ func TestBuildArtifactPathsWithOverrides(t *testing.T) {
 	if paths.DestDir != "/custom/dest" {
 		t.Errorf("DestDir = %q", paths.DestDir)
 	}
-	if !strings.HasSuffix(paths.OutputPath, "asa1-my-backup.tar.zst") {
+	if !strings.HasSuffix(paths.OutputPath, "asa1-my-backup-20260101-120000.tar.zst") {
 		t.Errorf("OutputPath = %q", paths.OutputPath)
 	}
 }
@@ -792,4 +817,32 @@ func (m *mockRunner) Run(ctx context.Context, cmd []string, opts cmdrunner.RunOp
 
 func (m *mockRunner) RunInteractive(_ context.Context, _ []string) error {
 	return nil
+}
+
+// Pre-restore, pre-update and --name archives sort by their own timestamp, so
+// retention doesn't delete a fresh undo point ahead of older regular backups.
+func TestListArchivesOrdersEveryArchiveByNameTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	names := []string{
+		"asa1-backup-20260103-000000.tar.gz",
+		"asa1-pre-restore-20260105-000000.tar.gz",
+		"asa1-pre-update-20260104-000000.tar.gz",
+		"asa1-backup-20260101-000000.tar.gz",
+		"asa1-mine-20260102-000000.tar.zst",
+	}
+	for _, n := range names {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := ListArchives(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{names[1], names[2], names[0], names[4], names[3]}
+	for i := range want {
+		if filepath.Base(got[i]) != want[i] {
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
 }

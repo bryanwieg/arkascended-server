@@ -119,7 +119,7 @@ func (s *Service) RestoreCluster(ctx context.Context, req RestoreRequest, cv Clu
 	})
 	if len(busy) > 0 {
 		return nil, fmt.Errorf(
-			"Error: stop every instance that uses the cluster before restoring it: %s. Use 'ark-cli stop instance <name>'.",
+			"Error: stop every instance that uses the cluster before restoring it: %s. Use 'ark-cli stop instance --instance <name>'.",
 			strings.Join(busy, ", "),
 		)
 	}

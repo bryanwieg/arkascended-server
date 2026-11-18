@@ -60,26 +60,33 @@ func (s *Service) Restore(ctx context.Context, req RestoreRequest) (*RestoreResu
 		return nil, err
 	}
 	if _, ok := running[req.Service]; ok {
-		return nil, fmt.Errorf("Error: service must be stopped before restore: %s. Stop it first with 'ark-cli stop instance %s'.",
+		return nil, fmt.Errorf("Error: service must be stopped before restore: %s. Stop it first with 'ark-cli stop instance --instance %s'.",
 			req.Service, req.Service)
 	}
 
 	preRestoreDir := backupsDir
-	if err := ensureContainerWritableDir(preRestoreDir); err != nil {
-		return nil, err
-	}
-
-	timestamp := time.Now().UTC().Format("20060102-150405")
-	restorePaths, err := BuildRestoreExecutionPaths(req.Service, archive, preRestoreDir, timestamp)
+	var restorePaths RestoreExecutionPaths
+	// Same lock as create/prune, so retention can't delete the archive mid-restore.
+	err = WithInstanceLock(filepath.Join(req.BackupRoot, req.Service), req.Service, 0, func() error {
+		if err := ensureContainerWritableDir(preRestoreDir); err != nil {
+			return err
+		}
+		timestamp := time.Now().UTC().Format("20060102-150405")
+		var err error
+		restorePaths, err = BuildRestoreExecutionPaths(req.Service, archive, preRestoreDir, timestamp)
+		if err != nil {
+			return err
+		}
+		if err := s.runRestoreInMaintenanceContainer(ctx, req.ComposeFile, req.Service, restorePaths); err != nil {
+			return err
+		}
+		if _, err := os.Stat(restorePaths.HostPreRestore); err != nil {
+			return fmt.Errorf("Error: pre-restore backup not created: %s", restorePaths.HostPreRestore)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	if err := s.runRestoreInMaintenanceContainer(ctx, req.ComposeFile, req.Service, restorePaths); err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(restorePaths.HostPreRestore); err != nil {
-		return nil, fmt.Errorf("Error: pre-restore backup not created: %s", restorePaths.HostPreRestore)
 	}
 
 	if req.AutoStart {

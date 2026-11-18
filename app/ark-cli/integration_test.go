@@ -559,14 +559,16 @@ func TestCLIIntegrationBackupRetentionPrunesByCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backups dir: %v", err)
 	}
+	// --name archives get "-<now>" appended; key by the name part. All three share
+	// that timestamp, so retention orders them by mtime.
 	found := map[string]bool{}
 	for _, entry := range entries {
-		found[entry.Name()] = true
+		found[backup.TimestampPattern.ReplaceAllString(backup.TrimArchiveSuffix(entry.Name()), "")] = true
 	}
 
-	oldest := "asa1-backup-20260101-000001.tar.gz"
-	newer := "asa1-backup-20260101-000002.tar.gz"
-	newest := "asa1-backup-20260101-000003.tar.gz"
+	oldest := "asa1-backup-20260101-000001"
+	newer := "asa1-backup-20260101-000002"
+	newest := "asa1-backup-20260101-000003"
 	if found[oldest] {
 		t.Fatalf("expected oldest backup to be pruned: %s", oldest)
 	}

@@ -287,7 +287,7 @@ has one).
 |---|---|---|
 | `--instance` | required | Instance, `cluster` or `all`. |
 | `--dest` | `<backup-root>/<instance>` | Output directory. |
-| `--name` | | Archive name becomes `<instance>-<name>.<format>` instead of `<instance>-backup-<YYYYmmdd-HHMMSS>.<format>`. |
+| `--name` | | Archive name becomes `<instance>-<name>-<YYYYmmdd-HHMMSS>.<format>` instead of `<instance>-backup-<YYYYmmdd-HHMMSS>.<format>`. |
 | `--format` | `tar.gz` | `tar`, `tar.gz` or `tar.zst`. |
 | `--retain-count` | `20` | Max archives kept (`0` disables). |
 | `--retain-days` | `7` | Max age in days (`0` disables). |

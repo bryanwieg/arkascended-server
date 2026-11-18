@@ -65,14 +65,13 @@ ark-cli create backup --instance cluster
 | Archive | Name |
 |---|---|
 | Regular | `<target>-backup-<YYYYMMDD-HHMMSS>.<ext>` (UTC) |
-| `--name <n>` | `<target>-<n>.<ext>` |
+| `--name <n>` | `<target>-<n>-<YYYYMMDD-HHMMSS>.<ext>` |
 | Pre-restore | `<instance>-pre-restore-<YYYYMMDD-HHMMSS>.tar.gz` |
-| Pre-update | `<instance>-pre-update.tar.gz` |
+| Pre-update | `<instance>-pre-update-<YYYYMMDD-HHMMSS>.tar.gz` |
 
-`--backup latest` (and retention) order archives by the timestamp in a
-`-backup-<timestamp>` name. Archives without one (custom `--name`,
-pre-restore, pre-update) are ordered by file mtime and always rank older
-than any timestamped backup.
+`--backup latest` (and retention) order archives by the timestamp at the
+end of every name, so a fresh pre-restore or pre-update archive counts as the
+newest, not the oldest.
 
 ## Where backups are stored
 
@@ -123,8 +122,8 @@ retention stops and logs a warning instead of deleting more.
 `<backup-root>/<target>/.<target>-backup.lock`, for the whole run including
 retention. A second backup of the same target waits up to `--lock-timeout`
 (default 2m), then fails. A lock left by a dead process is removed
-automatically. A cluster restore takes the same lock without waiting. Instance
-restores and `prune backups` do not lock.
+automatically. Restores (instance and cluster) and `prune backups` take the
+same lock without waiting: they fail at once if a backup is running.
 
 ## Pre-restore backup
 

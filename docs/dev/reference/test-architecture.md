@@ -1,154 +1,137 @@
 # Test Architecture
 
+How to run tests: [Run tests](../how-to/run-tests.md). Log files and diagnostics:
+[Test logging](test-logging.md).
+
 ## Test layers
 
 | Layer | Location | Scope |
 |---|---|---|
-| Unit | `tests/container/unit/` | Pure Python parsing, validation, and transform logic; no Docker |
-| Container integration (fast) | `tests/container/integration/fast/` | Container runtime scripts, short-lived containers; `@pytest.mark.container` |
-| Container integration (slow) | `tests/container/integration/slow/` | Full container lifecycle (start, RCON, backup, restore); `@pytest.mark.container` |
-| CLI integration (fast) | `tests/app/ark_cli/integration/docker/fast/` | CLI output checks, compose manipulation, fake API servers; `@pytest.mark.container` |
-| CLI integration (slow) | `tests/app/ark_cli/integration/docker/slow/` | End-to-end CLI workflows against running containers; `@pytest.mark.container` |
-| CLI integration podman (fast) | `tests/app/ark_cli/integration/podman/fast/` | Same tests as docker/fast/ re-exported for Podman runtime; not in `run-tests.py` batches |
-| CLI integration podman (slow) | `tests/app/ark_cli/integration/podman/slow/` | Same tests as docker/slow/ re-exported for Podman runtime; not in `run-tests.py` batches |
-| Web integration (fast) | `tests/app/ark_web/integration/fast/` | `ark-web` HTTP endpoints against a locally built binary (`web_binary` fixture runs `go build`); `@pytest.mark.container`; not in `run-tests.py` batches |
-| CLI integration native | `tests/app/ark_cli/integration/native/` | CLI commands that need no container runtime (e.g. port checks); no `@pytest.mark.container` |
-| CLI contract (Go) | `app/ark-cli/*_test.go` and `app/ark-cli/internal/*/*_test.go` | Command result, output invariants, and state effects; uses seam injection via `WithPatchedAppDeps` |
-| Domain service (Go) | `app/pkg/ark/*/*_test.go` | Domain service unit tests; no Docker, uses interface mocks |
-| Backend conformance (Go) | `app/pkg/ark/conformance/` | Shared tests both backends must pass; behind `integration` build tag |
+| Unit | `tests/container/unit/` | Python logic of container scripts; no container runtime; `@pytest.mark.unit` |
+| Container integration (fast) | `tests/container/integration/fast/` | Container scripts in short-lived containers; `@pytest.mark.container` |
+| Container integration (slow) | `tests/container/integration/slow/` | Full container lifecycle (start, RCON, backup, restore, stop); `@pytest.mark.container` |
+| CLI integration (fast) | `tests/app/ark_cli/integration/docker/fast/` | CLI output, compose edits, fake API servers; `@pytest.mark.container` |
+| CLI integration (slow) | `tests/app/ark_cli/integration/docker/slow/` | End-to-end CLI workflows against running servers; `@pytest.mark.container` |
+| CLI integration Podman | `tests/app/ark_cli/integration/podman/{fast,slow}/` | The `docker/` tests re-exported (`import *`) under `ARK_CONTAINER_RUNTIME=podman`; not in `run-tests.py` batches |
+| CLI native | `tests/app/ark_cli/integration/native/` | CLI as a host subprocess, no container runtime; no `container` marker |
+| Web integration | `tests/app/ark_web/integration/fast/` | `ark-web` HTTP endpoints; `web_binary` fixture runs `go build`; `@pytest.mark.container`; not in `run-tests.py` batches |
+| Framework self-checks | `tests/test_*.py` | Baseline framework usage, CLI build, logging discipline |
+| CLI contract (Go) | `app/ark-cli/*_test.go`, `app/ark-cli/internal/*/*_test.go` | Command result, output, state effects via seam injection |
+| Domain service (Go) | `app/pkg/ark/*_test.go`, `app/pkg/ark/*/*_test.go` | Domain services against interface mocks; no runtime |
+| Backend conformance (Go) | `app/pkg/ark/conformance/` (suite), `app/pkg/ark/sdkbackend_test/` (runner) | Same suite against Docker and rootless Podman; `integration` build tag |
+
+Markers (`pytest.ini`): `unit`, `container`, `podman`, `fast`, `slow`, `sdk_backend`. Only
+`unit`, `container` and `podman` are applied; fast/slow behavior follows the directory.
 
 ### Fast vs slow tests
 
-**Fast** tests (`tests/*/integration/fast/`) exercise compose file manipulation, CLI output validation, and short-lived container operations without starting a full ARK server. They run in seconds.
+**Fast** (`.../fast/`): compose edits, CLI output, short-lived containers. No ARK server.
+Seconds per test.
 
-`test_server_oom_report.py` needs only `python3.14` and `tail`, not the ARK image, so PR CI runs it on hosted runners with `ARK_TEST_IMAGE=python:3.14-slim`. *Why:* the ARK image is too big to build or pull per PR, and a real OOM kill needs a runtime that enforces cgroup memory limits, which hosted runners do. It skips locally when the limit isn't applied (e.g. rootless Docker without memory delegation) and fails in CI, so a runner change can't make it pass silently.
+**Slow** (`.../slow/`): need a running ARK server (startup, RCON, backup/restore, shutdown).
+Minutes per test. `tests/conftest.py` raises their pytest timeout to 1800 s (default 1200 s in
+`pytest.ini`).
 
-**Slow** tests (`tests/*/integration/slow/`) require a running ARK server container and exercise full lifecycle behaviors — startup, RCON connectivity, backup/restore, shutdown. They run in minutes.
+`test_server_oom_report.py` (container, fast) needs only `python3.14` and `tail`, not the ARK
+image, so PR CI runs it on hosted runners with `ARK_TEST_IMAGE=python:3.14-slim`. *Why:* the
+ARK image is too big to build or pull per PR, and a real OOM kill needs a runtime that enforces
+cgroup memory limits, which hosted runners do. It skips locally when the limit isn't applied
+(e.g. rootless Docker without memory delegation) and fails in CI, so a runner change can't make
+it pass silently.
 
-Run only fast tests for quick feedback:
-```sh
-pytest tests/**/integration/fast/
-# or
-./run-tests.py --suite fast
-```
+### Test ordering
 
-Run slow tests for full verification:
-```sh
-pytest tests/**/integration/slow/
-# or
-./run-tests.py --suite slow
-```
+`tests/.test-order.yaml` lists ordered groups (directory relative to `tests/` → test file
+stems). Listed files run in that order; if one fails, later ones in the group are skipped.
+Results persist in `.tests/.run-state/` across runs; `ARK_TEST_WIPE_STATE=1` clears them.
 
 ### Slow test protection
 
-Slow tests (those in `tests/*/integration/slow/`) use a lock mechanism to ensure
-only one runs at a time, preventing RAM exhaustion. ARK server instances require
-~12GB RAM each, and the machine only has enough RAM for 2 instances — concurrent
-slow tests would cause OOM and false test failures.
+Slow tests run one at a time. Each ARK server container reserves 12 GB
+(`mem_reservation` in the generated compose file); concurrent slow tests cause OOM and
+false failures.
 
-#### Lock mechanism
-
-- **Lock file:** `.tests/.lock` containing `<PID>|<timestamp>|<test-name>`
-- **On test start:** acquires lock via `acquire_lock()`; skips if already held by an alive process
-- **On test end (always):** runs compose down (via the python-on-whales SDK) and releases the lock in a `finally:` block
-- **Stale locks:** detected by checking if the PID in the lock file is still alive (`/proc/{pid}`); stale locks are removed and the lock is re-acquired
-
-#### Usage
-
-All slow tests must include the `slow_test_protection` fixture as an explicit
-parameter:
+Every slow test must take the `slow_test_protection` fixture (enforced, see
+[Enforcement hooks](#enforcement-hooks)):
 
 ```python
 def test_my_slow_test(
     test_env: dict[str, str],
-    slow_test_protection,  # Required for slow tests
+    slow_test_protection,
     started_container_instance,
 ):
 ```
 
-The fixture is defined in `tests/container/integration/conftest.py` and
-re-exported to CLI tests via `tests/app/ark_cli/integration/conftest.py`. It only
-activates for tests in a `slow` directory — fast tests are unaffected.
+Defined in `tests/container/integration/conftest.py`; no-op outside a `slow` directory.
 
-#### Lock functions (in `tests/helpers/infra.py`)
+- **Lock file:** `<artifacts dir>/.lock` (default `.tests/.lock`), content `<PID>|<timestamp>|<test-name>`, created with `O_EXCL`.
+- **Lock held by a live process:** the test is skipped.
+- **Stale lock** (PID not in `/proc`): removed and re-acquired.
+- **Teardown (`finally:`):** capture diagnostics to `docker.log`, compose down `--volumes --remove-orphans`, release lock.
+
+Lock functions in `tests/helpers/infra.py`:
 
 | Function | Purpose |
 |---|---|
-| `acquire_lock(lock_path, test_name)` | Try to acquire lock; returns `True`/`False`; handles stale locks |
+| `acquire_lock(lock_path, test_name)` | Acquire; `True`/`False`; handles stale locks |
 | `release_lock(lock_path)` | Remove the lock file |
-| `cleanup_compose_files(dc, compose_file)` | Run compose down (via python-on-whales SDK) — `--volumes --remove-orphans` |
-| `release_lock_and_cleanup(dc, lock_path, compose_file)` | Convenience for `finally:` blocks — cleanup then release |
+| `cleanup_compose_files(dc, compose_file)` | Compose down `--volumes --remove-orphans` via python-on-whales |
+| `release_lock_and_cleanup(dc, lock_path, compose_file)` | Cleanup, then release |
 
 ### Container vs CLI test boundary
 
-Container tests exist to verify that the container-side scripts and processes
-work correctly **in isolation**, by direct invocation — the same way you would
-test a backend API without routing requests through the frontend. The CLI is an
-untrusted intermediary in this context: if a container test fails, the failure
-must point to the container script, not to a CLI regression that passed wrong
-arguments, generated a bad compose file, or changed how it issues compose
-operations via the Go SDK. Introducing the CLI into container tests obscures which
-layer broke and creates false coupling between components that are architecturally
-independent.
+Container tests verify container-side scripts (entrypoint, shutdown manager, backup/restore)
+in isolation. A failure must point at the container script, not at a CLI regression (wrong
+arguments, bad compose file, changed SDK calls). So:
 
-**`tests/container/integration/fast/`** and **`tests/container/integration/slow/`** exercise
-container-side scripts (entrypoint, shutdown manager, backup/restore) by sending
-Docker commands directly (via the python-on-whales SDK: `compose_stop`, `compose_exec`). The
-trigger is always a Docker primitive, never an `ark-cli` command. Compose files
-are generated via `write_single_service_compose` (with `extra_env` for
-non-standard configurations). Container tests must not depend on `cli_path` or
-`ark-cli`.
-
-**`tests/app/ark_cli/integration/docker/fast/`** and **`tests/app/ark_cli/integration/docker/slow/`** exercise
-CLI commands (`ark-cli stop instance`, `ark-cli create instance`, etc.) and
-verify their end-to-end effects on containers. **`tests/app/ark_cli/integration/podman/fast/`**
-and **`tests/app/ark_cli/integration/podman/slow/`** re-export the same test functions for
-the Podman runtime. The CLI conftest re-exports
-container fixtures so both suites share infrastructure. It is expected that
-container side tests pass, and container side processes are healthy before
-running CLI tests.
+- **`tests/container/integration/`**: trigger with container primitives only (python-on-whales
+  helpers such as `compose_stop`, `compose_exec`), never `ark-cli`. Compose files come from
+  `write_single_service_compose` (`extra_env` for non-standard config). No `cli_path`.
+- **`tests/app/ark_cli/integration/docker/`**: run `ark-cli` commands and check their effect on
+  containers. `podman/` re-exports the same tests. `tests/app/ark_cli/integration/conftest.py`
+  re-exports the container fixtures (`import *`). Container tests are expected to pass before
+  CLI tests are meaningful.
 
 ## Outcome-driven testing
 
-Default style for new work:
+Default for new work:
 
-- Assert user-visible behavior, state transitions, and persisted side effects.
-- Avoid asserting internal helper call ordering unless it is the explicit
-  contract being tested.
-- Prefer one strong contract test over multiple implementation-detail tests.
-- Keep seam-mocked tests focused and minimal; do not expand seam-level
-  coverage by default.
+- Assert user-visible behavior, state transitions, persisted side effects.
+- Don't assert internal call order unless it is the contract.
+- One strong contract test over several implementation-detail tests.
+- Keep seam-mocked tests few and focused.
 
 When adding commands or features:
 
-1. Add contract-level tests first (command result + output + state effects).
-2. Add integration tests that exercise real workloads — real Docker builds,
-   real API calls, real container lifecycle. If a feature touches Docker images,
-   external APIs, or container behavior, it needs `@pytest.mark.container`
-   integration tests that run against real containers. Do not rely on
-   tests that substitute fakes/mocks for real Docker operations — they have
-   repeatedly passed while real container runs failed, providing false
-   confidence.
-3. Add seam/fallback tests only when risk requires branch-specific proof.
+1. Contract tests first (command result + output + state effects).
+2. Integration tests against real workloads (real builds, API calls, container lifecycle).
+   Anything touching images, external APIs or container behavior needs
+   `@pytest.mark.container` tests against real containers. Fake/mocked Docker tests have
+   repeatedly passed while real runs failed.
+3. Seam/fallback tests only when a specific branch needs proof.
 
 ## Go CLI tests: the seam pattern
 
-`AppDeps` groups side-effecting functions and domain services into injectable
-fields. Container orchestration goes through `ark.ContainerEngine` and
-`ark.ComposeService` interfaces (with `arktest.MockCompose` for tests —
-`MockCompose` provides 18 function fields (one per `ComposeService` method) so tests
-can simulate any compose interaction without a real Docker daemon. See
-`app/pkg/ark/arktest/mocks.go` for the full list.).
-Domain services (`backup.Service`, `health.InstanceHealthChecker`,
-`lifecycle.Service`, `schedule.Service`, `update.Service`) are wired as
-interface or pointer fields. Tests swap individual functions or services via
-`testutil.WithPatchedAppDeps`:
+`core.AppDeps` (`app/ark-cli/internal/core/deps.go`) holds the side-effecting dependencies:
+
+- `Engine` (`ark.ContainerEngine`), `ComposeService` (`ark.ComposeService`)
+- `HealthChecker`, `Lifecycle`, `BackupService`, `UpdateService`, `ScheduleService`
+- `HostDeps`, `RuntimeHelper`, `Runtime` (`RunCommand`, `LookPath`, ...)
+- function fields such as `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab`,
+  `RunningServiceSnapshot`, `DiskUsageForPath`, `RemoveVolume`
+
+Mocks:
+
+- `app/pkg/ark/arktest/mocks.go`: `MockCompose` (one `<Method>Fn` field per `ComposeService`
+  method), `MockEngine`, `MockCommandRunner`. Unset fields return zero values.
+- `app/ark-cli/internal/testutil/mocks.go`: `MockHealthChecker`.
+
+Tests swap fields via `testutil.WithPatchedAppDeps`:
 
 ```go
 testutil.WithPatchedAppDeps(t, testutil.TestDepsConfig{}, func(d *core.AppDeps) {
     d.ComposeService = &arktest.MockCompose{}
     d.Runtime.RunCommand = func(cmd []string, _ ark.CommandOptions) (ark.ExecResult, error) {
-        // capture or stub
         return ark.ExecResult{ExitCode: 0}, nil
     }
 }, func() {
@@ -156,131 +139,136 @@ testutil.WithPatchedAppDeps(t, testutil.TestDepsConfig{}, func(d *core.AppDeps) 
 })
 ```
 
-Favor unit tests for parsing, validation, and compose edits. Use
-`@pytest.mark.container` integration tests for any behavior that involves Docker
-images, external APIs, container lifecycle, or real builds. Contract tests
-with seam injection verify CLI logic quickly; `@pytest.mark.container` tests
-confirm the feature works against real infrastructure.
+`TestDepsConfig` controls which services get wired (`WireBackupService`, `WireUpdateService`,
+`WireScheduleService`, ...). Most packages wrap this in a local `withPatchedAppDeps` with a
+package-specific config.
+
+Other `testutil` helpers: `CaptureStdout`/`CaptureStderr`, `SetEnv`, `FakeProject`,
+`FakeProjectWithVolumes`, `EmptyServices`, `TestEnv`, `TestPorts`, `CheckTableRow`,
+`CreateBackupArchive`, `RepoRoot`.
+
+Use unit tests for parsing, validation and compose edits; contract tests with seams for CLI
+logic; `@pytest.mark.container` tests to prove the feature against real infrastructure.
 
 ### Go contract test coverage
 
-Package-level Go contract tests in `app/ark-cli/internal/<package>/*_test.go`
-exercise command handlers through `WithPatchedAppDeps` with mock compose
-services and filesystem fixtures — no Docker/Podman required. These are
-distinct from the top-level tests in `app/ark-cli/*_test.go` and from the
-Python native tests in `tests/app/ark_cli/integration/native/` (which invoke the CLI
-as a subprocess).
+Package tests in `app/ark-cli/internal/<package>/*_test.go` drive command handlers through
+patched `AppDeps` and filesystem fixtures; no Docker/Podman. Distinct from the top-level
+`app/ark-cli/*_test.go` and from the Python `native/` tests (CLI as a subprocess).
 
-Commands with Go contract test coverage:
+Packages and the commands they register (`app/ark-cli/internal/cmd/registry_entries.go`):
 
 | Package | Commands | Key seams |
 |---|---|---|
-| `schedule/` | `enable schedule`, `disable schedule`, `check schedule`, `show schedule`, `update schedule`, `run schedule`, `create schedule`, `remove schedule`, `validate schedule`, `apply schedules`, `list schedules` | `overrideSchedulePathsForTest`, `writeScheduleFixture`, `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab` |
-| `health/` | `check instance`, `wait instance`, `validate compose` | `MockCompose.RunningServicesFn`, `MockHealthChecker.IsReadyFn`, `MockHealthChecker.WaitFor*Fn`, compose file on disk |
-| `show/` | `show instance`, `list instances`, `show compose`, `show volume-paths`, `show backup` | `MockCompose.LoadProjectFn`, `MockEngine.ImageLabelsFn`, `MockEngine.VolumeMountpointFn`, `RunningServiceSnapshot`, `HostDeps.FetchText` |
-| `backup/` | `create backup`, `validate backup`, `prune backups`, `restore backup` | `BackupService` function fields (`DiskUsage`, `LookPath`), `MockCompose.ExecFn`, `MockCommandRunner.RunFn`, `ARK_BACKUP_DIR` env var |
-| `remove/` | `remove instance`, `teardown instances` | `MockCompose.DownFn`, `MockCompose.KillFn`, `RemoveVolume`, `IsInteractiveTerminal` |
-| `compose/` | `start instance`, `stop instance`, `down instance` | Local `withPatchedAppDeps` (import cycle prevents `testutil` import), `MockCompose.UpFn`, `MockCompose.StopFn` |
-| `host/` | `check kernel-config`, `check ports` | `HostDeps.FetchText`, `HostDeps.CheckUDPPort`, `HostDeps.CheckTCPPort` |
-| `reconfigure/` | `reconfigure instance` | `MockCompose.LoadProjectFn`/`SaveProjectFn`, `Runtime.RunCommand` |
-| `ini/` | `edit ini` | Filesystem fixtures in `t.TempDir()` |
-| `create/` | `create instance` | `MockCompose.LoadProjectFn`/`SaveProjectFn` |
-| `update/` | `check update`, `update image` | `UpdateService.CheckForUpdateFn`, `UpdateService.BuildImageFn`, `HostDeps.FetchText` |
-
-## Running tests
-
-See [Run tests](../how-to/run-tests.md) for runner commands, timing
-expectations, rebuild steps, and the CI vs. local split.
+| `backup/` | `create backup`, `validate backup`, `prune backups`, `restore backup` | `BackupService` fields (`DiskUsage`), `MockCompose.LoadProjectFn`/`RunningServicesFn`/`RunOneOffFn`, `MockCommandRunner.RunFn`, `ARK_BACKUP_DIR` |
+| `compose/` | `start`, `stop`, `restart`, `save`, `logs instance` | Own `withPatchedAppDeps` and helper copies (`testutil` imports `compose`, so importing it back is a cycle); `MockCompose.LoadProjectFn`, `MockEngine.ImageTagsFn`/`ImageLabelsFn` |
+| `create/` | `create instance` | Settings validation; filesystem fixtures |
+| `health/` | `check instance`, `wait instance`, `validate compose` | `MockHealthChecker.IsReadyFn`/`WaitFor*Fn` |
+| `host/` | `check`/`fix`/`restore host-kernel-config` | `HostDeps.ReadKernelParam`, `HostDeps.GetNofileHardLimit` |
+| `ini/` | `edit ini`, `show ini` | `MockCompose.RunningServicesFn`/`RunOneOffInteractiveFn`/`ExecInteractiveFn` |
+| `listenport/` | `listen port` | Real TCP/UDP listeners on test ports |
+| `reachability/` | `check reachability` | `HostDeps.FetchText` |
+| `reconfigure/` | `reconfigure instance`, `enable`/`disable remote-rcon` | `MockCompose.LoadProjectFn`/`SaveProjectFn`/`RunningServicesFn`, `RestartStopInstance`/`RestartStartInstance` |
+| `remove/` | `remove instance`, `teardown instances` | `MockCompose.DownFn`/`KillFn`, `RemoveVolume`, `core.IsInteractiveTerminal` |
+| `schedule/` | `create`, `update`, `enable`, `disable`, `remove`, `show`, `check`, `run`, `validate schedule`; `list`, `apply schedules` | `overrideSchedulePathsForTest`, `writeScheduleFixture`, `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab` |
+| `show/` | `show instance`, `list instances`, `show compose`, `show volume-paths`, `show backup`, `list backups` | `MockCompose.LoadProjectFn`, `MockEngine.VolumeMountpointFn`, `RunningServiceSnapshot`, `HostDeps.FetchText` |
+| `update/` | `update instance` | `Engine` mock (`ImageLabelsFn`, `ImageExistsFn`), `HostDeps.FetchText`, `DiskUsageForPath`, `RestartStopInstance`/`RestartStartInstance` |
 
 ## Environment variables affecting tests
 
-- `ARK_START_WAIT_TIMEOUT` — extend start readiness timeout (e.g. `15m`) when
-  the host is under memory pressure.
-- `ARK_SKIP_RAM_CHECK` is a container variable, not a shell one: test
-  helpers set it to `1` in the compose files they create
-  (`enable_skip_ram_check`), which silences the entrypoint's low-RAM warning
-  in test server logs. Setting it in your shell has no effect.
-- `ARK_TEST_IMAGE` — override the default `ark-server:latest` image used by
-  integration tests.
-- `ARK_TEST_ARTIFACTS_DIR` — override the directory for test artifacts
-  (default `.tests`).
-- `ARK_TEST_ARTIFACTS_RETENTION` — days to keep test artifacts (default `7`).
-- `ARK_TEST_ARTIFACTS_WIPE_THRESHOLD` — minimum artifact runs to keep when
-  pruning (default `3`).
-- `TEST_BATCH_PYTHON` — override the default `.venv/bin/python` used by the
-  test runner.
+| Variable | Effect |
+|---|---|
+| `ARK_START_WAIT_TIMEOUT` | CLI start readiness timeout (e.g. `15m`) on loaded hosts |
+| `ARK_TEST_IMAGE` | Image for integration tests (default `ark-server:latest`); built if missing |
+| `ARK_CONTAINER_RUNTIME` | `docker` (default) or `podman`; the `docker/` and `podman/` conftests force their own value |
+| `ARK_TEST_STARTUP_LOG_TIMEOUT` | Seconds to wait for the server startup log line (default `300`) |
+| `ARK_TEST_RCON_TIMEOUT` | Seconds to wait for RCON after startup (default `300`) |
+| `ARK_TEST_ARTIFACTS_DIR` | Artifact directory (default `.tests`) |
+| `ARK_TEST_ARTIFACTS_RETENTION` | Number of most recent run directories kept (default `7`) |
+| `ARK_TEST_ARTIFACTS_WIPE_THRESHOLD` | If more tests than this are collected, wipe the artifacts dir (keeping the retained run dirs and `.run-state/`); otherwise only prune old run dirs (default `3`) |
+| `ARK_TEST_WIPE_STATE` | `1` clears `.tests/.run-state/` (test-order results) at startup |
+| `ARK_TEST_RUN_DIR`, `ARK_TEST_BATCH_LABEL` | Set by `run-tests.py` to put every batch under one suite run directory |
+| `TEST_BATCH_PYTHON` | Default for `run-tests.py --python` (default `./.venv/bin/python`) |
+
+`ARK_SKIP_RAM_CHECK` is a container variable, not a shell one: generated test compose files
+set it to `1` (`enable_skip_ram_check`), silencing the entrypoint's low-RAM warning. Setting
+it in your shell has no effect.
 
 ## Integration test framework
 
-Shared test infrastructure lives in `tests/helpers/` (nine modules):
+Shared infrastructure in `tests/helpers/`:
 
 | Module | Purpose |
 |---|---|
-| `artifacts` | Paths, CLI binary discovery, report artifacts |
-| `compose` | Port allocation, compose YAML generation, compose file patching, `asa_port_from_compose` |
-| `compose_client` | `python-on-whales` `DockerClient` factory, high-level compose helpers (`container_running`, `container_exited`, `wait_for_container_state`, `compose_exec`), V2 startup |
-| `diagnostics` | `run_cmd`, command logging, failure formatting, phase snapshots |
-| `infra` | `wait_for`, `ensure_runtime_prereqs`, `prepare_test_env`, `cleanup_test_env`, `build_container_instance_config`, Docker env setup/teardown, lock management |
-| `fakes` | `steam_api_server`, `dockerhub_tags_server` — fake HTTP servers for testing without real network calls |
-| `framework_logger` | Per-test `framework.log` tracing, debug stderr output, smart auto-enable for slow tests |
-| `batch_runner` | Batch test execution, test selection, and result collection |
-| `compose_cleanup` | Orphan compose file pruning and stale lock removal during project teardown |
+| `artifacts` | Artifact paths, run dirs, retention, CLI binary build/discovery, pytest report artifact |
+| `batch_runner` | `run-tests.py` batch execution and summary |
+| `build` | `image_exists`, `build_server_image` |
+| `compose` | Port allocation, `write_single_service_compose`, compose patching (`enable_skip_ram_check`, `disable_restart_policy`, ...), `asa_port_from_compose` |
+| `compose_cleanup` | Compose file registry; SIGTERM/SIGINT handler runs compose down for registered files |
+| `compose_client` | python-on-whales `DockerClient` factory (`get_docker_client`), container/compose helpers (`container_running`, `compose_exec`, `compose_stop`, `wait_for_container_state`, ...), log watchers, `start_container_instance` |
+| `diagnostics` | `run_cmd`, `run_with_compose_patch`, command logging, failure formatting, `capture_diagnostics`, phase snapshots |
+| `fakes` | `steam_api_server`: fake Steam API HTTP server |
+| `framework_logger` | Per-test `framework.log` |
+| `infra` | `wait_for`, `prepare_test_env`, `cleanup_test_env`, `build_container_instance_config`, orphan pruning, lock functions |
+| `native_fixtures` | File fixtures for `native/` tests (schedules, run state, backup archives, minimal compose) |
+| `web_client` | stdlib HTTP client for `ark-web` tests |
 
-Key fixtures (defined in `tests/container/integration/conftest.py`, re-exported by `tests/app/ark_cli/integration/conftest.py`):
-- `test_env` — env dict with `COMPOSE_FILE`, `ARK_TEST_COMMANDS_LOG`, etc.
-- `run_cmd` — wraps subprocess with command logging and compose patching
-- `wait_for` — poll with timeout
-- `container_instance_config` — creates a compose service definition and returns
-  config (instance name, passwords, compose path) without starting the container.
-  Use this when the test needs to control startup itself (e.g., first-boot init
-  tests, pre-seeding state before start).
-- `started_container_instance` — calls `container_instance_config`, then starts
-  the container and waits for RCON readiness. Use this when the test needs a
-  fully running server as a precondition.
+Key fixtures (`tests/container/integration/conftest.py`, re-exported to CLI tests; `tests/conftest.py`
+has minimal root versions of `test_env`, `run_cmd`, `compose_client`):
 
-> **Fixture scope note:** All container integration fixtures are currently
-> function-scoped — each test gets its own container. Module-scoped fixtures
-> (allowing tests that share a lifecycle to reuse one container, e.g., start and
-> stop tests) are planned but not yet implemented. Do not add module-scoped
-> fixtures until the feature is completed.
+- `test_env`: env dict (copy of `os.environ`) with `COMPOSE_FILE`, `ARK_BACKUP_DIR`,
+  `ARK_TEST_IMAGE`, artifact log paths (`ARK_TEST_COMMANDS_LOG`, ...). Tears down the project
+  and prunes orphaned test resources afterwards.
+- `run_cmd`: subprocess runner with command logging and compose patching.
+- `compose_client`: python-on-whales client bound to the test's compose file.
+- `wait_for`: poll with timeout.
+- `container_instance_config`: writes a single-service compose file and returns `instance`,
+  `admin_password`, `server_password` without starting it. For tests that control startup
+  (first-boot init, pre-seeded state).
+- `started_container_instance`: the above, then starts the container and waits for the startup
+  log line and RCON.
+- `started_instance_cli`: creates the instance with `ark-cli create instance`, then starts it
+  the same way (CLI tests only).
+- `slow_test_protection`: see [Slow test protection](#slow-test-protection).
+- `log_streamer` (autouse): streams each service's log to `compose.<service>.log`.
 
-`tmp_path` is overridden in `tests/conftest.py` to return `<test_artifact_dir>/tmp`
-under `.tests/` instead of pytest's `/tmp` directory, for the same reason: it
-must be safe to bind-mount into a container. It is kept with the test's other
-artifacts and pruned by the artifact retention.
+Container fixtures are function-scoped: each test gets its own container. Don't add
+module-scoped container fixtures.
 
-Enforcement hooks in `tests/conftest.py` fail (raise `pytest.fail()`) on violations of Rules 1–9 (except `native/` tests, which are exempt). Rules 10–11 emit warnings instead:
-- Raw `subprocess.run`/`Popen` in integration test files (use `run_cmd` instead)
-- Missing `@pytest.mark.container` marker on integration tests
-- CLI integration tests using `tmp_path` without `test_env` — prefer `test_env` for consistent environment setup; add a comment if `tmp_path` alone is intentional
-- Direct `os.environ` access in integration test files — use `test_env.get()` or `dict(test_env)` instead for consistent environment setup
-- In-place mutation of `test_env` dict — use `env = dict(test_env); env[KEY] = VALUE` to avoid state leakage between tests
-- Hardcoded `["docker", ...]` or `["podman", ...]` command lists (single-line or multi-line) — use `compose_client` helpers instead
-- Container tests importing `cli_path` — container tests must exercise scripts directly via Docker primitives, never through `ark-cli`
-- Slow tests missing `slow_test_protection` fixture — prevents OOM from concurrent slow tests
-- `tempfile` in integration test files (`TemporaryDirectory`, `mkdtemp`, `gettempdir`) — use `test_artifact_dir` or `tmp_path`. *Why:* `tempfile` dirs live in `/tmp`, which a remote or rootless Docker daemon may not see, so bind mounts from them come up empty and root-owned
-- Session-scoped fixtures in `conftest.py` files (Rule 11, warning) — prefer function scope unless the fixture returns an immutable value or performs idempotent setup
+`tmp_path` is overridden in `tests/conftest.py` to `<test_artifact_dir>/tmp` under `.tests/`
+instead of `/tmp`, so it can be bind-mounted into a container (a remote or rootless daemon may
+not see the caller's `/tmp`). It is pruned with the other artifacts.
 
-These hooks catch the most common ways tests bypass the framework. Do not
-work around them — if a hook fires, fix the test or extend the helpers. The
-test helpers in `tests/helpers/` are the single source of truth for command
-execution, environment setup, and Docker interaction. If the helpers don't
-support something you need, add to the helpers rather than inlining raw
-subprocess or environment manipulation in a test file.
+### Enforcement hooks
 
-The canonical reference for writing new tests is
-`tests/test_baseline_framework.py`.
+`pytest_collection_modifyitems` in `tests/conftest.py` checks every `test_*.py` under an
+`integration` directory. Violations fail collection (`pytest.fail()`) unless marked as a
+warning. `native/` tests are exempt from rules 1–4.
+
+| Rule | Check |
+|---|---|
+| 1 | No `subprocess.run`/`Popen`; use `run_cmd` |
+| 2 | `@pytest.mark.container` required |
+| 3 | CLI tests using `tmp_path` must also use `test_env`. Currently never fires: it checks for a `cli` path component, the directory is `ark_cli` |
+| 4 | No `os.environ`; use `test_env.get()` or `dict(test_env)` (`podman_compat` exempt) |
+| 5 | No in-place `test_env[...] =`; use `env = dict(test_env); env[KEY] = VALUE` |
+| 6, 7 | No `["docker", ...]` / `["podman", ...]` command lists, single- or multi-line; use `compose_client` helpers (`podman_compat` exempt from 7) |
+| 8 | Tests under `container/` must not reference `cli_path` |
+| 9 | Tests under `slow/` must use `slow_test_protection` |
+| 9b | No `tempfile` (`TemporaryDirectory`, `mkdtemp`, `gettempdir`); use `test_artifact_dir` or `tmp_path`. *Why:* `/tmp` dirs may be invisible to the daemon, so bind mounts come up empty and root-owned |
+| 10 (warning) | File > 2500 chars, > 6 `def`s, or an inline `time.monotonic()` loop (use `wait_for`) |
+| 11 (warning) | Session-scoped fixture in a `conftest.py` outside the allowlist; prefer function scope unless the value is immutable or setup idempotent |
+
+Warnings print in a "Framework compliance warnings" section of the summary.
+
+Don't work around a hook: fix the test or extend `tests/helpers/`. The helpers are the single
+source for command execution, environment setup and container interaction.
+
+Reference for new tests: `tests/test_baseline_framework.py`.
 
 ## Test artifacts
 
-Each test node directory under `.tests/<run-timestamp>/<test-node>/` contains:
-
-- `commands.log` — all `run_cmd` invocations with exit codes, stdout, stderr
-- `compose.<service>.log` — per-service streaming log, captured continuously from fixture setup through teardown
-- `docker.log` — container-level diagnostics (state, image, PID) from just before teardown
-- `failure.log` — docker-level state captured immediately on test failure (only written on failures)
-- `framework.log` — framework-level trace (poll, lock, lifecycle, compose events, SDK calls)
-- `pytest.log` — pytest phase outcomes with captured stdout/stderr
-- `cli.log` — captured `ark-cli` output when the CLI was invoked by the test (via `ARK_TEST_CLI_LOG`)
-
-For detailed logging documentation, see [test-logging.md](test-logging.md).
+Per-test artifacts land in
+`.tests/<YYMMDD-HHMMSS>-{suiterun|singlerun}/[<batch-label>/]<test-node>/` (batch label only
+under `run-tests.py`). File list: [Run tests: test artifacts](../how-to/run-tests.md#test-artifacts);
+contents and logging internals: [Test logging](test-logging.md).

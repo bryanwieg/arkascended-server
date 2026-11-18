@@ -25,6 +25,7 @@ type MockEngine struct {
 	ReadFileFromImageFn func(ctx context.Context, image, path string) (string, error)
 	ImageTagsFn         func(ctx context.Context, repo string) (map[string]string, error)
 	RemoveImageFn       func(ctx context.Context, ref string) error
+	ImagesInUseFn       func(ctx context.Context) (map[string]bool, error)
 	PruneDanglingFn     func(ctx context.Context) error
 	VolumeMountpointFn  func(ctx context.Context, volume string) (string, bool)
 	RemoveVolumeFn      func(ctx context.Context, volume string) error
@@ -100,6 +101,13 @@ func (m *MockEngine) RemoveImage(ctx context.Context, ref string) error {
 		return m.RemoveImageFn(ctx, ref)
 	}
 	return nil
+}
+
+func (m *MockEngine) ImagesInUse(ctx context.Context) (map[string]bool, error) {
+	if m.ImagesInUseFn != nil {
+		return m.ImagesInUseFn(ctx)
+	}
+	return map[string]bool{}, nil
 }
 
 func (m *MockEngine) PruneDangling(ctx context.Context) error {

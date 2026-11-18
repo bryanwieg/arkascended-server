@@ -17,6 +17,7 @@ type fakeImages struct {
 	tags      map[string]map[string]string
 	labels    map[string]map[string]string // image reference -> labels
 	inUse     map[string]bool              // image IDs a container uses
+	inUseErr  error
 	pruneErr  error
 	listed    []string
 	removedID []string
@@ -59,6 +60,7 @@ func (f *fakeImages) engine() *arktest.MockEngine {
 			}
 			return fmt.Errorf("image %q: %w", ref, ark.ErrNotFound)
 		},
+		ImagesInUseFn:   func(context.Context) (map[string]bool, error) { return f.inUse, f.inUseErr },
 		PruneDanglingFn: func(context.Context) error { return f.pruneErr },
 	}
 }
@@ -98,7 +100,8 @@ func TestRemoveOldImagesKeepsOnlyTheCurrentBuildAndNoFilesImages(t *testing.T) {
 }
 
 func TestRemoveOldImagesKeepsImagesAContainerUses(t *testing.T) {
-	// An instance not restarted yet still runs the old image: it keeps its last tag.
+	// An instance not restarted yet, or another compose project's stopped container,
+	// still uses the old image: none of its tags are removed.
 	f := &fakeImages{
 		tags: map[string]map[string]string{
 			"arkserver/arkascended-server": {
@@ -113,11 +116,23 @@ func TestRemoveOldImagesKeepsImagesAContainerUses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an image in use is skipped, not an error: %v", err)
 	}
-	if len(removed) != 1 || len(f.tags["arkserver/arkascended-server"]) != 2 {
-		t.Fatalf("expected one old tag untagged and the image kept, removed %v, left %v", removed, f.tags)
+	if len(removed) != 0 || len(f.tags["arkserver/arkascended-server"]) != 3 {
+		t.Fatalf("expected every tag kept, removed %v, left %v", removed, f.tags)
 	}
 	if slices.Contains(f.removedID, "new") {
 		t.Fatal("the current image must not be touched")
+	}
+}
+
+func TestRemoveOldImagesRemovesNothingWhenContainersCannotBeListed(t *testing.T) {
+	f := &fakeImages{
+		tags:     map[string]map[string]string{"ark-server": {"ark-server:latest": "new", "ark-server:100": "old"}},
+		labels:   map[string]map[string]string{"ark-server:latest": arkLabels("200")},
+		inUseErr: errors.New("daemon unavailable"),
+	}
+	removed, err := testService(f.engine()).RemoveOldImages(context.Background(), []string{"ark-server:latest"})
+	if err == nil || len(removed) != 0 || len(f.tags["ark-server"]) != 2 {
+		t.Fatalf("expected an error and nothing removed, got removed %v, err %v", removed, err)
 	}
 }
 

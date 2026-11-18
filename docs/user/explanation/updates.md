@@ -79,7 +79,9 @@ the CLI keeps each instance's current image and its previous image (the
 rollback image). Older `ark-server` images, all temporary `ark-server-files`
 images and unused build cache are removed.
 
-- An image a container still uses is never deleted.
+- An image a container still uses, running or stopped, keeps all its tags. This
+  includes containers of other compose projects on the same host, whose images
+  this project's cleanup can't otherwise tell apart from old ones.
 - Only ARK images are touched; other services' images in the compose file are
   left alone, as are images pinned by digest.
 - Removed images are listed (`Removed old image …`). If removal fails, the

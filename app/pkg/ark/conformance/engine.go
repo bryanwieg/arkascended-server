@@ -182,6 +182,13 @@ func TestContainerEngine(t *testing.T, engine ark.ContainerEngine) {
 		if err := engine.RemoveImage(ctx, repo+":inuse"); !errors.Is(err, ark.ErrConflict) {
 			t.Fatalf("expected ErrConflict for an image a container uses, got: %v", err)
 		}
+		inUse, err := engine.ImagesInUse(ctx)
+		if err != nil {
+			t.Fatalf("ImagesInUse: %v", err)
+		}
+		if !inUse[tags[repo+":inuse"]] {
+			t.Fatalf("ImagesInUse %v misses %s, used by a created container", inUse, tags[repo+":inuse"])
+		}
 	})
 
 	t.Run("PruneDangling", func(t *testing.T) {

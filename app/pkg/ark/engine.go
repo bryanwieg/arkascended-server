@@ -54,6 +54,10 @@ type ContainerEngine interface {
 	// reference does not exist.
 	RemoveImage(ctx context.Context, ref string) error
 
+	// ImagesInUse returns the IDs (as ImageTags reports them) of the images that
+	// any container on the host uses, running or stopped, in any compose project.
+	ImagesInUse(ctx context.Context) (map[string]bool, error)
+
 	// PruneDangling removes untagged images and build cache that nothing uses.
 	PruneDangling(ctx context.Context) error
 

@@ -328,6 +328,19 @@ func (e *SDKEngine) RemoveImage(ctx context.Context, ref string) error {
 	return nil
 }
 
+func (e *SDKEngine) ImagesInUse(ctx context.Context) (map[string]bool, error) {
+	e.logger.Debug("ImagesInUse")
+	result, err := e.cli.ContainerList(ctx, dockerclient.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	ids := map[string]bool{}
+	for _, c := range result.Items {
+		ids[c.ImageID] = true
+	}
+	return ids, nil
+}
+
 func (e *SDKEngine) PruneDangling(ctx context.Context) error {
 	e.logger.Debug("PruneDangling")
 	if _, err := e.cli.ImagePrune(ctx, dockerclient.ImagePruneOptions{Filters: dockerclient.Filters{}.Add("dangling", "true")}); err != nil {

@@ -18,6 +18,9 @@ import (
 // modIDsPattern matches the MOD_IDS format the container accepts (runtime_utils.server_command).
 var modIDsPattern = regexp.MustCompile(`^\d+(,\d+)*$`)
 
+// clusterIDPattern matches the CLUSTER_ID format the container accepts.
+var clusterIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 type reconfigureCommandRequest struct {
 	instance        string
 	composeFileFlag string
@@ -30,6 +33,7 @@ type reconfigureCommandRequest struct {
 	adminPasswordSet  bool
 	serverPasswordSet bool
 	modsSet           bool
+	clusterIDSet      bool
 	asaPortSet        bool
 	rconPortSet       bool
 	rconHostIPSet     bool
@@ -40,6 +44,7 @@ type reconfigureCommandRequest struct {
 	adminPassword  string
 	serverPassword string
 	mods           string
+	clusterID      string
 	asaPort        int
 	rconPort       int
 	rconHostIP     string // "" publishes on all interfaces; see setRCONHostIP
@@ -52,6 +57,7 @@ func (r reconfigureCommandRequest) hasSettingUpdates() bool {
 		r.adminPasswordSet ||
 		r.serverPasswordSet ||
 		r.modsSet ||
+		r.clusterIDSet ||
 		r.asaPortSet ||
 		r.rconPortSet ||
 		r.rconHostIPSet
@@ -71,6 +77,7 @@ func RunReconfigure(d *core.AppDeps, args []string) error {
 	adminPassword := fs.String("admin-password", "", "Set SERVER_ADMIN_PASSWORD environment value.")
 	serverPassword := fs.String("server-password", "", "Set SERVER_PASSWORD environment value.")
 	mods := fs.String("mods", "", "Set MOD_IDS environment value (comma-separated CurseForge mod IDs).")
+	clusterID := fs.String("cluster-id", "", "Set CLUSTER_ID environment value (instances with the same ID share transfers).")
 	asaPort := fs.String("asa-port", "", "Set published ARK UDP port (host and container port are kept in sync).")
 	rconPort := fs.String("rcon-port", "", "Set published RCON TCP host port (maps to 27020/tcp).")
 	force := fs.Bool("force", false, "Allow reconfiguring while the instance is running (restart required for changes to take effect).")
@@ -95,6 +102,7 @@ func RunReconfigure(d *core.AppDeps, args []string) error {
 		*adminPassword,
 		*serverPassword,
 		*mods,
+		*clusterID,
 		*asaPort,
 		*rconPort,
 	)
@@ -115,6 +123,7 @@ func buildReconfigureCommandRequest(
 	adminPassword,
 	serverPassword,
 	mods,
+	clusterID,
 	asaPort,
 	rconPort string,
 ) (reconfigureCommandRequest, error) {
@@ -136,6 +145,7 @@ func buildReconfigureCommandRequest(
 		adminPasswordSet:  adminPassword != "",
 		serverPasswordSet: serverPassword != "",
 		modsSet:           mods != "",
+		clusterIDSet:      clusterID != "",
 		asaPortSet:        asaPort != "",
 		rconPortSet:       rconPort != "",
 		tz:                tz,
@@ -144,6 +154,7 @@ func buildReconfigureCommandRequest(
 		adminPassword:     adminPassword,
 		serverPassword:    serverPassword,
 		mods:              strings.Join(strings.Fields(mods), ""),
+		clusterID:         clusterID,
 	}
 
 	if req.tzSet {
@@ -182,6 +193,9 @@ func buildReconfigureCommandRequest(
 	}
 	if req.modsSet && !modIDsPattern.MatchString(req.mods) {
 		return reconfigureCommandRequest{}, fmt.Errorf("Error: --mods must be comma-separated CurseForge mod IDs, got %q.", mods)
+	}
+	if req.clusterIDSet && !clusterIDPattern.MatchString(req.clusterID) {
+		return reconfigureCommandRequest{}, fmt.Errorf("Error: --cluster-id may contain only letters, digits, \"_\" and \"-\", got %q.", clusterID)
 	}
 	if req.asaPortSet {
 		parsed, err := runtime.ParsePort(asaPort, "ASA port")
@@ -263,6 +277,7 @@ func applyReconfigureEnvUpdates(project *types.Project, serviceName string, req 
 	changed = setEnvIfRequested(env, "SERVER_ADMIN_PASSWORD", req.adminPasswordSet, req.adminPassword) || changed
 	changed = setEnvIfRequested(env, "SERVER_PASSWORD", req.serverPasswordSet, req.serverPassword) || changed
 	changed = setEnvIfRequested(env, "MOD_IDS", req.modsSet, req.mods) || changed
+	changed = setEnvIfRequested(env, "CLUSTER_ID", req.clusterIDSet, req.clusterID) || changed
 
 	if changed {
 		composeutil.MutateService(project, serviceName, func(s *types.ServiceConfig) {

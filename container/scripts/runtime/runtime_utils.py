@@ -41,7 +41,8 @@ MAINTENANCE_DIR = Path("/home/ark-user/maintenance")
 def server_command(*extra_args: str) -> list[str]:
     """Return the Proton command line that starts ArkAscendedServer.exe, with extra_args before -servergamelog.
 
-    Raises ConfigError if MOD_IDS is set but is not a comma-separated list of mod IDs.
+    Raises ConfigError if MOD_IDS is set but is not a comma-separated list of mod IDs, or if
+    CLUSTER_ID contains characters other than letters, digits, "_" and "-".
 
     Used by the server start script and by the build-time INI generator
     (installer/generate-default-ini.py).
@@ -65,12 +66,18 @@ def server_command(*extra_args: str) -> list[str]:
     if mod_ids and not re.fullmatch(r"\d+(,\d+)*", mod_ids):
         raise ConfigError(f'MOD_IDS must be comma-separated CurseForge mod IDs, got "{mod_ids}"')
     mods = [f"-mods={mod_ids}"] if mod_ids else []
+    cluster_id = os.environ.get("CLUSTER_ID", "").strip()
+    if cluster_id and not re.fullmatch(r"[A-Za-z0-9_-]+", cluster_id):
+        raise ConfigError(f'CLUSTER_ID may contain only letters, digits, "_" and "-", got "{cluster_id}"')
+    # No -ClusterDirOverride: the default cluster dir is Saved/clusters, where compose mounts the shared volume.
+    cluster = [f"-clusterid={cluster_id}"] if cluster_id else []
     return [
         f"{proton_base.rstrip('/')}/proton",
         "run",
         "./ArkAscendedServer.exe",
         url,
         *mods,
+        *cluster,
         *extra_args,
         "-servergamelog",
     ]

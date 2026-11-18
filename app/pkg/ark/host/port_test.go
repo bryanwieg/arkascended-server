@@ -283,8 +283,8 @@ func TestOpenProbeListenersForTargetTCP(t *testing.T) {
 func TestAddCheckPortListenerConflictHint(t *testing.T) {
 	err := fmt.Errorf("bind: address already in use")
 	hinted := AddCheckPortListenerConflictHint(err)
-	if !strings.Contains(hinted.Error(), "omit --listener") {
-		t.Fatalf("expected hint about --listener, got: %v", hinted)
+	if !strings.Contains(hinted.Error(), "omit --listen") {
+		t.Fatalf("expected hint about --listen, got: %v", hinted)
 	}
 
 	plain := fmt.Errorf("some other error")
@@ -392,7 +392,7 @@ func TestPrintPortPreCheckWarningClosed(t *testing.T) {
 	var buf strings.Builder
 	PrintPortPreCheckWarning(&buf, rows)
 	output := buf.String()
-	if !strings.Contains(output, "listener") {
+	if !strings.Contains(output, "--listen ") {
 		t.Fatalf("expected listener hint for closed port, got: %s", output)
 	}
 }
@@ -409,5 +409,13 @@ func TestPrintPortPreCheckWarningOpen(t *testing.T) {
 	output := buf.String()
 	if output != "" {
 		t.Fatalf("expected no warning for open port, got: %s", output)
+	}
+}
+
+func TestCheckLocalhostUDPStatusRemoteSilentIsUnknown(t *testing.T) {
+	// 192.0.2.1 (TEST-NET-1) is never a local address: no reply and no bind test.
+	status := checkLocalhostUDPStatus("192.0.2.1", 7777)
+	if status != "unknown" {
+		t.Fatalf("expected unknown for silent remote port, got %q", status)
 	}
 }

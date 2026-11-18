@@ -50,7 +50,7 @@ Output is a table with one column per vantage point. Statuses:
 | `OPEN` | Probe got a response (TCP connect, or UDP reply to a UE5 handshake packet) |
 | `CLOSED` | Nothing listening / connection refused |
 | `LISTENING` | UDP port is bound locally but did not answer the probe |
-| `UNKNOWN` | External checker got no conclusive answer (common for UDP) |
+| `UNKNOWN` | External checker got no conclusive answer (common for UDP), or a remote `--from <addr>` UDP port gave no reply |
 | `ERROR` | External checker request failed |
 
 The public IP comes from `portchecker.io/api/me`, falling back to `api.ipify.org`. Internet checks

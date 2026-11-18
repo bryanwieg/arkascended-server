@@ -1,81 +1,49 @@
 # Edit Server INI Files
 
-How to edit `Game.ini` and `GameUserSettings.ini` for your ARK server.
-
-The CLI edits INI files inside the container so volume file ownership stays
-consistent. Do not edit them directly on the host while the container is
-running.
-
-## Open an INI file for editing
+`edit ini` opens the file in an editor inside the container (the running one,
+or a temporary one when stopped), so volume ownership stays correct. Don't
+edit the files from the host while the server runs.
 
 ```sh
-ark-cli edit ini --instance my-server --file gameusersettings
-ark-cli edit ini --instance my-server --file game
+ark-cli show ini --instance my-server --file gameusersettings   # print
+ark-cli edit ini --instance my-server --file gameusersettings   # GameUserSettings.ini
+ark-cli edit ini --instance my-server --file game               # Game.ini
 ```
 
-`GameUserSettings.ini` must already exist: the instance installs ARK's full
-default file on its first start. Before that, the command refuses ("doesn't
-exist yet. Start the instance once…") rather than create a partial file that
-would stop the defaults from being installed. `Game.ini` is different: ARK
-never creates it, so editing it creates it.
+- Editor: `nano`, the only one in the image. `--editor` runs another
+  command from the image instead.
+- `GameUserSettings.ini` must exist: the first start installs ARK's full
+  default. Before that, `edit ini` refuses rather than create a partial file
+  that would block the defaults.
+- `Game.ini` is created on first edit; ARK never creates it.
+- Changes apply on the next start.
 
-This opens the file in `nano` by default. Use a different editor with
-`--editor`:
+## Running server
 
-```sh
-ark-cli edit ini --instance my-server --file game --editor vi
-ark-cli edit ini --instance my-server --file gameusersettings --editor vim
-```
-
-## Settings managed from the environment
-
-Four `[ServerSettings]` keys in `GameUserSettings.ini` are rewritten from the
-instance's environment every time the container starts: `RCONEnabled`,
-`RCONPort`, `ServerAdminPassword` and `ServerPassword`. Edits to them in the
-INI are lost on restart. Change them with `ark-cli reconfigure instance`
-(`--admin-password`, `--server-password`) instead.
-
-## Edit while the server is running
-
-By default the command refuses to edit if the server is running, to prevent
-config changes from being overwritten by the live process.
-
-To edit anyway (server must be restarted for changes to take effect):
-
-```sh
-ark-cli edit ini --instance my-server --file gameusersettings --force
-```
-
-## Edit and restart in one step
-
-If the server is already running and you want to apply changes immediately:
+`edit ini` refuses while the instance runs, because the server can overwrite
+the file. Override with `--force`; add `--restart` to restart after the
+editor exits:
 
 ```sh
 ark-cli edit ini --instance my-server --file gameusersettings --force --restart
 ```
 
-This opens the editor. When you save and exit, the instance is automatically
-restarted.
+Without `--restart`, run `ark-cli restart instance --instance my-server`.
 
-## After editing (without --restart)
+## Keys managed from the environment
 
-Changes to INI files take effect on the next server start. If the server is
-currently running, restart it:
+Every start rewrites these `[ServerSettings]` keys in
+`GameUserSettings.ini`: `RCONEnabled`, `RCONPort`, `ServerAdminPassword`,
+`ServerPassword`. Change the passwords with `ark-cli reconfigure instance`
+(`--admin-password`, `--server-password`).
 
-```sh
-ark-cli restart instance --instance my-server
-```
+## File location
 
-## Where are the INI files?
+In the instance's `<name>-saved` volume:
 
-The INI files live in the instance's Docker volume under:
 ```
 ShooterGame/Saved/Config/WindowsServer/Game.ini
 ShooterGame/Saved/Config/WindowsServer/GameUserSettings.ini
 ```
 
-To find the volume's location on the host:
-
-```sh
-ark-cli show volume-paths --instance my-server
-```
+Host path: `ark-cli show volume-paths --instance my-server`.

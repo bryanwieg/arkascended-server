@@ -9,8 +9,9 @@ updates.
 - Linux host with about 24 GB RAM
 - About 60-70 GB free disk (current and previous image at ~25 GB each, ~12 GB
   SteamCMD cache, and the build peak)
-- Docker Engine. `ark-cli` embeds Compose and builds with the daemon's
-  BuildKit; the Compose and buildx CLI plugins are not needed
+- Docker Engine 28+ with the Compose v2 plugin (`ark-cli` checks
+  `docker compose version` at startup), or rootless Podman 5+ with a compose
+  provider
 - Internet access to Steam (`api.steamcmd.net` and the Steam CDN) and `ghcr.io`
   (the ARK-free base image). Without `ghcr.io` the base is built locally, which
   needs GitHub (GE-Proton), Launchpad (deadsnakes PPA), NuGet (XAudio2) and

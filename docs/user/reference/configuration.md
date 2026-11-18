@@ -15,6 +15,11 @@
 - `SERVER_PASSWORD` — password players need to join; leave unset for a public
   server. Applied to `GameUserSettings.ini` on every container start.
 
+- `MOD_IDS` — comma-separated CurseForge mod IDs (e.g. `940975,1386057`),
+  passed to the server as `-mods=`. The server downloads and updates them on
+  start. Spaces are ignored; any other non-digit makes the container exit
+  with a configuration error. Set it with `ark-cli reconfigure instance --mods`.
+
 ## Networking
 
 - `ASA_PORT` (default: `27015`) — game port the server binds on; the compose

@@ -263,9 +263,13 @@ ark-cli reconfigure instance --instance asa-server-1 \
   --session-name MySession \
   --admin-password AdminPass123 \
   --server-password ServerPass123 \
+  --mods 940975,1386057 \
   --asa-port 28015 \
   --rcon-port 28020
 ```
+
+`--mods` sets `MOD_IDS`, the comma-separated CurseForge mod IDs the server
+loads.
 
 If the server is running, the command refuses to reconfigure unless you pass
 `--force`, then reminds you to restart after saving. Add `--restart` together

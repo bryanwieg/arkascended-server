@@ -9,6 +9,7 @@ each file.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -40,6 +41,8 @@ MAINTENANCE_DIR = Path("/home/ark-user/maintenance")
 def server_command(*extra_args: str) -> list[str]:
     """Return the Proton command line that starts ArkAscendedServer.exe, with extra_args before -servergamelog.
 
+    Raises ConfigError if MOD_IDS is set but is not a comma-separated list of mod IDs.
+
     Used by the server start script and by the build-time INI generator
     (installer/generate-default-ini.py).
     """
@@ -58,7 +61,19 @@ def server_command(*extra_args: str) -> list[str]:
     session_name = os.environ.get("SESSION_NAME") or os.environ.get("INSTANCE_NAME", "")
     session = f"?SessionName={session_name}" if session_name else ""
     url = f"{map_name}?listen{session}?Port={os.environ.get('ASA_PORT') or '27015'}"
-    return [f"{proton_base.rstrip('/')}/proton", "run", "./ArkAscendedServer.exe", url, *extra_args, "-servergamelog"]
+    mod_ids = "".join(os.environ.get("MOD_IDS", "").split())
+    if mod_ids and not re.fullmatch(r"\d+(,\d+)*", mod_ids):
+        raise ConfigError(f'MOD_IDS must be comma-separated CurseForge mod IDs, got "{mod_ids}"')
+    mods = [f"-mods={mod_ids}"] if mod_ids else []
+    return [
+        f"{proton_base.rstrip('/')}/proton",
+        "run",
+        "./ArkAscendedServer.exe",
+        url,
+        *mods,
+        *extra_args,
+        "-servergamelog",
+    ]
 
 
 class ConfigError(ValueError):

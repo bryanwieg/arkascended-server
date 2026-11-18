@@ -20,6 +20,7 @@ You can change any combination of these in one command:
 | `--admin-password` | Admin password for in-game commands |
 | `--server-password` | Password players need to join (blank = public) |
 | `--mods` | CurseForge mod IDs the server loads (e.g. `940975,1386057`) |
+| `--cluster-id` | Cluster the server joins for character, item and dino transfers |
 | `--asa-port` | UDP port players connect to (host and container port kept in sync) |
 | `--rcon-port` | Published RCON host port used by stop/save/backup |
 | `--tz` | Timezone for the container (e.g. `America/New_York`) |
@@ -87,6 +88,20 @@ after the container is recreated (for example by `update instance`).
 Mods add content to the save. Keep the same mods when you restore a save that
 used them; ARK deletes mod items, structures and creatures it can't load the
 next time it saves.
+
+## Join servers into a cluster
+
+Give each server the same cluster ID; players can then upload characters,
+items and dinos on one map and download them on another:
+
+```sh
+ark-cli reconfigure instance --instance island --cluster-id my-cluster --force --restart
+ark-cli reconfigure instance --instance aberration --cluster-id my-cluster --force --restart
+```
+
+All instances in a compose project share the `ark-cluster-1` volume, mounted
+at `Saved/clusters`, where the server keeps transfer data. Servers without a
+cluster ID don't use it.
 
 ## Change ports
 

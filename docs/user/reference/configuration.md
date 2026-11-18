@@ -19,6 +19,10 @@
   passed to the server as `-mods=`. The server downloads and updates them on
   start. Spaces are ignored; any other non-digit makes the container exit
   with a configuration error. Set it with `ark-cli reconfigure instance --mods`.
+- `CLUSTER_ID` — cluster this server joins, passed as `-clusterid=`. Instances
+  with the same ID share character, item and dino transfers through the
+  `ark-cluster-1` volume at `Saved/clusters`. Letters, digits, `_` and `-`
+  only. Set it with `ark-cli reconfigure instance --cluster-id`.
 
 ## Networking
 

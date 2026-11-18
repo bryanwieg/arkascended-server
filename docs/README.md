@@ -1,15 +1,11 @@
 # Documentation
 
-## I want to run an ARK server
+## Running an ARK server
 
-→ **[docs/user/](user/)** — setup guides, how-to recipes, reference, and
-explanations for ARK server admins.
+[docs/user/](user/): tutorials, how-to guides, reference and explanations for
+server admins. Start with [Your first ARK server](user/tutorials/first-server.md).
 
-Start here: **[docs/user/tutorials/first-server.md](user/tutorials/first-server.md)**
+## Contributing
 
-## I want to contribute or understand the code
-
-→ **[docs/dev/](dev/)** — architecture, conventions, test architecture,
-and contributor guides.
-
-Start here: **[docs/dev/tutorials/dev-environment.md](dev/tutorials/dev-environment.md)**
+[docs/dev/](dev/): architecture, conventions, tests, CI and contributor guides.
+Start with [Development environment setup](dev/tutorials/dev-environment.md).

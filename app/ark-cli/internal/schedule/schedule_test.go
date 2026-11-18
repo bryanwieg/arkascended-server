@@ -15,6 +15,7 @@ import (
 
 	"pkg/ark"
 	"pkg/ark/arktest"
+	"pkg/ark/backup"
 	"pkg/ark/schedule"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -1036,5 +1037,38 @@ func overrideSchedulePathsForTest(t *testing.T, root string) {
 	t.Helper()
 	patchAppDepsForTest(t, func(d *core.AppDeps) {
 		d.ScheduleService = schedule.New(root, nil)
+	})
+}
+
+func TestCreateScheduleBackupForCluster(t *testing.T) {
+	tmp := t.TempDir()
+	overrideSchedulePathsForTest(t, tmp)
+	setEnv(t, "COMPOSE_FILE", filepath.Join(tmp, "docker-compose.yaml"))
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	withCluster := types.Services{"asa1": {Name: "asa1", Volumes: []types.ServiceVolumeConfig{
+		{Type: "volume", Source: "ark-cluster-1", Target: backup.ClusterMountPath},
+	}}}
+	captureStdout(t, func() {
+		withScheduleComposeDeps(t, withCluster, func(*core.AppDeps) {}, func() {
+			if err := runCreateScheduleBackup([]string{"--instance", "cluster", "--name", "cluster-hourly", "--cron", "0 * * * *"}); err != nil {
+				t.Fatalf("runCreateScheduleBackup: %v", err)
+			}
+		})
+	})
+	cronBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
+	if err != nil {
+		t.Fatalf("read cron file: %v", err)
+	}
+	if !strings.Contains(string(cronBytes), "create backup --instance cluster") {
+		t.Fatalf("cron file:\n%s", cronBytes)
+	}
+
+	withScheduleComposeDeps(t, emptyServices("asa1"), func(*core.AppDeps) {}, func() {
+		err := runCreateScheduleBackup([]string{"--instance", "cluster", "--name", "no-cluster", "--cron", "0 * * * *"})
+		if !errors.Is(err, backup.ErrNoClusterVolume) {
+			t.Fatalf("got %v", err)
+		}
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	pkgbackup "pkg/ark/backup"
 	"pkg/ark/runtime"
 )
 
@@ -207,6 +208,9 @@ func RunCreate(d *core.AppDeps, args []string) error {
 	}
 	if err := runtime.ValidateComposeName(instance, "instance name"); err != nil {
 		return err
+	}
+	if instance == pkgbackup.ClusterTarget {
+		return pkgbackup.ErrClusterNameReserved
 	}
 
 	composeFile := compose.ResolveComposeFile(*composeFileFlag)

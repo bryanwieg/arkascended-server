@@ -71,6 +71,29 @@ def test_archive_args_includes_save_dir_as_source(common_mod) -> None:
             assert "ShooterGame/Saved" in args[save_dir_idx + 1]
 
 
+def test_archive_args_exact_gzip_command(common_mod) -> None:
+    """archive_args keeps its exact instance command: excludes Logs and clusters, archives Saved."""
+    output = Path("/home/ark-user/maintenance/backup.tar.gz")
+    assert common_mod.archive_args(output) == [
+        "tar",
+        "-czf",
+        str(output),
+        "--exclude=./Logs",
+        "--exclude=./clusters",
+        "-C",
+        str(common_mod.SAVED_DIR),
+        ".",
+    ]
+
+
+def test_tar_create_args_writes_to_dest_with_output_compression(common_mod) -> None:
+    """tar_create_args picks compression from output's name but writes to dest."""
+    output = Path("/out/cluster.tar.zst")
+    dest = Path("/out/cluster.tar.zst.partial")
+    args = common_mod.tar_create_args(output, Path("/data"), ["./skip"], dest=dest)
+    assert args == ["tar", "--zstd", "-cf", str(dest), "--exclude=./skip", "-C", "/data", "."]
+
+
 def _fake_completed(stdout: str = "", stderr: str = "", returncode: int = 0) -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr=stderr)
 

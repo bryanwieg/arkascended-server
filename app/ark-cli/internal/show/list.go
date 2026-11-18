@@ -156,12 +156,12 @@ func backupArchiveDate(archivePath string) string {
 func RunListBackups(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"list backups",
-		[]string{"list backups --instance <instance|all>"},
-		"List backup archives for an instance or all instances.",
+		[]string{"list backups --instance <instance|cluster|all>"},
+		"List backup archives for an instance, the shared cluster data, or all of them.",
 	)
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (required for 'all').")
 	jsonFlag := fs.Bool("json", false, "Output as JSON.")
-	instanceFlag := fs.String("instance", "", "Instance name or 'all'.")
+	instanceFlag := fs.String("instance", "", "Instance name, 'cluster' or 'all'.")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -184,6 +184,7 @@ func RunListBackups(d *core.AppDeps, args []string) error {
 	if len(services) == 0 {
 		return errors.New("Error: compose config has no services.")
 	}
+	services = append(services, backup.ClusterTarget)
 
 	if *jsonFlag {
 		out := make([]core.BackupEntryWithInstanceJSON, 0)

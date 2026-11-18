@@ -32,9 +32,12 @@ GAME_USER_SETTINGS = SAVED_DIR / "Config/WindowsServer/GameUserSettings.ini"
 DEFAULT_GAME_USER_SETTINGS = Path("/home/ark-user/config-defaults/GameUserSettings.ini")
 # Saved/clusters is a separate volume shared by every instance in the cluster. Instance
 # backups and restores leave it alone so restoring one server can't roll back another's
-# cluster transfers. Cluster data has no backup of its own yet.
+# cluster transfers. Cluster data has its own backup target (ark-cluster-backup.py).
 CLUSTER_DIR_NAME = "clusters"
 CLUSTER_DIR = SAVED_DIR / CLUSTER_DIR_NAME
+# Restore stages into and swaps through these, inside the directory being restored (same volume, so renames).
+RESTORE_STAGING_NAME = ".restore-staging"
+RESTORE_PREVIOUS_NAME = ".restore-previous"
 MAINTENANCE_DIR = Path("/home/ark-user/maintenance")
 
 

@@ -64,6 +64,26 @@ completes:
 ark-cli restore backup --instance my-server --archive latest --auto-start
 ```
 
+## Restore the cluster data
+
+The shared cluster data (uploaded characters, items and dinos) has its own
+backups; see [Cluster backups](../explanation/backups.md#cluster-backups).
+Restoring it rolls back transfers for every instance that shares the cluster,
+so stop all of them first:
+
+```sh
+ark-cli stop instance --instance all
+ark-cli list backups --instance cluster
+ark-cli restore backup --instance cluster --archive latest
+```
+
+The restore is refused while any instance that uses the cluster is running,
+and names the ones still up. It first saves the current cluster data as
+`cluster-pre-restore-<timestamp>.tar.gz` in `backups/cluster/`, then swaps the
+restored files in the same way as an instance restore. `--archive` takes a
+backup name or `latest` without an instance prefix, and `--auto-start` is not
+available: start the instances yourself afterwards.
+
 ## Verify a backup before restoring
 
 To check that a backup archive is not corrupted before restoring:

@@ -4,6 +4,7 @@ package show
 
 import (
 	"ark-cli/internal/core"
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,7 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"pkg/ark"
+	"pkg/ark/arktest"
 	"pkg/ark/backup"
+
+	"github.com/compose-spec/compose-go/v2/types"
 )
 
 // TestListBackupsOutputsSorted verifies backup listing is ordered newest-first.
@@ -103,4 +108,45 @@ func TestListBackupSortKeyFallsBackToMtime(t *testing.T) {
 	if files[0] != newer {
 		t.Fatalf("expected %s first, got %s", newer, files[0])
 	}
+}
+
+// TestListBackupsAllIncludesCluster verifies 'all' also lists the shared cluster backups.
+// - Expect: the cluster archive appears with instance "cluster" in table and JSON output.
+func TestListBackupsAllIncludesCluster(t *testing.T) {
+	backupRoot := t.TempDir()
+	for _, target := range []string{"asa1", backup.ClusterTarget} {
+		dir := filepath.Join(backupRoot, target)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, target+"-backup-20240101-120000.tar.gz"), []byte("data"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	setEnv(t, "ARK_BACKUP_DIR", backupRoot)
+	setEnv(t, "COMPOSE_FILE", "docker-compose.yaml")
+	withPatchedAppDeps(t, func(d *core.AppDeps) {
+		d.ComposeService = &arktest.MockCompose{
+			LoadProjectFn: func(context.Context, string) (*ark.ComposeProject, error) {
+				return fakeProject(types.Services{"asa1": {Name: "asa1"}}), nil
+			},
+		}
+	}, func() {
+		table := captureStdout(t, func() {
+			if err := RunListBackups(core.CurrentAppDeps(), []string{"--instance", "all"}); err != nil {
+				t.Fatalf("RunListBackups: %v", err)
+			}
+		})
+		if !strings.Contains(table, "cluster-backup-20240101-120000.tar.gz") || !strings.Contains(table, "asa1-backup-20240101-120000.tar.gz") {
+			t.Fatalf("table:\n%s", table)
+		}
+		out := captureStdout(t, func() {
+			if err := RunListBackups(core.CurrentAppDeps(), []string{"--instance", "all", "--json"}); err != nil {
+				t.Fatalf("RunListBackups --json: %v", err)
+			}
+		})
+		if !strings.Contains(out, `"instance": "cluster"`) {
+			t.Fatalf("json:\n%s", out)
+		}
+	})
 }

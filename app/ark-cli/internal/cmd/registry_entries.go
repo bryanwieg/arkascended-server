@@ -32,7 +32,7 @@ type CommandRouteParseSpec struct {
 
 var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "create", Object: "instance", Route: "create", Handler: create.RunCreate, TopLevelHelp: []string{"create instance --name <name>               Create or extend a docker-compose.yaml with an ARK server"}},
-	{Verb: "create", Object: "backup", Route: "backup", Handler: backup.RunBackup, TopLevelHelp: []string{"create backup --instance <inst|all>         Create backup archives"}},
+	{Verb: "create", Object: "backup", Route: "backup", Handler: backup.RunBackup, TopLevelHelp: []string{"create backup --instance <inst|cluster|all>  Create backup archives"}},
 	{Verb: "create", Object: "schedule", Route: "create_schedule", Handler: schedule.RunCreateSchedule, TopLevelHelp: []string{"create schedule backup --instance <inst> --name <name>  Create a managed backup schedule"}},
 	{Verb: "edit", Object: "ini", Route: "edit_ini", Handler: ini.RunEditIni, TopLevelHelp: []string{"edit ini --instance <inst> --file <ini>     Edit Game.ini or GameUserSettings.ini in the container"}},
 	{Verb: "show", Object: "ini", Route: "show_ini", Handler: ini.RunShowIni, TopLevelHelp: []string{"show ini --instance <inst> --file <ini>     Print Game.ini or GameUserSettings.ini to the terminal"}},
@@ -51,10 +51,11 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "logs", Object: "instance", Route: "logs", Handler: compose.RunLogs, TopLevelHelp: []string{"logs instance --instance <inst>             Show container logs for an instance"}},
 	{Verb: "wait", Object: "instance", Route: "wait", Handler: health.RunWait, TopLevelHelp: []string{"wait instance --instance <inst> --for <state>  Wait for ready or stopped state"}},
 	{Verb: "validate", Object: "backup", Route: "validate_backup", Handler: backup.RunVerifyBackup, TopLevelHelp: []string{"validate backup --instance <inst> --backup <backup>  Validate SQLite integrity inside a backup archive"}},
-	{Verb: "prune", Object: "backups", Route: "prune_backups", Handler: backup.RunPruneBackups, TopLevelHelp: []string{"prune backups --instance <inst|all>         Apply retention policies without creating backups"}},
+	{Verb: "prune", Object: "backups", Route: "prune_backups", Handler: backup.RunPruneBackups, TopLevelHelp: []string{"prune backups --instance <inst|cluster|all>  Apply retention policies without creating backups"}},
 	{Verb: "restore", Object: "backup", Route: "restore", Handler: backup.RunRestore, TopLevelHelp: []string{
 		"restore backup --instance <inst> --archive <archive>  Restore to an existing instance from a backup archive",
 		"restore backup --new-instance <inst> --archive <archive>  Create a new instance and restore from a backup archive",
+		"restore backup --instance cluster --archive <archive>  Restore the shared cluster data from a backup archive",
 	}},
 	{Verb: "show", Object: "instance", Route: "show_instance", Handler: show.RunShowInstance, TopLevelHelp: []string{"show instance --instance <inst>             Show instance status and config summary"}},
 	{Verb: "show", Object: "backup", Route: "show_backup", Handler: show.RunShowBackup, TopLevelHelp: []string{"show backup --instance <inst> --backup <backup>  Show backup archive metadata"}},
@@ -76,7 +77,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "check", Object: "instance", Route: "check_instance", Handler: health.RunCheckInstance, TopLevelHelp: []string{"check instance --instance <inst>            Check instance health (running + ready)"}},
 	{Verb: "check", Object: "schedule", Route: "check_schedule", Handler: schedule.RunCheckSchedule, TopLevelHelp: []string{"check schedule --name <name>                Check schedule running status and last result"}},
 	{Verb: "list", Object: "instances", Route: "list_instances", Handler: show.RunListInstances, TopLevelHelp: []string{"list instances                              List instances in the compose project"}},
-	{Verb: "list", Object: "backups", Route: "list_backups", Handler: show.RunListBackups, TopLevelHelp: []string{"list backups --instance <inst|all>          List backups"}},
+	{Verb: "list", Object: "backups", Route: "list_backups", Handler: show.RunListBackups, TopLevelHelp: []string{"list backups --instance <inst|cluster|all>   List backups"}},
 	{Verb: "list", Object: "schedules", Route: "list_schedules", Handler: schedule.RunListSchedules, TopLevelHelp: []string{"list schedules                              List configured schedules"}},
 	{Verb: "teardown", Object: "instances", Route: "teardown_instances", Handler: remove.RunTeardown, TopLevelHelp: []string{"teardown instances                          Tear down the full compose project (compose down)"}},
 	{Verb: "remove", Object: "instance", Route: "remove", Handler: remove.RunRemove, TopLevelHelp: []string{"remove instance --instance <inst|all>       Remove one instance from compose and delete its saved volume"}},

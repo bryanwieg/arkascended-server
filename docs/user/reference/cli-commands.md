@@ -153,10 +153,22 @@ When free space falls below ~5 GiB, retention prunes aggressively and logs
 warnings; startup may be blocked if there is not enough space to keep even
 one backup for a service.
 
-Back up all instances:
+Back up all instances, then the shared cluster data:
 
 ```sh
 ark-cli create backup --instance all
+```
+
+`cluster` is a reserved target for the shared cluster volume (uploaded
+characters, items and dinos). It works with `create backup`, `restore backup`,
+`list backups`, `prune backups` and backup schedules; archives go to
+`<compose-dir>/backups/cluster/`. No instance can be named `cluster`.
+See [Cluster backups](../explanation/backups.md#cluster-backups).
+
+```sh
+ark-cli create backup --instance cluster
+ark-cli list backups --instance cluster
+ark-cli prune backups --instance cluster
 ```
 
 Restore a named backup for an instance:
@@ -237,6 +249,18 @@ archive contains it.
 If the archive contains embedded metadata, it is logged during restore so
 you can verify which backup is being applied.
 The instance must be stopped before restore. Stop it first with `ark-cli stop instance --instance <name>`, then restore.
+
+Restore the shared cluster data (every instance that uses the cluster must be
+stopped; the error names any that are running):
+
+```sh
+ark-cli restore backup --instance cluster --archive latest
+```
+
+With `cluster`, `--archive` takes a backup name or `latest` without an
+`<instance>:` prefix, and `--auto-start` is rejected. A
+`cluster-pre-restore-<timestamp>.tar.gz` is written first.
+`validate backup` and `show backup` do not apply to cluster archives.
 
 ## Instance visibility and operations
 
@@ -510,6 +534,9 @@ Create a backup schedule:
 ```sh
 ark-cli create schedule backup --instance asa-server-1 --name nightly-asa1 --cron "0 3 * * *"
 ```
+
+`--instance` takes an instance name, `cluster` or `all` (`all` includes the
+cluster), here and in `update schedule`.
 
 List and inspect schedules:
 

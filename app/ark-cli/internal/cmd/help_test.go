@@ -132,13 +132,13 @@ func TestSubcommandHelpShowsCanonicalSyntax(t *testing.T) {
 			name:  "prune backups",
 			run:   func(args []string) error { return backup.RunPruneBackups(core.CurrentAppDeps(), args) },
 			args:  []string{"-h"},
-			wants: []string{"prune backups --instance <instance|all>"},
+			wants: []string{"prune backups --instance <instance|cluster|all>"},
 		},
 		{
 			name:  "backup",
 			run:   func(args []string) error { return backup.RunBackup(core.CurrentAppDeps(), args) },
 			args:  []string{"-h"},
-			wants: []string{"create backup --instance <instance|all>"},
+			wants: []string{"create backup --instance <instance|cluster|all>"},
 		},
 		{
 			name:  "show instance",
@@ -198,7 +198,7 @@ func TestSubcommandHelpShowsCanonicalSyntax(t *testing.T) {
 			name:  "restore",
 			run:   func(args []string) error { return backup.RunRestore(core.CurrentAppDeps(), args) },
 			args:  []string{"-h"},
-			wants: []string{"restore backup --instance <name> --archive", "restore backup --new-instance <name> --archive"},
+			wants: []string{"restore backup --instance <name> --archive", "restore backup --new-instance <name> --archive", "restore backup --instance cluster --archive <backup|latest>"},
 		},
 		{
 			name:  "remove",
@@ -240,7 +240,7 @@ func TestSubcommandHelpShowsCanonicalSyntax(t *testing.T) {
 			name:  "list backups",
 			run:   func(args []string) error { return show.RunListBackups(core.CurrentAppDeps(), args) },
 			args:  []string{"-h"},
-			wants: []string{"list backups --instance <instance|all>"},
+			wants: []string{"list backups --instance <instance|cluster|all>"},
 		},
 	}
 

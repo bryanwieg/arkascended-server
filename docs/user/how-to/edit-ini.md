@@ -18,6 +18,20 @@ ark-cli edit ini --instance my-server --file game               # Game.ini
 - `Game.ini` is created on first edit; ARK never creates it.
 - Changes apply on the next start.
 
+## Change one key
+
+`set ini` changes a single key without an editor, and reports the old value:
+
+```sh
+ark-cli set ini --instance my-server --file gus --section ServerSettings --key MaxPlayers --value 20
+```
+
+If the key appears more than once, it stops and lists the lines, marking which
+ones ARK wrote. Some keys are lists (one engram or item per line), so check
+before rerunning with `--replace-all`, which keeps one line and saves the old
+file as `GameUserSettings.ini.bak`. Details:
+[set ini](../reference/cli-commands.md#set-ini).
+
 ## Running server
 
 `edit ini` refuses while the instance runs, because the server can overwrite

@@ -60,7 +60,8 @@ The build process:
 5. **Cleanup:** `ark-server-files:<id>` is removed. Cleanup after start/update
    keeps each instance's current and previous image; older `ark-server` images,
    all `ark-server-files` images and base tags other than the current one are
-   removed.
+   removed. No tag of an image any container uses (`ImagesInUse`, any compose
+   project) is removed.
 
 ### Base image
 

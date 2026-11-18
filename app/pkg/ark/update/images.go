@@ -16,8 +16,8 @@ import (
 // to, every server-files image (only needed during a build), base image tags other
 // than the current recipe's, then dangling images and unused build cache. Only repositories of
 // ARK images (labelled io.ark.server.build_id) are touched; other services' images
-// are left alone. Images a container
-// uses are never deleted (see ark.ContainerEngine.RemoveImage). Returns the removed
+// are left alone. No tag of an image a container uses (any project, running or
+// stopped) is removed. Returns the removed
 // references; errors are collected so one failure doesn't stop the rest.
 func (s *Service) RemoveOldImages(ctx context.Context, keep []string) ([]string, error) {
 	keepRefs := map[string]bool{}
@@ -43,6 +43,12 @@ func (s *Service) RemoveOldImages(ctx context.Context, keep []string) ([]string,
 	if len(repos) == 0 {
 		return nil, nil
 	}
+	// RemoveImage only refuses an in-use image's last tag, so check use here: otherwise
+	// an image only another compose project's stopped container uses loses its other tags.
+	inUse, err := s.engine.ImagesInUse(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list images containers use: %w", err)
+	}
 	repos = append(repos, FilesImageRepo, arkcontainer.BaseImageRepo)
 	keepRefs[arkcontainer.BaseImageRef()] = true // older base tags only untag: kept images still use their layers
 
@@ -61,7 +67,7 @@ func (s *Service) RemoveOldImages(ctx context.Context, keep []string) ([]string,
 			}
 		}
 		for _, ref := range slices.Sorted(maps.Keys(tags)) {
-			if keepIDs[tags[ref]] {
+			if keepIDs[tags[ref]] || inUse[tags[ref]] {
 				continue
 			}
 			err := s.engine.RemoveImage(ctx, ref)

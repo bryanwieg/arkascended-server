@@ -20,6 +20,7 @@ Defined in `app/pkg/ark/engine.go`. Methods:
 - `ReadFileFromImage` — read a file from an image's filesystem
 - `ImageTags` — list a repository's local tags and their image IDs
 - `RemoveImage` — remove one tag without force; never deletes an image a container uses (`ErrConflict`)
+- `ImagesInUse` — IDs of the images any container (running or stopped, any project) uses
 - `PruneDangling` — remove untagged images and build cache nothing uses
 - `VolumeMountpoint` — get the mount path of a named volume
 - `RemoveVolume` — remove a named volume

@@ -46,7 +46,7 @@ ark-cli create backup --instance cluster
   times, then the backup fails rather than keep a mixed copy.
 - Restoring the cluster rolls back transfers for every instance that shares
   it, so all of them must be stopped first. See
-  [Restore the cluster data](../how-to/restore-backup.md#restore-the-cluster-data).
+  [Restore the cluster data](../how-to/restore-backup.md#restore-cluster-data).
 - `validate backup` and `show backup` apply to instance backups only. A
   cluster backup is checked once, right after it is written, by listing the
   archive.

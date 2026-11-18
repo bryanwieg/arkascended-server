@@ -107,14 +107,14 @@ Handlers pass `d.Ctx`.
 
 ## Logging and CLI output
 
-| Kind | Call through | Stream | In `--log-file` tee? |
+| Kind | Call through | Stream | In `-v FILE` log? |
 |---|---|---|---|
 | User text | `core.Infof` / `core.Infoln` | stdout | yes (`[cli-stdout]`) |
-| Structured output | `core.PrintJSONOutput(v)` | stdout | yes (`[json]`) |
+| Structured output | `core.PrintJSONOutput(v)` | stdout | no |
 | Warning | `core.Warnf` / `core.Warnln` | stderr | yes (`[cli-stderr]`) |
 | Error (terminal) | `core.Die(message)` | stderr + exit 1 | yes (`[cli-stderr]`) |
 | Prompt | `core.Promptf` | stderr | no (transient) |
-| Operational event | injected `*slog.Logger` (`Debug`/`Info`/`Warn`) | stderr (text handler) | yes (`[event]`) |
+| Operational event | injected `*slog.Logger` (`Debug`/`Info`/`Warn`) | stderr (text handler) | no |
 | Spinner frame | `compose` spinner (`start_progress_spinner.go`) | stdout (TTY only) | no (transient) |
 
 Rules:
@@ -140,7 +140,7 @@ Container scripts write all output through
 `Warning:`/`Error:` prefix, so leave it out of `msg`). All three mirror to
 PID 1's fds so output shows in both `docker compose exec` and `docker logs`.
 
-Rendering modes (verbosity, `--json`, `--log-file`, TTY detection) and
+Rendering modes (verbosity, `--json`, `-v FILE`, TTY detection) and
 rationale: [logging-architecture.md](../explanation/logging-architecture.md).
 
 ## Tests

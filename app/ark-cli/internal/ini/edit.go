@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"pkg/ark"
-	"pkg/ark/runtime"
 )
 
 const (
@@ -22,7 +21,8 @@ type IniFileSpec struct {
 	Filename string
 }
 
-// RunEditIni opens an instance INI file inside the container (defaults to nano).
+// RunEditIni opens an instance INI file in a one-off container (defaults to nano); a running
+// instance is stopped first and started again afterwards, as ARK rewrites the file when it stops.
 func RunEditIni(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"edit ini",
@@ -32,8 +32,7 @@ func RunEditIni(d *core.AppDeps, args []string) error {
 	instanceFlag := fs.String("instance", "", "Instance name.")
 	fileFlag := fs.String("file", "", "INI file to edit: game or gameusersettings.")
 	editorFlag := fs.String("editor", "", "Editor command override (default: nano).")
-	force := fs.Bool("force", false, "Allow editing while the instance is running (restart required for changes to take effect).")
-	restartNow := fs.Bool("restart", false, "Restart the instance after saving changes (only applies when running).")
+	restartNow := fs.Bool("restart", false, "If the instance is running: stop it (saving the world), open the editor, start it again.")
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
@@ -57,42 +56,20 @@ func RunEditIni(d *core.AppDeps, args []string) error {
 	if err != nil {
 		return err
 	}
-	if running && !*force {
-		return errors.New("Error: cannot edit config while service is running. Use --force to override.")
+	if running && !*restartNow {
+		return fmt.Errorf("Error: %s is running, and ARK rewrites its INI files when it stops. Rerun with --restart to stop it, edit the file and start it again.", instance)
 	}
-
-	if running {
-		if err := runIniEditorInRunningContainer(composeFile, instance, fileSpec, editorName); err != nil {
+	edit := func() error {
+		if err := runIniEditorInEphemeralContainer(composeFile, instance, fileSpec, editorName); err != nil {
 			return err
 		}
 		core.Infof("Changes to %s saved.\n", fileSpec.Filename)
-		if *restartNow {
-			core.Infof("Restarting %s...\n", instance)
-			if err := compose.DoRestartStopInstance(d, runtime.StopCommandRequest{
-				Instance:        instance,
-				ComposeFileFlag: *composeFileFlag,
-				Timeout:         -1, // default grace so the server saves
-			}); err != nil {
-				return err
-			}
-			if err := compose.DoRestartStartInstance(d, runtime.StartCommandRequest{
-				Instance:        instance,
-				ComposeFileFlag: *composeFileFlag,
-				WaitTimeout:     compose.DefaultStartReadyWaitTimeout,
-			}); err != nil {
-				return err
-			}
-		} else {
-			core.Infof("You must restart the server for changes to take effect.\n")
-		}
 		return nil
 	}
-
-	if err := runIniEditorInEphemeralContainer(composeFile, instance, fileSpec, editorName); err != nil {
-		return err
+	if running {
+		return withInstanceStopped(d, instance, *composeFileFlag, edit)
 	}
-	core.Infof("Changes to %s saved successfully.\n", fileSpec.Filename)
-	return nil
+	return edit()
 }
 
 // ParseIniFileSpec parses the CLI --file flag value into an IniFileSpec.
@@ -116,12 +93,6 @@ func ResolveIniEditor(override string) string {
 		return override
 	}
 	return "nano"
-}
-
-func runIniEditorInRunningContainer(composeFile, instance string, fileSpec IniFileSpec, editorName string) error {
-	return core.CurrentAppDeps().ComposeService.ExecInteractive(core.CurrentAppDeps().Context(), composeFile, instance,
-		[]string{"/bin/sh", "-lc", IniEditorShellScript(fileSpec, editorName)},
-	)
 }
 
 func runIniEditorInEphemeralContainer(composeFile, instance string, fileSpec IniFileSpec, editorName string) error {
@@ -177,6 +148,12 @@ func IniEditorShellScript(fileSpec IniFileSpec, editorName string) string {
 		"  exit 127",
 		"fi",
 	}
+	// History (ark-ini.py track): changes nobody recorded first, then the edit; never blocks editing.
+	track := func(by string) string {
+		return "/usr/bin/python3.14 " + iniScriptPath + " track --by " + by +
+			" || echo 'Warning: could not record the INI history.' >&2"
+	}
+	lines = append(lines, track("outside"))
 	lines = append(lines, prepare...)
-	return strings.Join(append(lines, "exec "+qEditor+" "+qPath), "\n")
+	return strings.Join(append(lines, qEditor+" "+qPath, track("edit")), "\n")
 }

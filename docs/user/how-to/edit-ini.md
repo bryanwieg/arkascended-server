@@ -34,15 +34,13 @@ file as `GameUserSettings.ini.bak`. Details:
 
 ## Running server
 
-`edit ini` refuses while the instance runs, because the server can overwrite
-the file. Override with `--force`; add `--restart` to restart after the
-editor exits:
+`edit ini` and `set ini` refuse while the instance runs: ARK rewrites its INI
+files when it stops, which would undo a change made while it ran. `--restart`
+stops the instance (saving the world), makes the change and starts it again:
 
 ```sh
-ark-cli edit ini --instance my-server --file gameusersettings --force --restart
+ark-cli edit ini --instance my-server --file gameusersettings --restart
 ```
-
-Without `--restart`, run `ark-cli restart instance --instance my-server`.
 
 ## Keys managed from the environment
 

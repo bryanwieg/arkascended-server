@@ -261,8 +261,10 @@ Flags: `--instance` (required), `--compose-file`.
 ### edit ini
 
 Open an INI file in an editor inside the container (running container, or a
-one-off container if stopped), so volume ownership stays correct. Refuses a
-running instance unless `--force`. `--file gameusersettings` refuses until the
+one-off container), so volume ownership stays correct. Refuses a running
+instance unless `--restart`, which stops it (saving the world), opens the editor
+and starts it again; ARK rewrites its INI files when it stops, so editing
+while it runs could be undone. `--file gameusersettings` refuses until the
 file exists (created on the instance's first start); `Game.ini` is created by
 editing it.
 
@@ -271,8 +273,7 @@ editing it.
 | `--instance` | required | |
 | `--file` | required | `game` (Game.ini), `gameusersettings` or `gus` (GameUserSettings.ini). |
 | `--editor` | `nano` | Editor command in the container. The image ships only `nano`. |
-| `--force` | `false` | Allow editing while running. |
-| `--restart` | `false` | With `--force` on a running instance: restart after saving. |
+| `--restart` | `false` | On a running instance: stop, edit, start. |
 | `--compose-file` | | |
 
 ### set ini

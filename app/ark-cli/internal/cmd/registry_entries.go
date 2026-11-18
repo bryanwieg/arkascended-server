@@ -78,6 +78,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "check", Object: "schedule", Route: "check_schedule", Handler: schedule.RunCheckSchedule, TopLevelHelp: []string{"check schedule --name <name>                Check schedule running status and last result"}},
 	{Verb: "list", Object: "instances", Route: "list_instances", Handler: show.RunListInstances, TopLevelHelp: []string{"list instances                              List instances in the compose project"}},
 	{Verb: "list", Object: "backups", Route: "list_backups", Handler: show.RunListBackups, TopLevelHelp: []string{"list backups --instance <inst|cluster|all>   List backups"}},
+	{Verb: "list", Object: "players", Route: "list_players", Handler: compose.RunListPlayers, TopLevelHelp: []string{"list players --instance <inst|all>          List players connected to running instances"}},
 	{Verb: "list", Object: "schedules", Route: "list_schedules", Handler: schedule.RunListSchedules, TopLevelHelp: []string{"list schedules                              List configured schedules"}},
 	{Verb: "teardown", Object: "instances", Route: "teardown_instances", Handler: remove.RunTeardown, TopLevelHelp: []string{"teardown instances                          Tear down the full compose project (compose down)"}},
 	{Verb: "remove", Object: "instance", Route: "remove", Handler: remove.RunRemove, TopLevelHelp: []string{"remove instance --instance <inst>           Remove one instance from compose and delete its saved volume"}},

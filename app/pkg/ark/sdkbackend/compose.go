@@ -1,7 +1,9 @@
 package sdkbackend
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/cli/cli"
 	"github.com/docker/cli/cli/command"
 	cliflags "github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v5/pkg/api"
@@ -24,8 +27,9 @@ import (
 
 // SDKCompose implements ark.ComposeService using the Docker Compose SDK.
 type SDKCompose struct {
-	svc    api.Compose
-	logger *slog.Logger
+	svc       api.Compose
+	dockerCli command.Cli
+	logger    *slog.Logger
 
 	mu       sync.Mutex
 	projects map[string]*projectCache // keyed by absolute compose file path
@@ -77,9 +81,10 @@ func newSDKCompose(logger *slog.Logger, socketPath string) (*SDKCompose, error) 
 		return nil, fmt.Errorf("compose service: %w", err)
 	}
 	return &SDKCompose{
-		svc:      svc,
-		logger:   logger,
-		projects: make(map[string]*projectCache),
+		svc:       svc,
+		dockerCli: dockerCli,
+		logger:    logger,
+		projects:  make(map[string]*projectCache),
 	}, nil
 }
 
@@ -286,6 +291,33 @@ func (c *SDKCompose) AllServices(ctx context.Context, composeFile string) (map[s
 
 // --- Exec ---
 
+// withStreams returns a compose service whose container output goes to out and
+// errOut. The shared c.svc discards stdout, so every call that must return or
+// show container output uses one of these.
+func (c *SDKCompose) withStreams(out, errOut io.Writer) (api.Compose, error) {
+	return compose.NewComposeService(c.dockerCli, compose.WithOutputStream(out), compose.WithErrorStream(errOut))
+}
+
+// exitStatusIsResult drops the SDK's message-less error for a non-zero container
+// exit: the code is in ExecResult.ExitCode, which callers check.
+func exitStatusIsResult(err error) error {
+	var status cli.StatusError
+	var statusPtr *cli.StatusError
+	if errors.As(err, &status) || errors.As(err, &statusPtr) {
+		return nil
+	}
+	return err
+}
+
+// interactiveService attaches the CLI's own stdio; a TTY session needs stdin to be a terminal.
+// Stdin stays the docker CLI's own stream: a wrapped reader would hide the terminal fd.
+func (c *SDKCompose) interactiveService() (api.Compose, error) {
+	if !c.dockerCli.In().IsTerminal() {
+		return nil, errors.New("Error: this command needs an interactive terminal (stdin is not a terminal).")
+	}
+	return c.withStreams(os.Stdout, os.Stderr)
+}
+
 func (c *SDKCompose) Exec(ctx context.Context, composeFile, service string, command []string, opts ark.ExecOptions) (ark.ExecResult, error) {
 	c.logger.Debug("Exec", "file", composeFile, "service", service, "cmd", command)
 	_, name, err := c.loadProject(ctx, composeFile)
@@ -293,17 +325,20 @@ func (c *SDKCompose) Exec(ctx context.Context, composeFile, service string, comm
 		return ark.ExecResult{}, err
 	}
 
-	exitCode, err := c.svc.Exec(ctx, name, api.RunOptions{
+	// With a TTY the container has one output stream, so stderr arrives in Stdout.
+	var stdout, stderr bytes.Buffer
+	svc, err := c.withStreams(&stdout, &stderr)
+	if err != nil {
+		return ark.ExecResult{}, err
+	}
+	exitCode, err := svc.Exec(ctx, name, api.RunOptions{
 		Service:     service,
 		Command:     command,
 		Tty:         !opts.DisableTTY,
 		Environment: opts.Env,
 		User:        opts.User,
 	})
-	if err != nil {
-		return ark.ExecResult{ExitCode: exitCode}, err
-	}
-	return ark.ExecResult{ExitCode: exitCode}, nil
+	return ark.ExecResult{ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String()}, exitStatusIsResult(err)
 }
 
 func (c *SDKCompose) ExecInteractive(ctx context.Context, composeFile, service string, command []string) error {
@@ -312,7 +347,11 @@ func (c *SDKCompose) ExecInteractive(ctx context.Context, composeFile, service s
 	if err != nil {
 		return err
 	}
-	_, err = c.svc.Exec(ctx, name, api.RunOptions{
+	svc, err := c.interactiveService()
+	if err != nil {
+		return err
+	}
+	_, err = svc.Exec(ctx, name, api.RunOptions{
 		Service:     service,
 		Command:     command,
 		Tty:         true,
@@ -335,8 +374,13 @@ func (c *SDKCompose) RunOneOff(ctx context.Context, composeFile, service string,
 	runOpts := c.buildRunOptions(service, command, opts)
 	runOpts.Tty = !opts.DisableTTY
 
-	exitCode, err := c.svc.RunOneOffContainer(ctx, project, runOpts)
-	return ark.ExecResult{ExitCode: exitCode}, err
+	var stdout, stderr bytes.Buffer
+	svc, err := c.withStreams(&stdout, &stderr)
+	if err != nil {
+		return ark.ExecResult{}, err
+	}
+	exitCode, err := svc.RunOneOffContainer(ctx, project, runOpts)
+	return ark.ExecResult{ExitCode: exitCode, Stdout: stdout.String(), Stderr: stderr.String()}, exitStatusIsResult(err)
 }
 
 func (c *SDKCompose) RunOneOffDetached(ctx context.Context, composeFile, service, containerName string, command []string, opts ark.RunOptions) error {
@@ -373,7 +417,11 @@ func (c *SDKCompose) RunOneOffInteractive(ctx context.Context, composeFile, serv
 	runOpts.Tty = true
 	runOpts.Interactive = true
 
-	_, err = c.svc.RunOneOffContainer(ctx, project, runOpts)
+	svc, err := c.interactiveService()
+	if err != nil {
+		return err
+	}
+	_, err = svc.RunOneOffContainer(ctx, project, runOpts)
 	return err
 }
 

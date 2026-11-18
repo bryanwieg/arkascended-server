@@ -110,3 +110,16 @@ type ScheduleDetailJSON struct {
 	LastFinishedAt string `json:"last_finished_at,omitempty"`
 	LastError      string `json:"last_error,omitempty"`
 }
+
+// PlayerJSON is one connected player from RCON ListPlayers.
+type PlayerJSON struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+}
+
+// InstancePlayersJSON is `list players --json` output for one instance.
+type InstancePlayersJSON struct {
+	Instance string       `json:"instance"`
+	Players  []PlayerJSON `json:"players"`
+	Error    string       `json:"error,omitempty"`
+}

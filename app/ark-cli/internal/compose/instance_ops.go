@@ -91,20 +91,9 @@ func RunSave(d *core.AppDeps, args []string) error {
 		return err
 	}
 
-	// ark-rcon.py reads SERVER_ADMIN_PASSWORD from the container env, so the password stays off argv.
-	rconCmd := []string{"/usr/bin/python3.14", "/home/ark-user/scripts/runtime/ark-rcon.py", "saveworld"}
 	failures := 0
 	for _, service := range services {
-		var envVars []string
-		for _, key := range []string{"RCON_HOST", "RCON_PORT"} {
-			if v := os.Getenv(key); v != "" {
-				envVars = append(envVars, fmt.Sprintf("%s=%s", key, v))
-			}
-		}
-		result, err := d.ComposeService.Exec(d.Context(), composeFile, service,
-			rconCmd,
-			ark.ExecOptions{DisableTTY: true, Env: envVars},
-		)
+		result, err := rconExec(d, composeFile, service, "saveworld")
 		if err != nil {
 			return err
 		}
@@ -117,6 +106,20 @@ func RunSave(d *core.AppDeps, args []string) error {
 	}
 	core.Infof("Triggered saveworld for %d service(s): %s\n", len(services), strings.Join(services, ", "))
 	return nil
+}
+
+// rconExec runs one RCON command in service through ark-rcon.py. The script reads
+// SERVER_ADMIN_PASSWORD from the container env, so the password stays off argv;
+// RCON_HOST/RCON_PORT on the host override the container's values.
+func rconExec(d *core.AppDeps, composeFile, service string, command ...string) (ark.ExecResult, error) {
+	var envVars []string
+	for _, key := range []string{"RCON_HOST", "RCON_PORT"} {
+		if v := os.Getenv(key); v != "" {
+			envVars = append(envVars, fmt.Sprintf("%s=%s", key, v))
+		}
+	}
+	argv := append([]string{"/usr/bin/python3.14", "/home/ark-user/scripts/runtime/ark-rcon.py"}, command...)
+	return d.ComposeService.Exec(d.Context(), composeFile, service, argv, ark.ExecOptions{DisableTTY: true, Env: envVars})
 }
 
 func RunLogs(d *core.AppDeps, args []string) error {

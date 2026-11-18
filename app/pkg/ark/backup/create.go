@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"pkg/ark"
@@ -139,7 +140,11 @@ func (s *Service) runBackupInRunning(ctx context.Context, composeFile, service, 
 		return err
 	}
 	if result.ExitCode != 0 {
-		return fmt.Errorf("Error: backup command failed for service %s with exit code %d", service, result.ExitCode)
+		detail := strings.TrimSpace(result.Stderr)
+		if detail == "" {
+			detail = strings.TrimSpace(result.Stdout)
+		}
+		return fmt.Errorf("backup script exited %d: %s", result.ExitCode, detail)
 	}
 	return nil
 }

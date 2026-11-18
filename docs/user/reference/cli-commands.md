@@ -150,6 +150,18 @@ Run RCON `saveworld` in each running target.
 
 Flags: `--instance` (required; instance or `all`), `--compose-file`.
 
+### list players
+
+List players connected to each target via RCON `ListPlayers` (name and EOS
+ID). With `--instance all`, stopped instances are listed as `not running`; a
+named instance that is stopped, or an RCON failure, exits non-zero.
+
+Flags: `--instance` (required; instance or `all`), `--json`, `--compose-file`.
+
+```sh
+ark-cli list players --instance all
+```
+
 ### update instance
 
 Compare each instance's image label `io.ark.server.build_id` with Steam's

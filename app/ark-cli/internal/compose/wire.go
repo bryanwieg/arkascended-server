@@ -12,7 +12,6 @@ import (
 func WireDefaults(deps *core.AppDeps) {
 	deps.Runtime.RunCommand = core.RunCommandImpl
 	deps.Runtime.LookPath = core.LookPathImpl
-	deps.Runtime.RconEnvArgs = RconEnvArgsImpl
 	deps.RestartStartInstance = func(req runtime.StartCommandRequest) error {
 		return RunStartRequest(core.CurrentAppDeps(), req)
 	}

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -120,6 +119,24 @@ func TestComposeService(t *testing.T, svc ark.ComposeService) {
 		}
 	})
 
+	t.Run("ServiceContainers", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		containers, err := svc.ServiceContainers(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("ServiceContainers: %v", err)
+		}
+		c, ok := containers["test-svc"]
+		if !ok || c.Name == "" || c.State != "running" {
+			t.Fatalf("expected running test-svc with a name, got %+v", containers)
+		}
+	})
+
 	t.Run("Exec", func(t *testing.T) {
 		composeFile := writeTestComposeFile(t)
 		t.Cleanup(func() {
@@ -130,12 +147,15 @@ func TestComposeService(t *testing.T, svc ark.ComposeService) {
 			t.Fatalf("Up: %v", err)
 		}
 
-		result, err := svc.Exec(ctx, composeFile, "test-svc", []string{"echo", "hello-exec"}, ark.ExecOptions{DisableTTY: true})
+		result, err := svc.Exec(ctx, composeFile, "test-svc", []string{"/bin/sh", "-c", "echo hello-exec; echo exec-err >&2; exit 3"}, ark.ExecOptions{DisableTTY: true})
 		if err != nil {
 			t.Fatalf("Exec: %v", err)
 		}
-		if result.ExitCode != 0 {
-			t.Fatalf("expected exit code 0, got %d", result.ExitCode)
+		if result.ExitCode != 3 {
+			t.Fatalf("expected exit code 3, got %d", result.ExitCode)
+		}
+		if result.Stdout != "hello-exec\n" || result.Stderr != "exec-err\n" {
+			t.Fatalf("output not captured: stdout=%q stderr=%q", result.Stdout, result.Stderr)
 		}
 	})
 
@@ -204,7 +224,7 @@ func TestComposeService(t *testing.T, svc ark.ComposeService) {
 		})
 
 		result, err := svc.RunOneOff(ctx, composeFile, "test-svc",
-			[]string{"-c", "echo oneoff-test"},
+			[]string{"-c", "echo oneoff-test; echo oneoff-err >&2"},
 			ark.RunOptions{Remove: true, NoDeps: true, DisableTTY: true, Entrypoint: "/bin/sh"})
 		if err != nil {
 			t.Fatalf("RunOneOff: %v", err)
@@ -212,8 +232,8 @@ func TestComposeService(t *testing.T, svc ark.ComposeService) {
 		if result.ExitCode != 0 {
 			t.Fatalf("expected exit code 0, got %d", result.ExitCode)
 		}
-		if !strings.Contains(result.Stdout+result.Stderr, "oneoff-test") {
-			// SDK may not capture stdout — just verify no error.
+		if result.Stdout != "oneoff-test\n" || result.Stderr != "oneoff-err\n" {
+			t.Fatalf("output not captured: stdout=%q stderr=%q", result.Stdout, result.Stderr)
 		}
 	})
 }

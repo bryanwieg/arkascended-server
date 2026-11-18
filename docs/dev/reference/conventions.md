@@ -40,6 +40,21 @@ Project-specific coding rules. Rationale lives in
   comments and custom fields.
 - No hand-built YAML strings in handlers.
 
+## Container access
+
+- Reach container internals only through the runtime scripts in
+  `container/scripts/runtime/`, run via `ComposeService.Exec` (running) or
+  `RunOneOff` (stopped). No inline shell, `cat`, `mv`, `rm` or file parsing of
+  container paths in Go. Why:
+  [architecture.md](../explanation/architecture.md#container-script-boundary).
+- A script returns results on stdout (JSON when the host parses it), problems
+  on stderr through `_logging.py`, and a non-zero exit on failure. The caller
+  reads `ExecResult`.
+- Known exceptions, to be moved behind scripts: `show ini` and `show instance`
+  (inline `cat`), `edit ini` (inline file prep before the editor), backup
+  artifact cleanup (`rm -f`), and the helper-container backup glue
+  (`sh -c "ark-backup.py … && touch … && sleep 600"`).
+
 ## Lint
 
 - Python: `ruff check .` and `ruff format --check .` (config `ruff.toml`; CI

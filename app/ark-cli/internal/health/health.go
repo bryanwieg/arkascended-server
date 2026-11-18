@@ -43,13 +43,11 @@ func RunCheckInstance(d *core.AppDeps, args []string) error {
 		ready = isReady
 	}
 
-	result := "unhealthy"
+	result := "stopped" // BuildInstanceSummary reports only running or stopped
 	if ready {
 		result = "healthy"
 	} else if summary.Status == "running" {
 		result = "starting"
-	} else if summary.Status == "stopped" {
-		result = "stopped"
 	}
 
 	core.Infof("name: %s\n", summary.Name)

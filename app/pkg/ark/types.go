@@ -40,8 +40,16 @@ func (p *ComposeProject) EnsureService(service string) error {
 
 // ContainerState describes the runtime state of a single container.
 type ContainerState struct {
-	Running  bool
-	ExitCode int
+	Running    bool
+	Restarting bool
+	ExitCode   int
+	StartedAt  time.Time // zero when never started or unparseable
+}
+
+// ServiceContainer is one compose service's container.
+type ServiceContainer struct {
+	Name  string // container name
+	State string // compose ps state, lower case: running, restarting, exited, created, paused, dead
 }
 
 // ExecResult captures the output and exit code of a command executed inside a

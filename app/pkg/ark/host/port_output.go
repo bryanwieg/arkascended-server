@@ -140,8 +140,8 @@ func PrintPortCheckTable(w io.Writer, publicIP string, host string, side PortChe
 	formatTable(w, tableRows)
 
 	if hasUDPUnknownInternet {
-		fmt.Fprintln(w, "Note: UDP UNKNOWN means the external checker received no response. ARK does not reply to port probes.")
-		fmt.Fprintln(w, "      Use --listener with the server stopped for a definitive UDP forwarding test.")
+		fmt.Fprintln(w, "Note: UDP UNKNOWN means the external checker received no response. ARK only answers UE5 handshakes,")
+		fmt.Fprintln(w, "      which the checker does not send. Use --listen with the server stopped for a definitive UDP forwarding test.")
 	}
 	if hasListening {
 		fmt.Fprintln(w, "Note: LISTENING means the port is bound but the process did not respond to a probe.")
@@ -154,7 +154,7 @@ func PrintPortPreCheckWarning(w io.Writer, rows []PortRowResult) {
 	for _, r := range rows {
 		if r.Localhost.Status == PortStatusClosed {
 			fmt.Fprintln(w, "Warning: one or more ports have nothing listening locally.")
-			fmt.Fprintln(w, "         If the server is not running, consider --listener to test port forwarding without a live server.")
+			fmt.Fprintln(w, "         If the server is not running, consider --listen to test port forwarding without a live server.")
 			return
 		}
 	}

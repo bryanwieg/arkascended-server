@@ -188,10 +188,8 @@ func patchFakeCLIHostDeps(t *testing.T) {
 		d.DiskUsageForPath = func(_ string) (int64, int64, error) {
 			return 100 * 1024 * 1024 * 1024, 200 * 1024 * 1024 * 1024, nil
 		}
-		// Use MockCompose instead of ShellCompose so tests don't
-		// require a real docker binary on PATH. The mock's default
-		// behavior (no-op for non-configured methods) matches the
-		// no-op docker stub for most operations.
+		// MockCompose so tests need no container engine; unconfigured
+		// methods are no-ops.
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, composeFile string) (*ark.ComposeProject, error) {
 				// Try to load from file first (create may have written one).
@@ -559,14 +557,16 @@ func TestCLIIntegrationBackupRetentionPrunesByCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backups dir: %v", err)
 	}
+	// --name archives get "-<now>" appended; key by the name part. All three share
+	// that timestamp, so retention orders them by mtime.
 	found := map[string]bool{}
 	for _, entry := range entries {
-		found[entry.Name()] = true
+		found[backup.TimestampPattern.ReplaceAllString(backup.TrimArchiveSuffix(entry.Name()), "")] = true
 	}
 
-	oldest := "asa1-backup-20260101-000001.tar.gz"
-	newer := "asa1-backup-20260101-000002.tar.gz"
-	newest := "asa1-backup-20260101-000003.tar.gz"
+	oldest := "asa1-backup-20260101-000001"
+	newer := "asa1-backup-20260101-000002"
+	newest := "asa1-backup-20260101-000003"
 	if found[oldest] {
 		t.Fatalf("expected oldest backup to be pruned: %s", oldest)
 	}

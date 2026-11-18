@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	dockerclient "github.com/moby/moby/client"
@@ -111,6 +112,19 @@ func TestContainerEngine(t *testing.T, engine ark.ContainerEngine) {
 		_, err := engine.InspectState(ctx, "ark-conformance-nonexistent-container")
 		if !errors.Is(err, ark.ErrNotFound) {
 			t.Fatalf("expected ErrNotFound, got: %v", err)
+		}
+	})
+
+	t.Run("InspectState/running_has_StartedAt", func(t *testing.T) {
+		pullAlpine(t)
+		id := createAndStartContainer(t, "sleep 30")
+		CleanupContainer(t, engine, id)
+		state, err := engine.InspectState(ctx, id)
+		if err != nil {
+			t.Fatalf("InspectState: %v", err)
+		}
+		if !state.Running || state.StartedAt.IsZero() || time.Since(state.StartedAt) > time.Minute {
+			t.Fatalf("expected running with recent StartedAt, got %+v", state)
 		}
 	})
 

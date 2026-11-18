@@ -53,10 +53,10 @@ func OpenUDPProbeListener(deps HostDeps, port int) (func(), error) {
 }
 
 // AddCheckPortListenerConflictHint augments bind errors that mention "address
-// already in use" with a hint about --listener.
+// already in use" with a hint about --listen.
 func AddCheckPortListenerConflictHint(err error) error {
 	if strings.Contains(strings.ToLower(err.Error()), "address already in use") {
-		return fmt.Errorf("Error: %v (port already in use; stop the service or omit --listener)", err)
+		return fmt.Errorf("Error: %w (port already in use; stop the service or omit --listen)", err)
 	}
 	return err
 }

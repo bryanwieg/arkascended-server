@@ -76,9 +76,6 @@ func MergeRuntimeDeps(dst *core.RuntimeDeps, src core.RuntimeDeps) {
 	if src.ContainerRuntime != "" {
 		dst.ContainerRuntime = src.ContainerRuntime
 	}
-	if src.RconEnvArgs != nil {
-		dst.RconEnvArgs = src.RconEnvArgs
-	}
 }
 
 // MergeHostDeps copies non-zero fields from src into dst.

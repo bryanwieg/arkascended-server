@@ -70,11 +70,11 @@ required. Refuses a running instance unless `--force`.
 | `--map-name` | `MAP_NAME`. Only allowed when it equals the current value (or none is set); changing the map of an existing instance is an error. |
 | `--session-name` | `SESSION_NAME`. |
 | `--admin-password` | `SERVER_ADMIN_PASSWORD`. |
-| `--server-password` | `SERVER_PASSWORD`. |
-| `--mods` | `MOD_IDS`: comma-separated CurseForge mod IDs. |
-| `--cluster-id` | `CLUSTER_ID` (letters, digits, `_`, `-`). Instances with the same ID share transfers. |
+| `--server-password` | `SERVER_PASSWORD`. `--server-password ""` clears it (no join password). |
+| `--mods` | `MOD_IDS`: comma-separated CurseForge mod IDs. `""` clears it. |
+| `--cluster-id` | `CLUSTER_ID` (letters, digits, `_`, `-`). Instances with the same ID share transfers. `""` clears it. |
 | `--asa-port` | Published game UDP port (host and container port kept equal). |
-| `--rcon-port` | Published RCON TCP host port (maps to container 27020/tcp). |
+| `--rcon-port` | Published RCON TCP host port (maps to the container's `RCON_PORT`, default 27020/tcp). |
 | `--force` | Allow changes while running; a restart is still needed to apply them. |
 | `--restart` | After saving, restart the instance if it was running. A stopped instance is not started. |
 | `--compose-file` | |
@@ -82,6 +82,7 @@ required. Refuses a running instance unless `--force`.
 ```sh
 ark-cli reconfigure instance --instance asa-server-1 --mods 940975,1386057 --cluster-id my-cluster
 ark-cli reconfigure instance --instance asa-server-1 --rcon-port 28020 --force --restart
+ark-cli reconfigure instance --instance asa-server-1 --server-password ""   # make the server public
 ```
 
 ### enable / disable remote-rcon
@@ -149,6 +150,18 @@ Run RCON `saveworld` in each running target.
 
 Flags: `--instance` (required; instance or `all`), `--compose-file`.
 
+### list players
+
+List players connected to each target via RCON `ListPlayers` (name and EOS
+ID). With `--instance all`, stopped instances are listed as `not running`; a
+named instance that is stopped, or an RCON failure, exits non-zero.
+
+Flags: `--instance` (required; instance or `all`), `--json`, `--compose-file`.
+
+```sh
+ark-cli list players --instance all
+```
+
 ### update instance
 
 Compare each instance's image label `io.ark.server.build_id` with Steam's
@@ -187,7 +200,8 @@ refused unless `--kill`. `--instance all` is rejected; use
 
 ### teardown instances
 
-Stop all services and run compose down for the project. Prompts for
+Stop all services and run compose down for the project: containers and
+networks are removed, named volumes (saves, cluster data) are kept. Prompts for
 confirmation on a TTY; without a TTY, `--skip-confirm` is required.
 
 Flags: `--skip-confirm`, `--compose-file`.
@@ -287,7 +301,7 @@ has one).
 |---|---|---|
 | `--instance` | required | Instance, `cluster` or `all`. |
 | `--dest` | `<backup-root>/<instance>` | Output directory. |
-| `--name` | | Archive name becomes `<instance>-<name>.<format>` instead of `<instance>-backup-<YYYYmmdd-HHMMSS>.<format>`. |
+| `--name` | | Archive name becomes `<instance>-<name>-<YYYYmmdd-HHMMSS>.<format>` instead of `<instance>-backup-<YYYYmmdd-HHMMSS>.<format>`. |
 | `--format` | `tar.gz` | `tar`, `tar.gz` or `tar.zst`. |
 | `--retain-count` | `20` | Max archives kept (`0` disables). |
 | `--retain-days` | `7` | Max age in days (`0` disables). |
@@ -423,8 +437,8 @@ exclusive). Unset flags keep their current value.
 Two modes; `--port` and `--instance` are mutually exclusive.
 
 - Instance mode (`--instance`): checks the game UDP port (from the
-  `ark.port.asa` label or port binding) and the host port published for RCON
-  container port 27020/tcp. The instance must be running unless `--listen`. If
+  `ark.port.asa` label or port binding) and the host port published for the
+  RCON container port (`RCON_PORT`, default 27020/tcp). The instance must be running unless `--listen`. If
   RCON is published on `127.0.0.1` only, a note says CLOSED from remote is
   expected.
 - Port mode (`--port`): checks one port without reading compose.

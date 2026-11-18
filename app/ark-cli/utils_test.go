@@ -16,38 +16,6 @@ import (
 	backup "pkg/ark/backup"
 )
 
-// TestRconEnvArgsEmpty verifies rconEnvArgs returns no flags when env vars are unset.
-// - Expect: an empty argument slice.
-func TestRconEnvArgsEmpty(t *testing.T) {
-	setEnv(t, "RCON_HOST", "")
-	setEnv(t, "RCON_PORT", "")
-	setEnv(t, "RCON_PATH", "")
-	if args := compose.RconEnvArgsImpl(); len(args) != 0 {
-		t.Fatalf("expected empty args, got %v", args)
-	}
-}
-
-// TestRconEnvArgsValues verifies rconEnvArgs includes RCON env vars in order.
-// - Expect: args contain RCON_HOST and RCON_PORT; RCON_PATH (the removed rcon-cli path) is not forwarded.
-func TestRconEnvArgsValues(t *testing.T) {
-	setEnv(t, "RCON_HOST", "127.0.0.1")
-	setEnv(t, "RCON_PORT", "27020")
-	setEnv(t, "RCON_PATH", "/rcon")
-	args := compose.RconEnvArgsImpl()
-	expected := []string{
-		"-e", "RCON_HOST=127.0.0.1",
-		"-e", "RCON_PORT=27020",
-	}
-	if len(args) != len(expected) {
-		t.Fatalf("unexpected args: %v", args)
-	}
-	for i, value := range expected {
-		if args[i] != value {
-			t.Fatalf("unexpected args: %v", args)
-		}
-	}
-}
-
 // TestRequireComposeMissing verifies missing compose files are rejected.
 // - Expect: requireCompose returns an error when the file does not exist.
 func TestRequireComposeMissing(t *testing.T) {

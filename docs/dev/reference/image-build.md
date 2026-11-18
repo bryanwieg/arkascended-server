@@ -158,9 +158,10 @@ on `main` it publishes only the base (see [ci.md](ci.md)).
 
 `.github/build-image.sh` does the same build (base, files image, both stages) with
 `docker buildx build --load` or `podman build`. Used by CI and manual rebuilds; the
-CLI never calls it. Differences from the CLI: final tags are `:latest`,
-`:<version>` and `:<build-id>` (no recipe ID, no `io.ark.recipe` label), and the last
-output line is `BASE_IMAGE=<ref>` for CI to publish.
+CLI never calls it. It tags and labels like the CLI (`:<build-id>-<recipe-id>`,
+`:<version>`, `:latest`, `io.ark.recipe`), taking the recipe ID from
+`go run ./container/cmd/recipe-id`, so it needs Go. The last output line is
+`BASE_IMAGE=<ref>` for CI to publish.
 
 Knobs (all optional):
 

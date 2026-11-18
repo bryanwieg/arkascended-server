@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	arkContainerPortUDP  = 27015
-	rconContainerPortTCP = 27020
-	errServicePortsList  = "Error: service ports must be a list."
+	arkContainerPortUDP = 27015
+	errServicePortsList = "Error: service ports must be a list."
 
 	labelPortRCON = "ark.port.rcon"
 
@@ -98,13 +97,14 @@ func applyReconfigurePortUpdates(project *types.Project, req reconfigureCommandR
 	return changed, nil
 }
 
-// setRCONHostIP sets the host IP of the instance's RCON binding (container port 27020/tcp).
+// setRCONHostIP sets the host IP of the instance's RCON binding (container port RCON_PORT/tcp).
 // An empty hostIP publishes on all interfaces, IPv4 and IPv6; "0.0.0.0" would be IPv4 only.
 func setRCONHostIP(project *types.Project, serviceName, hostIP string) (bool, error) {
 	found, changed := false, false
+	rconTarget := runtime.RCONContainerPort(project.Services[serviceName])
 	err := composeutil.MutateService(project, serviceName, func(s *types.ServiceConfig) {
 		for i, p := range s.Ports {
-			if roleForTargetProtocol(int(p.Target), host.NormalizePortProtocol(p.Protocol)) != reconfigurePortRoleRCON {
+			if roleForTargetProtocol(int(p.Target), host.NormalizePortProtocol(p.Protocol), rconTarget) != reconfigurePortRoleRCON {
 				continue
 			}
 			found = true
@@ -115,7 +115,7 @@ func setRCONHostIP(project *types.Project, serviceName, hostIP string) (bool, er
 		}
 	})
 	if err == nil && !found {
-		err = fmt.Errorf("Error: no RCON port binding (container port %d/tcp) found for instance %s.", rconContainerPortTCP, serviceName)
+		err = fmt.Errorf("Error: no RCON port binding (container port %d/tcp) found for instance %s.", rconTarget, serviceName)
 	}
 	return changed, err
 }
@@ -237,8 +237,9 @@ func publishedRolePortsForService(svc types.ServiceConfig) []publishedRolePort {
 // target port (legacy behaviour for compose files without ark labels).
 func servicePublishedRolePortsFromBindings(svc types.ServiceConfig) []publishedRolePort {
 	var rolePorts []publishedRolePort
+	rconTarget := runtime.RCONContainerPort(svc)
 	for _, p := range svc.Ports {
-		role := roleForTargetProtocol(int(p.Target), host.NormalizePortProtocol(p.Protocol))
+		role := roleForTargetProtocol(int(p.Target), host.NormalizePortProtocol(p.Protocol), rconTarget)
 		if role == reconfigurePortRoleUnknown {
 			continue
 		}
@@ -253,10 +254,11 @@ func servicePublishedRolePortsFromBindings(svc types.ServiceConfig) []publishedR
 
 func upsertServiceRolePublishedPort(project *types.Project, serviceName string, role reconfigurePortRole, publishedPort int) (bool, error) {
 	svc := project.Services[serviceName]
+	rconTarget := runtime.RCONContainerPort(svc)
 	var updated bool
 	err := composeutil.MutateService(project, serviceName, func(s *types.ServiceConfig) {
 		for i, p := range s.Ports {
-			pRole := roleForTargetProtocol(int(p.Target), host.NormalizePortProtocol(p.Protocol))
+			pRole := roleForTargetProtocol(int(p.Target), host.NormalizePortProtocol(p.Protocol), rconTarget)
 			if pRole != role {
 				continue
 			}
@@ -272,7 +274,7 @@ func upsertServiceRolePublishedPort(project *types.Project, serviceName string, 
 			return
 		}
 		// No existing binding matched: append a new one.
-		s.Ports = append(s.Ports, defaultPublishedRolePortConfig(role, publishedPort))
+		s.Ports = append(s.Ports, defaultPublishedRolePortConfig(role, publishedPort, rconTarget))
 		if role == reconfigurePortRoleRCON && svc.Labels[labelPortRCON] != "" {
 			if s.Labels == nil {
 				s.Labels = types.Labels{}
@@ -284,7 +286,7 @@ func upsertServiceRolePublishedPort(project *types.Project, serviceName string, 
 	return updated, err
 }
 
-func defaultPublishedRolePortConfig(role reconfigurePortRole, publishedPort int) types.ServicePortConfig {
+func defaultPublishedRolePortConfig(role reconfigurePortRole, publishedPort, rconTarget int) types.ServicePortConfig {
 	switch role {
 	case reconfigurePortRoleARK:
 		return types.ServicePortConfig{
@@ -295,7 +297,7 @@ func defaultPublishedRolePortConfig(role reconfigurePortRole, publishedPort int)
 	case reconfigurePortRoleRCON:
 		return types.ServicePortConfig{
 			HostIP:    rconLocalHostIP, // new bindings follow the local-only default
-			Target:    rconContainerPortTCP,
+			Target:    uint32(rconTarget), //nolint:gosec // RCONContainerPort returns 1..65535
 			Published: strconv.Itoa(publishedPort),
 			Protocol:  "tcp",
 		}
@@ -316,11 +318,12 @@ func reconfigurePortConflictError(requestedLabel string, requestedPort int, conf
 	)
 }
 
-func roleForTargetProtocol(target int, protocol string) reconfigurePortRole {
+// roleForTargetProtocol classifies a binding; rconTarget is the service's RCONContainerPort.
+func roleForTargetProtocol(target int, protocol string, rconTarget int) reconfigurePortRole {
 	switch {
 	case target == arkContainerPortUDP && protocol == "udp":
 		return reconfigurePortRoleARK
-	case target == rconContainerPortTCP && protocol == "tcp":
+	case target == rconTarget && protocol == "tcp":
 		return reconfigurePortRoleRCON
 	default:
 		return reconfigurePortRoleUnknown

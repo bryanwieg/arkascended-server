@@ -43,6 +43,10 @@ else
     build_cmd=(docker buildx build --load)
 fi
 
+# Recipe ID: the hash ark-cli embeds for this checkout's container/ files. Tagging and
+# labelling with it lets `update instance` reuse this image instead of rebuilding.
+recipe_id="$(cd "$repo_root" && go run ./container/cmd/recipe-id)"
+
 # Base image (container/base.dockerfile): everything but the ARK files, published to GHCR
 # and tagged by the file's hash, as ark-cli does. Use a local copy, else pull it, else
 # build it here. Done first, so a failure costs no ARK download.
@@ -90,10 +94,11 @@ ark_build_id="$(
 "${build_cmd[@]}" -f "$labels_dockerfile_path" \
   -t "$final_tag" \
   -t "${image_name}:${ark_version}" \
-  -t "${image_name}:${ark_build_id}" \
+  -t "${image_name}:${ark_build_id}-${recipe_id}" \
   --build-arg BASE_IMAGE="$base_tag" \
   --build-arg ARK_SERVER_VERSION="$ark_version" \
   --build-arg ARK_BUILD_ID="$ark_build_id" \
+  --build-arg ARK_RECIPE_ID="$recipe_id" \
   "$context_path"
 
 "$container_runtime" image rm "$files_image" >/dev/null  # only needed during the build

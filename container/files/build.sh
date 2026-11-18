@@ -4,7 +4,7 @@
 # copies its output in.
 #
 # Usage: ./build.sh [image] [extra build args, e.g. --push -t image:latest]
-#   image defaults to arkascended-server-files; it is tagged <image>:<build ID>.
+#   image defaults to ark-server-files; it is tagged <image>:<build ID>.
 # Env:
 #   ARK_STEAM_BUILD_ID    build to download; default: Steam's current public build
 #   STEAMCMD_DOCKER_OPTS  extra options for the SteamCMD container, e.g.
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-image="${1:-arkascended-server-files}"
+image="${1:-ark-server-files}"
 shift $(( $# > 0 ? 1 : 0 ))
 rt="${CONTAINER_RUNTIME:-docker}"
 work="$(realpath -m "${WORK_DIR:-$root/work}")"

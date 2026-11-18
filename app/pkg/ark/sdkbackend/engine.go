@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/containerd/errdefs"
 	goarchive "github.com/moby/go-archive"
@@ -109,7 +110,11 @@ func (e *SDKEngine) InspectState(ctx context.Context, container string) (ark.Con
 	if state == nil {
 		return ark.ContainerState{}, nil
 	}
-	return ark.ContainerState{Running: state.Running, ExitCode: state.ExitCode}, nil
+	started, _ := time.Parse(time.RFC3339Nano, state.StartedAt) // unparseable or "0001-…" → zero
+	if started.Year() <= 1 {
+		started = time.Time{}
+	}
+	return ark.ContainerState{Running: state.Running, Restarting: state.Restarting, ExitCode: state.ExitCode, StartedAt: started}, nil
 }
 
 func (e *SDKEngine) RemoveContainer(ctx context.Context, container string) error {

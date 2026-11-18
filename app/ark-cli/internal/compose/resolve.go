@@ -15,17 +15,6 @@ func RequireComposeFile(composeFile string) error {
 	return nil
 }
 
-func RconEnvArgsImpl() []string {
-	envArgs := []string{}
-	for _, key := range []string{"RCON_HOST", "RCON_PORT"} {
-		value := os.Getenv(key)
-		if value != "" {
-			envArgs = append(envArgs, "-e", fmt.Sprintf("%s=%s", key, value))
-		}
-	}
-	return envArgs
-}
-
 func EnvOrDefault(key, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {

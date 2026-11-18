@@ -153,7 +153,7 @@ Key injectable fields (see `app/ark-cli/internal/core/deps.go` for the full stru
 - **Container/compose:** `Engine` (`ark.ContainerEngine`), `ComposeService` (`ark.ComposeService`)
 - **Domain services:** `HealthChecker`, `Lifecycle`, `BackupService`, `UpdateService`, `ScheduleService`
 - **Host:** `HostDeps` (kernel config and port check seams)
-- **Runtime orchestration:** `RuntimeHelper`, `Runtime` (`RuntimeDeps`: `ContainerRuntime`, `RunCommand`, `LookPath`, `RconEnvArgs`)
+- **Runtime orchestration:** `RuntimeHelper`, `Runtime` (`RuntimeDeps`: `ContainerRuntime`, `RunCommand`, `LookPath`)
 - **Lifecycle seams:** `RestartStartInstance`, `RestartStopInstance`
 - **Scheduling seams:** `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab`
 - **Introspection seams:** `RunningServiceSnapshot`, `DiskUsageForPath`, `StopService`, `RemoveVolume`

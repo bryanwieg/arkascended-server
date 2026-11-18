@@ -45,6 +45,9 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 			},
 		}
 		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
+			if req.Timeout >= 0 || req.Kill {
+				t.Fatalf("rollout stop must use the default grace (Timeout<0), got %v kill=%v", req.Timeout, req.Kill)
+			}
 			calls = append(calls, "stop")
 			return nil
 		}

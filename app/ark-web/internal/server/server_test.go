@@ -30,7 +30,7 @@ func fakeProject(services ...string) *ark.ComposeProject {
 func testDeps() *Deps {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	mock := &arktest.MockCompose{}
-	hc := health.New(mock, logger)
+	hc := health.New(mock, nil, logger)
 	lc := lifecycle.New(mock, hc, logger)
 	return &Deps{
 		Engine:         &arktest.MockEngine{},

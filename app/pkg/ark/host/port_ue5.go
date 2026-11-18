@@ -16,7 +16,7 @@ import (
 // magic header 0xa8 0x01 0x02; a valid server responds with 0xa8 0x01 0x82
 // (the 0x80 bit in byte 2 indicates the server direction).
 //
-// This probe also succeeds against the CLI's own --listener echo service,
+// This probe also succeeds against the CLI's own --listen echo service,
 // which reflects any payload back — making it the single reliable UDP probe
 // for both a running ARK server and the synthetic listener.
 func ProbeUE5UDP(host string, port int, timeout time.Duration) bool {

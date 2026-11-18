@@ -13,7 +13,7 @@ import (
 )
 
 // MockEngine implements ark.ContainerEngine for testing. Each method delegates
-// to a configurable function field. Unconfigured methods panic.
+// to a configurable function field. Unconfigured methods return zero values.
 type MockEngine struct {
 	InspectStateFn      func(ctx context.Context, container string) (ark.ContainerState, error)
 	RemoveContainerFn   func(ctx context.Context, container string) error
@@ -151,6 +151,7 @@ type MockCompose struct {
 	RunningServicesFn      func(ctx context.Context, composeFile string) (map[string]struct{}, error)
 	ExitedServicesFn       func(ctx context.Context, composeFile string) (map[string]struct{}, error)
 	AllServicesFn          func(ctx context.Context, composeFile string) (map[string]struct{}, error)
+	ServiceContainersFn    func(ctx context.Context, composeFile string) (map[string]ark.ServiceContainer, error)
 	ExecFn                 func(ctx context.Context, composeFile, service string, command []string, opts ark.ExecOptions) (ark.ExecResult, error)
 	ExecInteractiveFn      func(ctx context.Context, composeFile, service string, command []string) error
 	RunOneOffFn            func(ctx context.Context, composeFile, service string, command []string, opts ark.RunOptions) (ark.ExecResult, error)
@@ -235,6 +236,13 @@ func (m *MockCompose) AllServices(ctx context.Context, composeFile string) (map[
 		return m.AllServicesFn(ctx, composeFile)
 	}
 	return map[string]struct{}{}, nil
+}
+
+func (m *MockCompose) ServiceContainers(ctx context.Context, composeFile string) (map[string]ark.ServiceContainer, error) {
+	if m.ServiceContainersFn != nil {
+		return m.ServiceContainersFn(ctx, composeFile)
+	}
+	return map[string]ark.ServiceContainer{}, nil
 }
 
 func (m *MockCompose) Exec(ctx context.Context, composeFile, service string, command []string, opts ark.ExecOptions) (ark.ExecResult, error) {

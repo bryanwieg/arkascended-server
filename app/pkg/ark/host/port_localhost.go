@@ -1,8 +1,10 @@
 package host
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"syscall"
 	"time"
 )
 
@@ -44,13 +46,17 @@ func probeLocalTCPPort(host string, port int) error {
 // "open"      — a response was received.  The UE5 stateless connect handshake
 //
 //	is tried first; it elicits a reply from a running ARK server
-//	and from the CLI's own --listener echo service.
+//	and from the CLI's own --listen echo service.
 //
 // "listening" — the port is bound but no response was received (would be seen
 //
 //	with a non-ARK UDP process that ignores unknown probes).
 //
 // "closed"    — nothing is bound on the port.
+//
+// "unknown"   — host is not a local address (--from <remote>), so the bind
+//
+//	test can't tell a silent bound port from a closed one.
 func checkLocalhostUDPStatus(host string, port int) string {
 	if ProbeUE5UDP(host, port, 500*time.Millisecond) {
 		return "open"
@@ -65,5 +71,8 @@ func checkLocalhostUDPStatus(host string, port int) string {
 		_ = pc.Close()
 		return "closed"
 	}
-	return "listening"
+	if errors.Is(bindErr, syscall.EADDRINUSE) {
+		return "listening"
+	}
+	return "unknown"
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"pkg/ark"
@@ -38,7 +39,8 @@ func BuildArtifactPaths(
 	}
 	namePrefix := fmt.Sprintf("%s-backup-%s", target, timestamp)
 	if nameOverride != "" {
-		namePrefix = fmt.Sprintf("%s-%s", target, nameOverride)
+		// Timestamped so retention orders it by age, not ahead of every regular backup.
+		namePrefix = fmt.Sprintf("%s-%s-%s", target, nameOverride, timestamp)
 	}
 	filename := namePrefix + "." + format
 	containerPath := filepath.ToSlash(filepath.Join("/home/ark-user/maintenance", filename))
@@ -138,7 +140,11 @@ func (s *Service) runBackupInRunning(ctx context.Context, composeFile, service, 
 		return err
 	}
 	if result.ExitCode != 0 {
-		return fmt.Errorf("Error: backup command failed for service %s with exit code %d", service, result.ExitCode)
+		detail := strings.TrimSpace(result.Stderr)
+		if detail == "" {
+			detail = strings.TrimSpace(result.Stdout)
+		}
+		return fmt.Errorf("backup script exited %d: %s", result.ExitCode, detail)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from runtime_utils import CLUSTER_DIR_NAME, SAVED_DIR
@@ -16,18 +17,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def tar_create_args(output: Path, source_dir: Path, excludes: Sequence[str], dest: Path | None = None) -> list[str]:
+    """Return tar arguments archiving source_dir, compressed by output's suffix, written to dest (default output)."""
+    output_name = output.name
+    target = str(dest or output)
+    source = [*(f"--exclude={item}" for item in excludes), "-C", str(source_dir), "."]
+    if output_name.endswith(".tar"):
+        return ["tar", "-cf", target, *source]
+    if output_name.endswith(".tar.gz"):
+        return ["tar", "-czf", target, *source]
+    if output_name.endswith(".tar.zst"):
+        return ["tar", "--zstd", "-cf", target, *source]
+    raise ValueError(f"output must end with .tar, .tar.gz, or .tar.zst: {output}")
+
+
 def archive_args(output: Path) -> list[str]:
     """Return the tar command arguments for the given output archive path and extension."""
-    output_name = output.name
     # The live server appends to Logs/ constantly; tar exits 1 ("file changed as we read it") on it.
-    source = ["--exclude=./Logs", f"--exclude=./{CLUSTER_DIR_NAME}", "-C", str(SAVED_DIR), "."]
-    if output_name.endswith(".tar"):
-        return ["tar", "-cf", str(output), *source]
-    if output_name.endswith(".tar.gz"):
-        return ["tar", "-czf", str(output), *source]
-    if output_name.endswith(".tar.zst"):
-        return ["tar", "--zstd", "-cf", str(output), *source]
-    raise ValueError(f"output must end with .tar, .tar.gz, or .tar.zst: {output}")
+    return tar_create_args(output, SAVED_DIR, ["./Logs", f"./{CLUSTER_DIR_NAME}"])
 
 
 def combined_process_output(result: subprocess.CompletedProcess[str]) -> str:

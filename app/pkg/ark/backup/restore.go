@@ -65,7 +65,7 @@ func (s *Service) Restore(ctx context.Context, req RestoreRequest) (*RestoreResu
 	}
 
 	preRestoreDir := backupsDir
-	if err := ensureRestorePreBackupDirWritable(preRestoreDir); err != nil {
+	if err := ensureContainerWritableDir(preRestoreDir); err != nil {
 		return nil, err
 	}
 
@@ -95,25 +95,20 @@ func (s *Service) runRestoreInMaintenanceContainer(
 	ctx context.Context,
 	composeFile, service string,
 	paths RestoreExecutionPaths,
+	extraArgs ...string,
 ) error {
-	restoreCmd := []string{
+	restoreCmd := append([]string{
 		"/usr/bin/python3.14",
 		"/home/ark-user/scripts/runtime/ark-restore.py",
 		"--archive", paths.ContainerArchive,
 		"--pre-restore", paths.ContainerPreStore,
-	}
+	}, extraArgs...)
 	result, err := s.compose.RunOneOff(ctx, composeFile, service,
 		restoreCmd,
-		ark.RunOptions{
-			Remove:     true,
-			NoDeps:     true,
-			DisableTTY: true,
-			User:       "3000:3000",
-			Volumes: []string{
-				fmt.Sprintf("%s:%s:ro", paths.HostArchive, paths.ContainerArchive),
-				fmt.Sprintf("%s:/home/ark-user/maintenance/output", paths.HostPreRestoreDir),
-			},
-		},
+		maintenanceRunOptions(
+			fmt.Sprintf("%s:%s:ro", paths.HostArchive, paths.ContainerArchive),
+			fmt.Sprintf("%s:%s", paths.HostPreRestoreDir, containerOutputDir),
+		),
 	)
 	if err != nil {
 		return err
@@ -128,11 +123,12 @@ func (s *Service) runRestoreInMaintenanceContainer(
 	return nil
 }
 
-func ensureRestorePreBackupDirWritable(preRestoreDir string) error {
-	if err := os.MkdirAll(preRestoreDir, 0o755); err != nil {
+// ensureContainerWritableDir creates dir and opens it to the container's ark-user (uid 3000).
+func ensureContainerWritableDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.Chmod(preRestoreDir, 0o777)
+	return os.Chmod(dir, 0o777)
 }
 
 // BuildRestoreExecutionPaths computes the host and container paths for a restore.
@@ -161,4 +157,9 @@ func BuildRestoreExecutionPaths(instance, archive, preRestoreDir, timestamp stri
 		ContainerPreStore: containerPreRestore,
 		HostPreRestore:    filepath.Join(preRestoreDir, preRestoreName),
 	}, nil
+}
+
+// maintenanceRunOptions runs a removed one-off container as ark-user with the given extra mounts.
+func maintenanceRunOptions(volumes ...string) ark.RunOptions {
+	return ark.RunOptions{Remove: true, NoDeps: true, DisableTTY: true, User: "3000:3000", Volumes: volumes}
 }

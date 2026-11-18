@@ -22,11 +22,12 @@ func TestEnsureLocalImages(t *testing.T) {
 		wantBuild bool
 		wantErr   string
 	}{
-		{name: "latest built: pin", image: "ark-server:latest", exists: map[string]bool{"ark-server:latest": true}, wantImage: "ark-server:200", wantSave: true},
-		{name: "untagged built: pin", image: "ark-server", exists: map[string]bool{"ark-server:latest": true}, wantImage: "ark-server:200", wantSave: true},
-		{name: "latest missing: build and pin", image: "ark-server:latest", exists: map[string]bool{}, wantImage: "ark-server:200", wantSave: true, wantBuild: true},
+		{name: "latest built: pin", image: "ark-server:latest", exists: map[string]bool{"ark-server:latest": true}, wantImage: LocalImageRef("200"), wantSave: true},
+		{name: "untagged built: pin", image: "ark-server", exists: map[string]bool{"ark-server:latest": true}, wantImage: LocalImageRef("200"), wantSave: true},
+		{name: "latest missing: build and pin", image: "ark-server:latest", exists: map[string]bool{}, wantImage: LocalImageRef("200"), wantSave: true, wantBuild: true},
 		{name: "pinned exists: unchanged", image: "ark-server:100", exists: map[string]bool{"ark-server:100": true}, wantImage: "ark-server:100"},
-		{name: "pinned missing, Steam current: build", image: "ark-server:200", exists: map[string]bool{}, wantImage: "ark-server:200", wantBuild: true},
+		{name: "pinned missing, Steam current: build", image: LocalImageRef("200"), exists: map[string]bool{}, wantImage: LocalImageRef("200"), wantBuild: true},
+		{name: "pinned missing, old recipe: error", image: "ark-server:200", exists: map[string]bool{}, wantErr: "image ark-server:200 for asa1 is missing"},
 		{name: "pinned missing, old build: error", image: "ark-server:100", exists: map[string]bool{}, wantErr: "image ark-server:100 for asa1 is missing; run: ark-cli update instance --instance asa1 --rollout"},
 		{name: "other image: error", image: "arkserver/arkascended-server:200", wantErr: "only locally built ark-server images are supported"},
 	} {

@@ -77,7 +77,7 @@ ark-cli start instance --instance my-server
 The first start builds the server image on your machine (about 15-25 minutes:
 it downloads the ARK server files from Steam, GE-Proton and other
 dependencies). Later starts reuse it. The CLI then pins the instance's compose
-file to `ark-server:<build-id>`. The CLI will wait for the server to reach "ready" status, which can take
+file to `ark-server:<build-id>-<recipe-id>`. The CLI will wait for the server to reach "ready" status, which can take
 5–10 minutes on first boot (it generates initial config files). You'll see
 a progress indicator while it waits.
 

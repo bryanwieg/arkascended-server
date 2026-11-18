@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -58,4 +59,33 @@ func BaseImageRef() string {
 	}
 	sum := sha256.Sum256(data)
 	return BaseImageRepo + ":" + hex.EncodeToString(sum[:])[:12]
+}
+
+// RecipeID returns the first 12 hex characters of a hash over every embedded recipe
+// file (path and contents). Images are tagged with it, so an ark-cli whose scripts or
+// Dockerfiles changed builds a new image instead of reusing one for the same ARK build.
+func RecipeID() string {
+	h := sha256.New()
+	err := fs.WalkDir(FS, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == "__pycache__" { // local bytecode; Extract skips it too
+				return fs.SkipDir
+			}
+			return nil
+		}
+		data, err := FS.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", name, len(data))
+		h.Write(data)
+		return nil
+	})
+	if err != nil {
+		panic(err) // embedded at build time; can't be unreadable
+	}
+	return hex.EncodeToString(h.Sum(nil))[:12]
 }

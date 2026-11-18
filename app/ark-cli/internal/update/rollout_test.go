@@ -18,10 +18,15 @@ import (
 	"pkg/ark/arktest"
 	"pkg/ark/runtime"
 	update "pkg/ark/update"
+
+	arkcontainer "ark-container"
 )
 
+// newImage is the image `update instance` builds for Steam build 200.
+var newImage = update.LocalImageRef("200")
+
 // runLocalUpdate runs `update instance` for one instance on ark-server:100 while
-// Steam reports build 200, whose image ark-server:200 already exists (no build).
+// Steam reports build 200, whose image newImage already exists (no build).
 // startFails makes starting the new image fail. Returns the compose file afterwards,
 // the stop/start calls, the recorded last attempt and the command error.
 func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []string, *update.UpdateAttempt, error) {
@@ -35,7 +40,8 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 		d.Engine = &arktest.MockEngine{
 			ImageExistsFn: func(context.Context, string) (bool, error) { return true, nil },
 			ImageLabelsFn: func(_ context.Context, image string) (map[string]string, error) {
-				return map[string]string{"io.ark.server.build_id": strings.TrimPrefix(image, "ark-server:")}, nil
+				buildID, _, _ := strings.Cut(strings.TrimPrefix(image, "ark-server:"), "-")
+				return map[string]string{"io.ark.server.build_id": buildID, "io.ark.recipe": arkcontainer.RecipeID()}, nil
 			},
 		}
 		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
@@ -49,7 +55,7 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 			}
 			image := project.Project.Services["asa1"].Image
 			calls = append(calls, "start "+image)
-			if startFails && image == "ark-server:200" {
+			if startFails && image == newImage {
 				return errors.New("not ready")
 			}
 			return nil
@@ -87,10 +93,10 @@ func TestRunUpdateLocalRolloutSwitchesImage(t *testing.T) {
 	if attempt == nil || attempt.Result != update.ResultSucceeded {
 		t.Fatalf("recorded %+v, want succeeded", attempt)
 	}
-	if !strings.Contains(compose, "image: ark-server:200") {
+	if !strings.Contains(compose, "image: "+newImage) {
 		t.Fatalf("compose not switched:\n%s", compose)
 	}
-	if strings.Join(calls, ",") != "stop,start ark-server:200" || len(*restored) != 0 {
+	if strings.Join(calls, ",") != "stop,start "+newImage || len(*restored) != 0 {
 		t.Fatalf("calls %v, restored %v", calls, *restored)
 	}
 }
@@ -104,7 +110,7 @@ func TestRunUpdateLocalRolloutRollsBack(t *testing.T) {
 	if !strings.Contains(compose, "image: ark-server:100") {
 		t.Fatalf("compose not switched back:\n%s", compose)
 	}
-	if strings.Join(calls, ",") != "stop,start ark-server:200,stop,start ark-server:100" {
+	if strings.Join(calls, ",") != "stop,start "+newImage+",stop,start ark-server:100" {
 		t.Fatalf("calls %v", calls)
 	}
 	if strings.Join(*restored, ",") != "/backups/pre-update.tar.gz" {
@@ -129,7 +135,7 @@ func TestRunUpdateLocalRolloutAlertsWebhookOnRollback(t *testing.T) {
 	if _, _, _, err := runLocalUpdate(t, []string{"--rollout"}, true); err == nil {
 		t.Fatal("expected the rollout to fail")
 	}
-	if len(bodies) != 1 || !strings.Contains(bodies[0], "ARK update of asa1 rolled_back: ark-server:100 -> ark-server:200") {
+	if len(bodies) != 1 || !strings.Contains(bodies[0], "ARK update of asa1 rolled_back: ark-server:100 -> "+newImage) {
 		t.Fatalf("webhook bodies %q, want one rolled_back alert", bodies)
 	}
 }

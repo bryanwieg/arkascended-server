@@ -2,7 +2,9 @@ ARG BASE_IMAGE=ark-server:base
 FROM ${BASE_IMAGE}
 ARG ARK_SERVER_VERSION
 ARG ARK_BUILD_ID
+ARG ARK_RECIPE_ID
 LABEL org.opencontainers.image.version=$ARK_SERVER_VERSION \
       org.opencontainers.image.description="Build ID: $ARK_BUILD_ID" \
       io.ark.server.version=$ARK_SERVER_VERSION \
-      io.ark.server.build_id=$ARK_BUILD_ID
+      io.ark.server.build_id=$ARK_BUILD_ID \
+      io.ark.recipe=$ARK_RECIPE_ID

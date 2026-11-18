@@ -3,6 +3,8 @@ package update
 import (
 	"context"
 	"fmt"
+
+	arkcontainer "ark-container"
 )
 
 // CheckLocalUpdate checks a local image for available updates via Steam API.
@@ -32,10 +34,14 @@ func (s *Service) CheckLocalUpdate(ctx context.Context, image string) (LocalChec
 	}
 	result.LatestBuildID = latestBuildID
 
-	if result.CurrentBuildID != latestBuildID {
+	switch {
+	case result.CurrentBuildID != latestBuildID:
 		result.UpdateAvailable = true
 		result.Message = "update available"
-	} else {
+	case info.Recipe != arkcontainer.RecipeID():
+		result.UpdateAvailable = true
+		result.Message = "image recipe changed (new ark-cli)"
+	default:
 		result.Message = "local image is up to date"
 	}
 	return result, nil

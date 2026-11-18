@@ -37,4 +37,5 @@ type ImageVersionInfo struct {
 	Image   string
 	Version string
 	BuildID string
+	Recipe  string // arkcontainer.RecipeID of the ark-cli that built it; empty before recipe labels
 }

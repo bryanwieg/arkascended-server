@@ -94,6 +94,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           lfs: true  # restore-test fixture
+      # build-image.sh runs container/cmd/recipe-id to tag images like ark-cli does.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache: false
       - name: Build
         id: build
         env:

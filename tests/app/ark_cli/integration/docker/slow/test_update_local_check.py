@@ -85,7 +85,7 @@ def test_local_image_rebuild_produces_labeled_image(
     Scenario:
         An instance is created with the default local image. ark-server:latest is
         relabeled with an old build ID (1), so the CLI sees an update against the
-        real Steam API, and the real build's ark-server:<build-id> tag is removed,
+        real Steam API, and the real build's ark-server:<build-id>-<recipe-id> tag is removed,
         so update instance has to build it (downloading ARK with SteamCMD). The
         original image keeps its ark-server:<version> tag until the build
         replaces it, so a failed build can restore ark-server:latest.
@@ -119,10 +119,11 @@ def test_local_image_rebuild_produces_labeled_image(
     original_id = compose_client.image.inspect("ark-server:latest").id
     real_build = image_label(compose_client, "ark-server:latest", "io.ark.server.build_id")
     assert real_build.isdigit(), f"ark-server:latest needs a numeric build_id label, got {real_build!r}"
+    real_tag = f"ark-server:{real_build}-{image_label(compose_client, 'ark-server:latest', 'io.ark.recipe')}"
     relabel_image(compose_client, "ark-server:latest", {"io.ark.server.build_id": "1"}, test_artifact_dir / "relabel")
     relabeled_id = compose_client.image.inspect("ark-server:latest").id
     # Untag only: the original image stays reachable through its ark-server:<version> tag.
-    compose_client.image.remove(f"ark-server:{real_build}", force=False)
+    compose_client.image.remove(real_tag, force=False)
     env = dict(test_env)
     env["ARK_BUILD_NO_CACHE"] = "1"
     try:
@@ -135,7 +136,7 @@ def test_local_image_rebuild_produces_labeled_image(
         # A failed build must not leave the fake-labeled image as ark-server:latest.
         if compose_client.image.inspect("ark-server:latest").id == relabeled_id:
             compose_client.image.tag(original_id, "ark-server:latest")
-            compose_client.image.tag(original_id, f"ark-server:{real_build}")
+            compose_client.image.tag(original_id, real_tag)
             compose_client.image.remove(relabeled_id, force=False)
 
     version = image_label(

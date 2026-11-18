@@ -378,12 +378,12 @@ def main() -> int:
     """Entry point: configure, launch, and monitor the ARK server process; return an exit code."""
     try:
         cfg = _load_server_config()
+        no_battleye = os.environ.get("NoBattlEye", "false").strip().lower() == "true"  # noqa: SIM112
+        cmd = server_command(*(["-NoBattlEye"] if no_battleye else []))
     except ConfigError as exc:
         emit_error("server", str(exc))
         return 2
 
-    no_battleye = os.environ.get("NoBattlEye", "false").strip().lower() == "true"  # noqa: SIM112
-    cmd = server_command(*(["-NoBattlEye"] if no_battleye else []))
     emit_event("server", f"Starting server: {' '.join(cmd)}")
 
     rotate_runtime_logs(SERVER_LOG, CRASH_LOG, cfg["log_rotation_keep_files"])

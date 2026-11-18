@@ -32,6 +32,7 @@ func TestBuildReconfigureCommandRequestRequiresSettingFlag(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err == nil {
 		t.Fatal("expected missing settings error")
@@ -51,6 +52,7 @@ func TestBuildReconfigureCommandRequestRejectsAllTarget(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err == nil {
 		t.Fatal("expected all target rejection")
@@ -63,6 +65,7 @@ func TestBuildReconfigureCommandRequestParsesPorts(t *testing.T) {
 		"",
 		false,
 		false,
+		"",
 		"",
 		"",
 		"",
@@ -95,9 +98,19 @@ func TestBuildReconfigureCommandRequestValidatesPasswords(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err == nil {
 		t.Fatal("expected password validation error")
+	}
+}
+
+func TestBuildReconfigureCommandRequestRejectsMalformedMods(t *testing.T) {
+	for _, mods := range []string{"940975;1386057", "abc", "940975,"} {
+		_, err := buildReconfigureCommandRequest("asa1", "", false, false, "", "", "", "", "", mods, "", "")
+		if err == nil || !strings.Contains(err.Error(), "--mods") {
+			t.Fatalf("mods %q: expected --mods error, got %v", mods, err)
+		}
 	}
 }
 
@@ -129,6 +142,7 @@ func TestRunReconfigureUpdatesTargetEnvironmentValues(t *testing.T) {
 			"--instance", "asa1",
 			"--tz", "UTC",
 			"--session-name", "new-session",
+			"--mods", "940975, 1386057",
 		}); err != nil {
 			t.Fatalf("runReconfigure: %v", err)
 		}
@@ -148,6 +162,9 @@ func TestRunReconfigureUpdatesTargetEnvironmentValues(t *testing.T) {
 	}
 	if asa1Env["SESSION_NAME"] != "new-session" {
 		t.Fatalf("expected SESSION_NAME update, got %q", asa1Env["SESSION_NAME"])
+	}
+	if asa1Env["MOD_IDS"] != "940975,1386057" {
+		t.Fatalf("expected MOD_IDS update, got %q", asa1Env["MOD_IDS"])
 	}
 	if asa1Env["SERVER_ADMIN_PASSWORD"] != "AdminPass123" {
 		t.Fatalf("expected unchanged admin password, got %q", asa1Env["SERVER_ADMIN_PASSWORD"])
@@ -473,6 +490,7 @@ func TestBuildReconfigureRequestWarnsForMapNameMissingWP(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -498,6 +516,7 @@ func TestBuildReconfigureRequestNoWarningForMapNameWithWP(t *testing.T) {
 		false,
 		"",
 		"TheIsland_WP",
+		"",
 		"",
 		"",
 		"",

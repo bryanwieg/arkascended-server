@@ -19,6 +19,7 @@ You can change any combination of these in one command:
 | `--session-name` | In-game server name shown in the browser |
 | `--admin-password` | Admin password for in-game commands |
 | `--server-password` | Password players need to join (blank = public) |
+| `--mods` | CurseForge mod IDs the server loads (e.g. `940975,1386057`) |
 | `--asa-port` | UDP port players connect to (host and container port kept in sync) |
 | `--rcon-port` | Published RCON host port used by stop/save/backup |
 | `--tz` | Timezone for the container (e.g. `America/New_York`) |
@@ -70,6 +71,22 @@ Available official maps include: `TheIsland_WP`, `TheCenter_WP`, `ScorchedEarth_
 
 Map names for ARK: Survival Ascended must end in `_WP`. If you provide a map
 name without this suffix, a warning will be displayed.
+
+## Load mods
+
+Pass the CurseForge project IDs of the mods, comma-separated:
+
+```sh
+ark-cli reconfigure instance --instance my-server --mods 940975,1386057 --force --restart
+```
+
+The server downloads and updates the mods itself on each start. They are
+stored in the container, not in the save volume, so they are downloaded again
+after the container is recreated (for example by `update instance`).
+
+Mods add content to the save. Keep the same mods when you restore a save that
+used them; ARK deletes mod items, structures and creatures it can't load the
+next time it saves.
 
 ## Change ports
 

@@ -9,6 +9,13 @@ ark-cli create schedule backup --instance my-server --name nightly-my-server --c
 ```
 
 This creates a schedule named `nightly-my-server` that runs at 3:00 AM daily.
+
+To back up the shared cluster data on its own schedule, use the target
+`cluster`. A schedule for `--instance all` already includes the cluster.
+
+```sh
+ark-cli create schedule backup --instance cluster --name hourly-cluster --cron "0 * * * *"
+```
 The cron expression uses standard 5-field format: `minute hour day month weekday`.
 
 Common cron expressions:

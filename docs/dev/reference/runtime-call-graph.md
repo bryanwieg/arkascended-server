@@ -77,6 +77,33 @@ flowchart TD
     M -- yes --> L[swap_in: move old contents to .restore-previous, staged ones into Saved, delete previous]
 ```
 
+### Cluster backup + restore (`--instance cluster`)
+
+The shared cluster volume is found by its mount at `Saved/clusters`
+(`pkgbackup.ResolveClusterVolume`); both paths run in a one-off container of the
+first instance that mounts it, as uid 3000, under the `cluster` backup lock.
+
+```mermaid
+flowchart TD
+    A[ark-cli create backup --instance cluster] --> B[ResolveClusterVolume]
+    B --> C[BackupService.CreateCluster: lock backups/cluster]
+    C --> D[ComposeService.RunOneOff → python3 ark-cluster-backup.py --output maintenance/output/...]
+    D --> E{tar exit}
+    E -- 1: files changed, under 3 attempts --> D2[retry after 2s]
+    D2 --> E
+    E -- 0 --> F[tar -tf the .partial archive, rename into place]
+    E -- other / 3rd change --> X[fail, no archive left]
+    F --> G[ApplyRetention on backups/cluster]
+
+    R[ark-cli restore backup --instance cluster] --> S[ResolveClusterVolume]
+    S --> T{any instance using the cluster running?}
+    T -- yes --> U[refuse, naming them]
+    T -- no --> V[BackupService.RestoreCluster: lock, no wait]
+    V --> W[ComposeService.RunOneOff → python3 ark-restore.py --archive ... --pre-restore ... --cluster]
+    W --> Y[unsafe-path check, pre-restore tar.gz of clusters/]
+    Y --> Z[extract into clusters/.restore-staging, swap_in with nothing kept]
+```
+
 ## Create Instance Call Graph
 
 `ark-cli create instance` generates a compose service definition from a template and

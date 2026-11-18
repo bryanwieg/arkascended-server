@@ -17,12 +17,39 @@ Server logs (`Saved/Logs/`) are not included: the running server writes to them
 continuously, which would make the archive step fail, and they are not needed
 to restore a world.
 
-Cluster data (`Saved/clusters/`) is not included either, and a restore never
-touches it. That directory is a separate volume shared by every instance in the
-cluster, so including it would let restoring one server roll back the cluster
-transfers (uploaded characters, items and dinos) of all the others. Cluster data
-currently has no backup of its own; if you need one, back up the cluster volume
-(`ark-cluster-1`) separately.
+Cluster data (`Saved/clusters/`) is not included either, and an instance
+restore never touches it. That directory is a separate volume shared by every
+instance in the cluster, so including it would let restoring one server roll
+back the cluster transfers (uploaded characters, items and dinos) of all the
+others. Cluster data has its own backup target instead; see
+[Cluster backups](#cluster-backups).
+
+## Cluster backups
+
+The shared cluster volume (`ark-cluster-1` in the default compose file) holds
+everything players have uploaded for transfer between servers. Back it up with
+the reserved target `cluster`:
+
+```sh
+ark-cli create backup --instance cluster
+```
+
+- Archives land in `<compose-dir>/backups/cluster/`, named
+  `cluster-backup-<timestamp>`. Formats, `--name`, `--dest` and the retention
+  rules work as for instances.
+- `--instance all` backs up every instance and then the cluster.
+- It works whether servers are running or not, and does not trigger a world
+  save: ARK writes a cluster file when a player uploads or downloads, not when
+  the world saves. (This is how ARK behaves as far as we know; it has not been
+  confirmed for every case.) If a file changes while it is being read, the
+  backup retries up to three times, then fails rather than keep a mixed copy.
+- Restoring the cluster rolls back transfers for every instance that shares
+  it, so every one of them must be stopped first. See
+  [Restore the cluster data](../how-to/restore-backup.md#restore-the-cluster-data).
+- `validate backup` and `show backup` apply to instance backups only. A
+  cluster backup is checked once, right after it is written, by listing the
+  archive.
+- `cluster` is reserved: no instance can be named `cluster`.
 
 ## Backup formats
 

@@ -93,7 +93,10 @@ ALL_BATCHES = (
         "cli-slow",
         "cli-manage-backup-restore",
         2400,
-        ("tests/app/ark_cli/integration/docker/slow/test_manage_backup_restore.py",),
+        (
+            "tests/app/ark_cli/integration/docker/slow/test_manage_backup_restore.py",
+            "tests/app/ark_cli/integration/docker/slow/test_cluster_backup_restore.py",
+        ),
     ),
     Batch(
         "cli-slow",

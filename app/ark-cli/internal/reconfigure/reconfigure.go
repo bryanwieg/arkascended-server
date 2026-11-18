@@ -313,6 +313,7 @@ func handleReconfigureRestart(composeFile string, req reconfigureCommandRequest,
 		if err := compose.DoRestartStopInstance(core.CurrentAppDeps(), runtime.StopCommandRequest{
 			Instance:        req.instance,
 			ComposeFileFlag: composeFile,
+			Timeout:         -1, // default grace so the server saves
 		}); err != nil {
 			return err
 		}

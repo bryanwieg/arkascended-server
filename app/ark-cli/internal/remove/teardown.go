@@ -37,6 +37,7 @@ func RunTeardown(d *core.AppDeps, args []string) error {
 	return compose.RunDownRequest(compose.DownCommandRequest{
 		Instance:        "all",
 		ComposeFileFlag: *composeFileFlag,
+		Timeout:         -1, // default grace so each server saves
 	})
 }
 

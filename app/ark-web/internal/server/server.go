@@ -240,6 +240,7 @@ func (s *Server) handleStopInstance(w http.ResponseWriter, r *http.Request) {
 			stopReq := lifecycle.StopRequest{
 				ComposeFile: project,
 				Services:    []string{instance},
+				Timeout:     -1, // default grace so the server saves
 			}
 			if err := s.deps.Lifecycle.Stop(r.Context(), stopReq); err != nil {
 				data.Error = err.Error()
@@ -273,6 +274,7 @@ func (s *Server) handleRestartInstance(w http.ResponseWriter, r *http.Request) {
 			stopReq := lifecycle.StopRequest{
 				ComposeFile: project,
 				Services:    []string{instance},
+				Timeout:     -1, // default grace so the server saves
 			}
 			if err := s.deps.Lifecycle.Stop(r.Context(), stopReq); err != nil {
 				data.Error = err.Error()

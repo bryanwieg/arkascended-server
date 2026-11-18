@@ -217,7 +217,7 @@ var newRolloutSteps = func(d *core.AppDeps, composeFile string) update.RolloutSt
 	backupRoot := core.BackupRootDirForComposeFile(composeFile)
 	return update.RolloutSteps{
 		Stop: func(_ context.Context, instance string) error {
-			return compose.DoRestartStopInstance(d, runtime.StopCommandRequest{Instance: instance, ComposeFileFlag: composeFile})
+			return compose.DoRestartStopInstance(d, runtime.StopCommandRequest{Instance: instance, ComposeFileFlag: composeFile, Timeout: -1})
 		},
 		Backup: func(ctx context.Context, instance string) (string, error) {
 			// Same defaults as `create backup`.

@@ -71,6 +71,7 @@ func RunEditIni(d *core.AppDeps, args []string) error {
 			if err := compose.DoRestartStopInstance(d, runtime.StopCommandRequest{
 				Instance:        instance,
 				ComposeFileFlag: *composeFileFlag,
+				Timeout:         -1, // default grace so the server saves
 			}); err != nil {
 				return err
 			}

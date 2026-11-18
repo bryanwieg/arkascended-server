@@ -334,6 +334,9 @@ func TestRunReconfigureRestartWhenServiceWasRunning(t *testing.T) {
 			if req.Instance != "asa1" {
 				t.Fatalf("unexpected stop instance: %s", req.Instance)
 			}
+			if req.Timeout >= 0 || req.Kill {
+				t.Fatalf("restart stop must use the default grace (Timeout<0), got %v kill=%v", req.Timeout, req.Kill)
+			}
 			return nil
 		}
 		d.RestartStartInstance = func(req runtime.StartCommandRequest) error {

@@ -33,13 +33,13 @@ func StateDir(composeFile string) string {
 
 // BuildResult describes the image BuildLocalImage produced or found.
 type BuildResult struct {
-	Image   string // ark-server:<build ID>
+	Image   string // ark-server:<build ID>-<recipe ID>
 	BuildID string
 	Version string
 	Built   bool // false when the image already existed
 }
 
-// BuildLocalImage builds ark-server:<Steam's current ARK build ID> (also tagged
+// BuildLocalImage builds ark-server:<Steam's current ARK build ID>-<recipe ID> (also tagged
 // :<version> and :latest) from the recipe embedded in this binary, downloading
 // the server with SteamCMD into stateDir/build/work. An existing image for that
 // build is returned without building.
@@ -48,7 +48,7 @@ func (s *Service) BuildLocalImage(ctx context.Context, stateDir string) (BuildRe
 	if err != nil {
 		return BuildResult{}, fmt.Errorf("Error: cannot read ARK's current build from Steam: %w", err)
 	}
-	image := DefaultLocalImageName + ":" + buildID
+	image := LocalImageRef(buildID)
 	if result, ok, err := s.existingBuild(ctx, image, buildID); err != nil || ok {
 		return result, err
 	}
@@ -136,7 +136,7 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 		return BuildResult{}, fmt.Errorf("Error: built ARK build %s, but Steam reported %s; run the update again", imageBuildID, buildID)
 	}
 
-	image := DefaultLocalImageName + ":" + buildID
+	image := LocalImageRef(buildID)
 	s.logger.Info("building labeled image", "tag", image, "version", version)
 	if err := s.engine.BuildImage(ctx, ark.BuildRequest{
 		Dockerfile: filepath.Join(contextDir, LocalLabelsDockerfilePath),
@@ -146,6 +146,7 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 			"BASE_IMAGE":         baseTag,
 			"ARK_SERVER_VERSION": version,
 			"ARK_BUILD_ID":       buildID,
+			"ARK_RECIPE_ID":      arkcontainer.RecipeID(),
 		},
 		Context: contextDir,
 	}); err != nil {
@@ -201,11 +202,11 @@ func (s *Service) checkBuildDisk(stateDir string) error {
 }
 
 // EnsureLocalImages makes each targeted service run an existing
-// ark-server:<build ID> image and pins compose to it:
+// ark-server:<build ID>[-<recipe ID>] image and pins compose to it:
 //   - ark-server or ark-server:latest: pin to ark-server:latest's build-ID tag,
 //     building first if ark-server:latest doesn't exist;
 //   - ark-server:<tag>: keep it; if it's missing, build it when <tag> is Steam's
-//     current build, otherwise ask for an update;
+//     current build with this recipe (LocalImageRef), otherwise ask for an update;
 //   - any other image is an error: only locally built images are supported.
 //
 // Pins are applied to project in place and saved once.
@@ -239,7 +240,7 @@ func (s *Service) EnsureLocalImages(ctx context.Context, composeFile string, pro
 	return s.compose.SaveProject(ctx, composeFile, project)
 }
 
-// ensureServiceImage returns the ark-server:<build ID> image a service must run.
+// ensureServiceImage returns the ark-server:<build ID>[-<recipe ID>] image a service must run.
 func (s *Service) ensureServiceImage(ctx context.Context, composeFile, service, image string) (string, error) {
 	repo, tag, _ := strings.Cut(strings.TrimSpace(image), ":")
 	if repo != DefaultLocalImageName {
@@ -262,14 +263,17 @@ func (s *Service) ensureServiceImage(ctx context.Context, composeFile, service, 
 		if info.BuildID == "" {
 			return "", fmt.Errorf("Error: image %s has no %s label; rebuild with: ark-cli update instance --instance %s --rollout", latest, LabelARKBuildID, service)
 		}
-		return DefaultLocalImageName + ":" + info.BuildID, nil
+		if info.Recipe == "" {
+			return DefaultLocalImageName + ":" + info.BuildID, nil // built before recipe tags
+		}
+		return DefaultLocalImageName + ":" + info.BuildID + "-" + info.Recipe, nil
 	}
 	exists, err := s.engine.ImageExists(ctx, image)
 	if err != nil || exists {
 		return image, err
 	}
 	steamBuildID, err := s.FetchSteamLatestBuildID()
-	if err != nil || steamBuildID != tag {
+	if err != nil || image != LocalImageRef(steamBuildID) {
 		return "", fmt.Errorf("Error: image %s for %s is missing; run: ark-cli update instance --instance %s --rollout", image, service, service)
 	}
 	built, err := s.BuildLocalImage(ctx, StateDir(composeFile))

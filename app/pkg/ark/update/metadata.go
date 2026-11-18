@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	arkcontainer "ark-container"
 )
 
 const (
@@ -12,6 +14,7 @@ const (
 	LabelOCIImageDesc    = "org.opencontainers.image.description"
 	LabelARKBuildID      = "io.ark.server.build_id"
 	LabelARKVersion      = "io.ark.server.version"
+	LabelARKRecipe       = "io.ark.recipe"
 
 	ContainerVersionPath      = "/home/ark-user/ARK_SERVER_VERSION"
 	ContainerBuildIDPath      = "/home/ark-user/ARK_SERVER_BUILDID"
@@ -39,6 +42,7 @@ func (s *Service) InspectImageVersionInfo(ctx context.Context, image string) (Im
 		Image:   image,
 		Version: version,
 		BuildID: buildID,
+		Recipe:  strings.TrimSpace(labels[LabelARKRecipe]),
 	}
 	return info, nil
 }
@@ -64,4 +68,9 @@ func FirstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// LocalImageRef returns the tag ark-cli builds for an ARK build with this binary's recipe.
+func LocalImageRef(buildID string) string {
+	return DefaultLocalImageName + ":" + buildID + "-" + arkcontainer.RecipeID()
 }

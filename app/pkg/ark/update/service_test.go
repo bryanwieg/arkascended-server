@@ -84,6 +84,34 @@ func TestCheckLocalUpdateDetectsNewBuildID(t *testing.T) {
 	}
 }
 
+func TestCheckLocalUpdateDetectsRecipeChange(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		recipe string
+		want   bool
+	}{
+		{name: "same recipe", recipe: arkcontainer.RecipeID(), want: false},
+		{name: "other recipe", recipe: "000000000000", want: true},
+		{name: "no recipe label", recipe: "", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testService(&arktest.MockEngine{
+				ImageLabelsFn: func(_ context.Context, _ string) (map[string]string, error) {
+					return map[string]string{LabelARKBuildID: "200", LabelARKRecipe: tc.recipe}, nil
+				},
+			})
+			s.FetchText = func(string) (string, error) { return steamBuild200, nil }
+			result, err := s.CheckLocalUpdate(context.Background(), "ark-server:200")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.UpdateAvailable != tc.want {
+				t.Fatalf("UpdateAvailable = %v, want %v (%s)", result.UpdateAvailable, tc.want, result.Message)
+			}
+		})
+	}
+}
+
 func TestCheckLocalUpdateMissingBuildID(t *testing.T) {
 	engine := &arktest.MockEngine{
 		ImageLabelsFn: func(_ context.Context, _ string) (map[string]string, error) {
@@ -139,7 +167,7 @@ func (r *buildRig) service() *Service {
 	s := testService(&arktest.MockEngine{
 		ImageExistsFn: func(_ context.Context, image string) (bool, error) { return r.exists[image], nil },
 		ImageLabelsFn: func(_ context.Context, _ string) (map[string]string, error) {
-			return map[string]string{LabelARKVersion: "98.6", LabelARKBuildID: "200"}, nil
+			return map[string]string{LabelARKVersion: "98.6", LabelARKBuildID: "200", LabelARKRecipe: arkcontainer.RecipeID()}, nil
 		},
 		PullImageFn: func(_ context.Context, ref string) error {
 			r.pulls = append(r.pulls, ref)
@@ -180,7 +208,7 @@ func TestBuildLocalImageBuildsFromEmbeddedRecipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != (BuildResult{Image: "ark-server:200", BuildID: "200", Version: "98.6", Built: true}) {
+	if result != (BuildResult{Image: LocalImageRef("200"), BuildID: "200", Version: "98.6", Built: true}) {
 		t.Fatalf("result %+v", result)
 	}
 	contextDir := filepath.Join(stateDir, "build", "context")
@@ -201,10 +229,11 @@ func TestBuildLocalImageBuildsFromEmbeddedRecipe(t *testing.T) {
 		t.Fatalf("base build %+v", r.builds[0])
 	}
 	labeled := r.builds[1]
-	if labeled.Tag != "ark-server:200" || strings.Join(labeled.ExtraTags, ",") != "ark-server:98.6,ark-server:latest" {
+	if labeled.Tag != LocalImageRef("200") || strings.Join(labeled.ExtraTags, ",") != "ark-server:98.6,ark-server:latest" {
 		t.Fatalf("labeled build tags %q %v", labeled.Tag, labeled.ExtraTags)
 	}
-	if labeled.BuildArgs["BASE_IMAGE"] != "ark-server:base" || labeled.BuildArgs["ARK_BUILD_ID"] != "200" || labeled.BuildArgs["ARK_SERVER_VERSION"] != "98.6" {
+	if labeled.BuildArgs["BASE_IMAGE"] != "ark-server:base" || labeled.BuildArgs["ARK_BUILD_ID"] != "200" || labeled.BuildArgs["ARK_SERVER_VERSION"] != "98.6" ||
+		labeled.BuildArgs["ARK_RECIPE_ID"] != arkcontainer.RecipeID() {
 		t.Fatalf("labeled build args %v", labeled.BuildArgs)
 	}
 	if strings.Join(r.removed, ",") != "ark-server-files:200" {
@@ -250,12 +279,12 @@ func TestBuildLocalImageGetsTheBaseImage(t *testing.T) {
 
 func TestBuildLocalImageSkipsExistingBuild(t *testing.T) {
 	r := newBuildRig()
-	r.exists["ark-server:200"] = true
+	r.exists[LocalImageRef("200")] = true
 	result, err := r.service().BuildLocalImage(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Built || result.Image != "ark-server:200" || result.Version != "98.6" || r.ran != nil || len(r.builds) != 0 {
+	if result.Built || result.Image != LocalImageRef("200") || result.Version != "98.6" || r.ran != nil || len(r.builds) != 0 {
 		t.Fatalf("result %+v, ran %v, builds %d; want the existing image and no work", result, r.ran, len(r.builds))
 	}
 }

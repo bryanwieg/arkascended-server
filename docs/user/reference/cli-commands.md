@@ -64,7 +64,7 @@ ark-cli start instance --instance all
 Start always makes sure the `ark-server` image exists locally and never
 pulls. A new instance's compose file says `image: ark-server:latest` (not built
 or pinned yet); the first start builds the image if needed and pins compose to
-`ark-server:<build-id>`. The build runs on the host (about 15–25 minutes) and
+`ark-server:<build-id>-<recipe-id>`. The build runs on the host (about 15–25 minutes) and
 needs the free disk space set by `ARK_BUILD_REQUIRED_FREE_GB`. Only
 `ark-server` images are supported; any other image in compose is an error.
 See [How updates work](../explanation/updates.md).

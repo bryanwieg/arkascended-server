@@ -16,6 +16,8 @@ import (
 	"pkg/ark"
 	"pkg/ark/arktest"
 	"pkg/ark/runtime"
+
+	arkcontainer "ark-container"
 )
 
 func writeUpdateComposeFixture(t *testing.T, composePath, seed string) {
@@ -76,6 +78,7 @@ func withLocalSteamCheck(
 				return map[string]string{
 					"io.ark.server.version":  currentVersion,
 					"io.ark.server.build_id": currentBuildID,
+					"io.ark.recipe":          arkcontainer.RecipeID(),
 				}, nil
 			},
 		}

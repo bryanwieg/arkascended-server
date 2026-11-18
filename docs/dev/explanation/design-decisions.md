@@ -189,7 +189,7 @@ write when nothing changed.
 
 ## Why images are built on the host
 
-`ark-cli` builds `ark-server:<build-id>` on the user's machine from Steam; no
+`ark-cli` builds `ark-server:<build-id>-<recipe-id>` on the user's machine from Steam; no
 ARK image is published anywhere. *Why:* an image holding Studio Wildcard's
 server binaries is redistribution, and publishing it risks a DMCA takedown (for
 example Apple against Docker-OSX on Docker Hub). Building on the host means

@@ -30,13 +30,20 @@ builder, which rejects `COPY --chmod` and `RUN --mount`, so the CLI requests
 BuildKit explicitly. It applies `container/.dockerignore` itself, because it
 tars the context client-side. Build errors arrive inside an HTTP 200 response
 stream, so the CLI decodes the stream and reports them. This is the path used
-by `ark-cli start instance` (when `ark-server:<build-id>` is missing) and
-`ark-cli update instance` (when Steam has a newer build).
+by `ark-cli start instance` (when `ark-server:<build-id>-<recipe-id>` is missing)
+and `ark-cli update instance` (when Steam has a newer build, or the image was
+built from a different recipe).
 
 Before building, the CLI checks that free space in `.ark-manage` is at least
 `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB and takes a build lock so two
-builds cannot run at once. If `ark-server:<id>` already exists, nothing is
-built.
+builds cannot run at once. If `ark-server:<build-id>-<recipe-id>` already
+exists, nothing is built.
+
+The recipe ID (`arkcontainer.RecipeID()`) is the first 12 hex characters of a
+SHA-256 over every embedded recipe file, path and contents. *Why:* without it,
+an `ark-cli` with changed container scripts would reuse the image for the same
+ARK build and never ship the new scripts. A separate tag rather than a rebuilt
+`ark-server:<build-id>` keeps the previous image for rollback.
 
 The build process:
 
@@ -52,11 +59,11 @@ The build process:
    to read `/home/ark-user/ARK_SERVER_VERSION` and
    `/home/ark-user/ARK_SERVER_BUILDID`.
 4. **Stage 2 (labeled):** a build of `container/dockerfile.labels`
-   with `--build-arg BASE_IMAGE`, `ARK_SERVER_VERSION`, and `ARK_BUILD_ID`
-   produces the final tagged images:
+   with `--build-arg BASE_IMAGE`, `ARK_SERVER_VERSION`, `ARK_BUILD_ID` and
+   `ARK_RECIPE_ID` (label `io.ark.recipe`) produces the final tagged images:
    - `ark-server:latest`
    - `ark-server:<version>` (e.g. `84.19`)
-   - `ark-server:<build-id>` (e.g. `22359937`)
+   - `ark-server:<build-id>-<recipe-id>` (e.g. `22359937-a3db839e5516`)
 5. **Cleanup:** `ark-server-files:<id>` is removed. Cleanup after start/update
    keeps each instance's current and previous image; older `ark-server` images,
    all `ark-server-files` images and base tags other than the current one are

@@ -8,14 +8,16 @@ tag switch.
 
 ## Building an image
 
-`ark-cli` builds `ark-server:<steam build id>` (also tagged
+`ark-cli` builds `ark-server:<steam build id>-<recipe id>` (also tagged
 `ark-server:<version>` and `ark-server:latest`). The build recipe is embedded
 in the `ark-cli` binary and extracted to `<compose dir>/.ark-manage/build/context`
-when needed, so no repo clone is required.
+when needed, so no repo clone is required. The recipe ID is a hash of that
+recipe, so a new `ark-cli` whose container scripts changed builds a new image
+even when ARK itself hasn't updated.
 
 - The first `start instance` builds the image if it does not exist yet and
-  pins compose to `ark-server:<build-id>`. If `ark-server:<id>` already exists,
-  no build happens.
+  pins compose to `ark-server:<build-id>-<recipe-id>`. If that image already
+  exists, no build happens.
 - SteamCMD runs in a throwaway container. Its install is cached in
   `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), so later
   updates download only changed files.
@@ -34,7 +36,9 @@ build takes about 15–25 minutes.
 ## Updating
 
 `update instance` compares the instance's `io.ark.server.build_id` image label
-with Steam's current public build.
+with Steam's current public build, and its `io.ark.recipe` label with the
+recipe embedded in this `ark-cli`. Either difference is an update. Images built
+before recipe labels existed count as a recipe change once.
 
 1. `--check` only prints the comparison table.
 2. Without `--rollout` (or its alias `--restart`), it builds the new image and

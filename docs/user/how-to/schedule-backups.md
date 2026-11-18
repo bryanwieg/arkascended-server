@@ -1,114 +1,57 @@
 # Schedule Automatic Backups
 
-How to set up automatic recurring backups for your ARK server instances.
+Schedules live in a config file; `apply schedules` writes them to your
+user's crontab. Re-run it after every create, update, enable, disable or
+remove.
 
-## Create a schedule
+## Create
 
 ```sh
 ark-cli create schedule backup --instance my-server --name nightly-my-server --cron "0 3 * * *"
-```
-
-This creates a schedule named `nightly-my-server` that runs at 3:00 AM daily.
-
-To back up the shared cluster data on its own schedule, use the target
-`cluster`. A schedule for `--instance all` already includes the cluster.
-
-```sh
-ark-cli create schedule backup --instance cluster --name hourly-cluster --cron "0 * * * *"
-```
-The cron expression uses standard 5-field format: `minute hour day month weekday`.
-
-Common cron expressions:
-- `"0 3 * * *"` — every day at 3:00 AM
-- `"0 */6 * * *"` — every 6 hours
-- `"0 4 * * 0"` — every Sunday at 4:00 AM
-
-Optional retention flags:
-- `--retain-count 20` — keep at most 20 backups (default)
-- `--retain-days 7` — delete backups older than 7 days (default)
-- `--retain-size-gb 5` — prune when backups exceed 5 GB total (default)
-
-Set any of these to `0` to disable that particular rule.
-
-## Apply the schedule to your crontab
-
-Schedules are stored in a config file and need to be installed into your
-user's crontab:
-
-```sh
 ark-cli apply schedules
 ```
 
-Run this once after creating or updating any schedule.
+- `--cron`: standard 5-field expression.
+- `--instance`: an instance, `cluster` (shared cluster data only) or `all`
+  (every instance plus the cluster).
+- `--format`: `tar`, `tar.gz` (default) or `tar.zst`.
+- `--disabled`: create without scheduling it.
 
-## Verify the schedule
+Retention, applied after each run (`0` disables a rule):
 
-List all schedules:
+| Flag | Default |
+|---|---|
+| `--retain-count` | 20 |
+| `--retain-days` | 7 |
+| `--retain-size-gb` | 5 |
+
+The newest backups are always kept; see
+[Understanding backups](../explanation/backups.md).
+
+## Verify and test
 
 ```sh
 ark-cli list schedules
-```
-
-Show details for a specific schedule:
-
-```sh
 ark-cli show schedule --name nightly-my-server
+ark-cli run schedule --name nightly-my-server     # run now
+ark-cli check schedule --name nightly-my-server   # non-zero exit if the last run failed
 ```
 
-Test it immediately (runs the backup now):
-
-```sh
-ark-cli run schedule --name nightly-my-server
-```
-
-## Check schedule health
-
-After a scheduled run, check if it succeeded:
-
-```sh
-ark-cli check schedule --name nightly-my-server
-```
-
-This exits non-zero if the last run failed, making it suitable for monitoring
-scripts or health checks.
-
-## Enable or disable a schedule
-
-To temporarily pause a schedule without removing it:
-
-```sh
-ark-cli disable schedule --name nightly-my-server
-ark-cli enable schedule --name nightly-my-server
-```
-
-## Update a schedule
-
-Change the cron time or retention settings:
+## Change
 
 ```sh
 ark-cli update schedule --name nightly-my-server --cron "0 4 * * *" --retain-days 14
-```
-
-Then re-apply to update the crontab:
-
-```sh
+ark-cli disable schedule --name nightly-my-server
+ark-cli enable schedule --name nightly-my-server
+ark-cli remove schedule --name nightly-my-server
 ark-cli apply schedules
 ```
 
-## Remove a schedule
+## Storage
 
-```sh
-ark-cli remove schedule --name nightly-my-server
-ark-cli apply schedules   # update the crontab
-```
-
-## Where backups are stored
-
-Backups land in `<compose-dir>/backups/<instance>/` by default.
-Override the backup root for all operations with the `ARK_BACKUP_DIR`
-environment variable.
+Default `<compose-dir>/backups/<instance>/`. Override with `ARK_BACKUP_DIR`.
 
 ## Related
 
-- `docs/user/how-to/restore-backup.md` — restore from a backup
-- `docs/user/explanation/backups.md` — retention rules and safety guarantees
+- [Restore a backup](restore-backup.md)
+- [Understanding backups](../explanation/backups.md)

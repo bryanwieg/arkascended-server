@@ -28,7 +28,6 @@ type RuntimeDeps struct {
 	ContainerRuntime     ContainerRuntime
 	RunCommand           func([]string, ark.CommandOptions) (ark.ExecResult, error)
 	LookPath             func(string) (string, error)
-	RconEnvArgs          func() []string
 	ReadKernelParam      func(string) (int, error)
 	GetNofileHardLimit   func() (uint64, error)
 	OpenUDPProbeListener func(int) (func(), error)

@@ -8,8 +8,7 @@ import (
 
 // NewCLILogger creates a *slog.Logger for CLI use. Library packages under
 // pkg/ark/ receive this logger via constructor injection and never reference
-// os.Stderr directly. The handler choice (text vs JSON) can be revisited when
-// cmd/ark-web/ is introduced.
+// os.Stderr directly. ark-web builds its own logger.
 func NewCLILogger(verbose bool) *slog.Logger {
 	level := slog.LevelInfo
 	if verbose {

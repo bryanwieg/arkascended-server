@@ -89,7 +89,6 @@ func FillDefaults(d *AppDeps) {
 			ContainerRuntime: runtime.ContainerRuntime(d.Runtime.ContainerRuntime),
 			RunCommand:       d.Runtime.RunCommand,
 			LookPath:         d.Runtime.LookPath,
-			RconEnvArgs:      d.Runtime.RconEnvArgs,
 		},
 		Host:            d.HostDeps,
 		Engine:          d.Engine,
@@ -182,9 +181,6 @@ func MergeRuntimeDeps(dst *RuntimeDeps, src RuntimeDeps) {
 	}
 	if src.ContainerRuntime != "" {
 		dst.ContainerRuntime = src.ContainerRuntime
-	}
-	if src.RconEnvArgs != nil {
-		dst.RconEnvArgs = src.RconEnvArgs
 	}
 }
 

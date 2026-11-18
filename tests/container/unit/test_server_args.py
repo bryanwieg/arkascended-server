@@ -18,7 +18,7 @@ def ru_mod_fixture(monkeypatch: pytest.MonkeyPatch):
     runtime_path = str(Path(__file__).resolve().parents[3] / "container/scripts/runtime")
     if runtime_path not in sys.path:
         sys.path.insert(0, runtime_path)
-    for key in ("MAP_NAME", "SESSION_NAME", "INSTANCE_NAME", "ASA_PORT", "PROTON_VERSION", "MOD_IDS", "CLUSTER_ID"):
+    for key in ("MAP_NAME", "SESSION_NAME", "ASA_PORT", "PROTON_VERSION", "MOD_IDS", "CLUSTER_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("PROTON_PATH", _PROTON + "/")
     module = importlib.import_module("runtime_utils")
@@ -35,14 +35,9 @@ def _command(url: str, *extra: str) -> list[str]:
     [
         ({}, (), _command("TheIsland_WP?listen?Port=27015")),
         (
-            {"MAP_NAME": "Aberration_WP", "INSTANCE_NAME": "Fallback Session", "ASA_PORT": "7777"},
+            {"MAP_NAME": "Aberration_WP", "SESSION_NAME": "My Session", "ASA_PORT": "7777"},
             ("-NoBattlEye",),
-            _command("Aberration_WP?listen?SessionName=Fallback Session?Port=7777", "-NoBattlEye"),
-        ),
-        (
-            {"MAP_NAME": "ScorchedEarth_WP", "SESSION_NAME": "Primary Session", "INSTANCE_NAME": "Ignored Session"},
-            (),
-            _command("ScorchedEarth_WP?listen?SessionName=Primary Session?Port=27015"),
+            _command("Aberration_WP?listen?SessionName=My Session?Port=7777", "-NoBattlEye"),
         ),
         (
             {"MOD_IDS": " 940975, 1386057 "},
@@ -55,12 +50,12 @@ def _command(url: str, *extra: str) -> list[str]:
             _command("TheIsland_WP?listen?Port=27015", "-mods=940975", "-clusterid=cluster"),
         ),
     ],
-    ids=["defaults", "instance-name-port-flag", "session-name-wins", "mod-ids", "cluster-id"],
+    ids=["defaults", "session-name-port-flag", "mod-ids", "cluster-id"],
 )
 def test_server_command_builds_the_proton_command_line(
     ru_mod, monkeypatch: pytest.MonkeyPatch, env: dict[str, str], extra: tuple[str, ...], expected: list[str]
 ) -> None:
-    """SESSION_NAME beats INSTANCE_NAME, the port defaults to 27015, and extra args go before -servergamelog."""
+    """SESSION_NAME sets the session, the port defaults to 27015, and extra args go before -servergamelog."""
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     assert ru_mod.server_command(*extra) == expected

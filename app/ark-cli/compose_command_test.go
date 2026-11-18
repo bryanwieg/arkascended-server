@@ -350,7 +350,6 @@ func TestRunStopImmediateUsesComposeKillAndPrintsMessage(t *testing.T) {
 	var gotSignal string
 	out := captureStdout(t, func() {
 		withComposeLifecycleDeps(t, []string{"a"}, func(d *core.AppDeps) {
-			d.Runtime.RconEnvArgs = func() []string { return nil }
 			loadProject := d.ComposeService.(*arktest.MockCompose).LoadProjectFn
 			d.ComposeService = &arktest.MockCompose{
 				LoadProjectFn: loadProject,

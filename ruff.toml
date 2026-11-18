@@ -18,7 +18,7 @@ select = [
   "PT",       # pytest style
   "S",        # bandit security
   "BLE",      # blind except
-  "T20",      # print: container scripts must use emit_event/emit_error/eprint
+  "T20",      # print: container scripts must use emit_event/emit_warning/emit_error
   "PTH",      # prefer pathlib
   "RET",      # return
   "PIE",

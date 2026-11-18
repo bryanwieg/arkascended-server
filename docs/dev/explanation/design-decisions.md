@@ -155,8 +155,7 @@ that must not ship.
 
 **SessionName is stripped.** ARK writes a random `[SessionSettings]
 SessionName=ARK #NNNNNN` during the build run. The generator removes it so no
-server inherits it; the name comes from `SESSION_NAME` / `INSTANCE_NAME` on the
-command line.
+server inherits it; the name comes from `SESSION_NAME` on the command line.
 
 **RCON and password settings are re-applied on every start.** `RCONEnabled`,
 `RCONPort`, `ServerAdminPassword` and `ServerPassword` are written from the

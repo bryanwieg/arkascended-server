@@ -132,7 +132,6 @@ func FillTestDefaults(d *core.AppDeps, cfg TestDepsConfig) {
 			ContainerRuntime: runtime.ContainerRuntime(d.Runtime.ContainerRuntime),
 			RunCommand:       d.Runtime.RunCommand,
 			LookPath:         d.Runtime.LookPath,
-			RconEnvArgs:      d.Runtime.RconEnvArgs,
 		},
 		Host:            d.HostDeps,
 		Engine:          d.Engine,

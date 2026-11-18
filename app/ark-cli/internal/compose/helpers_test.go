@@ -16,7 +16,7 @@ import (
 
 // NOTE: This file contains local duplicates of testutil helpers (captureStdout,
 // fakeProject, emptyServices) because the compose package cannot import testutil
-// — testutil/deps.go imports compose, creating an import cycle. The other 9
+// — testutil/deps.go imports compose, creating an import cycle. The other
 // internal packages use testutil directly; compose is the sole exception.
 // Mirror of testutil.CaptureStdout.
 func captureStdout(t *testing.T, fn func()) string {

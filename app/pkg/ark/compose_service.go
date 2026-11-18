@@ -8,7 +8,7 @@ import (
 
 // ComposeService abstracts Docker Compose operations. Methods that operate on
 // a running project take the compose file path (which identifies the project)
-// as their first string argument. Both shell and SDK backends implement this
+// as their first string argument. The SDK backend (sdkbackend) implements this
 // interface. Backends map native errors to sentinel types (ErrNotFound, etc.)
 // so callers can branch with errors.Is.
 type ComposeService interface {
@@ -17,10 +17,10 @@ type ComposeService interface {
 	// LoadProject parses the compose file and returns a typed project.
 	LoadProject(ctx context.Context, composeFile string) (*ComposeProject, error)
 
-	// SaveProject marshals the project to YAML and writes it to composeFile.
-	// Use this for mutating existing projects loaded via LoadProject.
-	// For creating new projects from scratch, use runtime.InsertService on
-	// raw YAML text instead.
+	// SaveProject writes a project loaded via LoadProject back to composeFile:
+	// changes to a service's image, environment, labels and ports become line
+	// edits that keep the rest of the file; other changes are refused. Add new
+	// services with runtime.InsertService on the raw YAML instead.
 	SaveProject(ctx context.Context, composeFile string, project *ComposeProject) error
 
 	// Lifecycle

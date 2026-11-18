@@ -50,7 +50,6 @@ type RuntimeDeps struct {
 	ContainerRuntime runtime.ContainerRuntime
 	RunCommand       func([]string, ark.CommandOptions) (ark.ExecResult, error)
 	LookPath         func(string) (string, error)
-	RconEnvArgs      func() []string
 }
 
 // Context returns the app's context, falling back to context.Background()

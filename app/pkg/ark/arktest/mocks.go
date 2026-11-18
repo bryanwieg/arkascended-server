@@ -13,7 +13,7 @@ import (
 )
 
 // MockEngine implements ark.ContainerEngine for testing. Each method delegates
-// to a configurable function field. Unconfigured methods panic.
+// to a configurable function field. Unconfigured methods return zero values.
 type MockEngine struct {
 	InspectStateFn      func(ctx context.Context, container string) (ark.ContainerState, error)
 	RemoveContainerFn   func(ctx context.Context, container string) error

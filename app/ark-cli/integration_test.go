@@ -188,10 +188,8 @@ func patchFakeCLIHostDeps(t *testing.T) {
 		d.DiskUsageForPath = func(_ string) (int64, int64, error) {
 			return 100 * 1024 * 1024 * 1024, 200 * 1024 * 1024 * 1024, nil
 		}
-		// Use MockCompose instead of ShellCompose so tests don't
-		// require a real docker binary on PATH. The mock's default
-		// behavior (no-op for non-configured methods) matches the
-		// no-op docker stub for most operations.
+		// MockCompose so tests need no container engine; unconfigured
+		// methods are no-ops.
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, composeFile string) (*ark.ComposeProject, error) {
 				// Try to load from file first (create may have written one).

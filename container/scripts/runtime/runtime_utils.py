@@ -62,7 +62,7 @@ def server_command(*extra_args: str) -> list[str]:
             "All current ARK: Survival Ascended maps require the _WP suffix. "
             "The server may fail to start or hang indefinitely.",
         )
-    session_name = os.environ.get("SESSION_NAME") or os.environ.get("INSTANCE_NAME", "")
+    session_name = os.environ.get("SESSION_NAME", "")
     session = f"?SessionName={session_name}" if session_name else ""
     url = f"{map_name}?listen{session}?Port={os.environ.get('ASA_PORT') or '27015'}"
     mod_ids = "".join(os.environ.get("MOD_IDS", "").split())

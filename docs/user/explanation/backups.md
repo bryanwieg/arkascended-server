@@ -1,28 +1,26 @@
 # Understanding Backups
 
-How backups work, what gets saved, and how retention rules protect your data.
+What a backup contains, how archives are named, and how retention, locks and
+disk-space checks behave.
 
 ## What gets backed up
 
-Each backup is an archive of the `ShooterGame/Saved/` directory from the
-server's Docker volume. This contains:
+An instance backup is an archive of `ShooterGame/Saved/` from the instance's
+volume:
 
-- The world save file (`.ark`) — a binary file that holds all world
-  data: map state, structures, items, and dinos. (SQLite integrity checks
-  apply to `.sqlite` profile/tribe databases.)
-- Player profile files (`.arkprofile`) and tribe files (`.arktribe`)
-- Config files under `Config/WindowsServer/` (`Game.ini`, `GameUserSettings.ini`)
+- `SavedArks/<map>/`: the world save (`.ark`), player profiles
+  (`.arkprofile`) and tribe files (`.arktribe`)
+- `Config/WindowsServer/` (`Game.ini`, `GameUserSettings.ini`)
 
-Server logs (`Saved/Logs/`) are not included: the running server writes to them
-continuously, which would make the archive step fail, and they are not needed
-to restore a world.
+Excluded:
 
-Cluster data (`Saved/clusters/`) is not included either, and an instance
-restore never touches it. That directory is a separate volume shared by every
-instance in the cluster, so including it would let restoring one server roll
-back the cluster transfers (uploaded characters, items and dinos) of all the
-others. Cluster data has its own backup target instead; see
-[Cluster backups](#cluster-backups).
+- `Saved/Logs/`: the running server writes to it constantly, which makes
+  `tar` fail; not needed to restore a world.
+- `Saved/clusters/`: a separate volume shared by every instance in the
+  cluster. Including it would let restoring one server roll back the cluster
+  transfers (uploaded characters, items, dinos) of all the others. An instance
+  restore never touches it. It has its own target; see
+  [Cluster backups](#cluster-backups).
 
 ## Cluster backups
 
@@ -34,124 +32,159 @@ the reserved target `cluster`:
 ark-cli create backup --instance cluster
 ```
 
-- Archives land in `<compose-dir>/backups/cluster/`, named
-  `cluster-backup-<timestamp>`. Formats, `--name`, `--dest` and the retention
-  rules work as for instances.
-- `--instance all` backs up every instance and then the cluster.
-- It works whether servers are running or not, and does not trigger a world
-  save: ARK writes a cluster file when a player uploads or downloads, not when
-  the world saves. (This is how ARK behaves as far as we know; it has not been
-  confirmed for every case.) If a file changes while it is being read, the
-  backup retries up to three times, then fails rather than keep a mixed copy.
+- Archives land in `<backup-root>/cluster/`, named
+  `cluster-backup-<timestamp>.<ext>`. Formats, `--name`, `--dest`, locks and
+  retention work as for instances.
+- `--instance all` backs up every instance, then the cluster (if the compose
+  file mounts one).
+- One cluster volume per compose file. If instances mount different volumes
+  at `Saved/clusters`, the cluster backup fails.
+- Runs in a one-off container whether servers are running or not, with no
+  world save: ARK writes a cluster file when a player uploads or downloads,
+  not on world save. (Our understanding of ARK's behavior; not confirmed for
+  every case.) If a file changes while being read, `tar` is retried up to three
+  times, then the backup fails rather than keep a mixed copy.
 - Restoring the cluster rolls back transfers for every instance that shares
-  it, so every one of them must be stopped first. See
+  it, so all of them must be stopped first. See
   [Restore the cluster data](../how-to/restore-backup.md#restore-the-cluster-data).
 - `validate backup` and `show backup` apply to instance backups only. A
   cluster backup is checked once, right after it is written, by listing the
   archive.
 - `cluster` is reserved: no instance can be named `cluster`.
 
-## Backup formats
+## Formats and naming
 
-Backups can be created in three formats, controlled by `--format`:
+`--format` (default `tar.gz`):
 
-| Format | Extension | Notes |
-|---|---|---|
-| `tar` | `.tar` | Uncompressed; fastest to create and restore |
-| `tar.gz` | `.tar.gz` | Good compression; default |
-| `tar.zst` | `.tar.zst` | Better compression than gzip; slightly slower |
+| Format | Notes |
+|---|---|
+| `tar` | Uncompressed; fastest |
+| `tar.gz` | Default |
+| `tar.zst` | Smaller than gzip |
+
+| Archive | Name |
+|---|---|
+| Regular | `<target>-backup-<YYYYMMDD-HHMMSS>.<ext>` (UTC) |
+| `--name <n>` | `<target>-<n>.<ext>` |
+| Pre-restore | `<instance>-pre-restore-<YYYYMMDD-HHMMSS>.tar.gz` |
+| Pre-update | `<instance>-pre-update.tar.gz` |
+
+`--backup latest` (and retention) order archives by the timestamp in a
+`-backup-<timestamp>` name. Archives without one (custom `--name`,
+pre-restore, pre-update) are ordered by file mtime and always rank older
+than any timestamped backup.
 
 ## Where backups are stored
 
-Backups land in `<compose-dir>/backups/<instance>/` by default. Set
-`ARK_BACKUP_DIR` to use a different root location for all backup operations.
+Default root: `<compose-dir>/backups/`, one subdirectory per target
+(`<instance>` or `cluster`). `ARK_BACKUP_DIR` replaces the root for all backup
+commands. `--dest` on `create backup` writes the archive (and applies
+retention) in another directory; the lock file stays under the root.
 
 ## Retention rules
 
-The backup system applies three independent retention rules by default:
+Retention runs after every `create backup` (on the directory the archive was
+written to) and on `prune backups` (`--dry-run` to preview). It covers every
+archive in that directory named `<target>-*.tar[.gz|.zst]`, including
+pre-restore, pre-update and custom-named ones.
 
-| Rule | Default | What it does |
+| Flag | Default | Removes |
 |---|---|---|
-| `--retain-count` | 20 | Keeps at most this many backups |
-| `--retain-days` | 7 | Deletes backups older than this many days |
-| `--retain-size-gb` | 5 | Prunes oldest backups when the total exceeds this size |
+| `--retain-days` | 7 | Backups older than N days (file mtime) |
+| `--retain-count` | 20 | Backups beyond the newest N |
+| `--retain-size-gb` | 5 | Oldest backups until the total is at most N GiB |
 
-All three rules apply together. The oldest backups are deleted first when any
-rule is triggered. Set a rule to `0` to disable it.
+`0` disables a rule. Rules apply in the order above, then a free-space rule:
+if free space in the backup directory would still be under 5 GiB, the oldest
+backups are removed until it would reach 5 GiB. Every rule removes oldest
+first, so untimestamped archives go before regular backups.
 
 ## The safety floor
 
-Regardless of your retention settings, the system always keeps at least two
-backups. This prevents a combination of aggressive retention settings and disk
-pressure from leaving you with no recovery point.
+No rule removes the last two backups. When free space in the backup directory
+is under 5 GiB, the floor drops to one, so the newest backup can be replaced.
+If a rule can't be met because of the floor (size limit, free-space target),
+retention stops and logs a warning instead of deleting more.
 
-Under extreme disk pressure (very low free space), this floor may drop to one
-backup, and the startup process may block with a warning if there is not enough
-space to keep even that.
+## Disk-space check at start
+
+`start instance` checks free space at the backup root before starting:
+
+| Free space | Result |
+|---|---|
+| 5 GiB or more | Start |
+| 1 to 5 GiB | Warning, start |
+| Under 1 GiB | Refuse if any instance being started has no backup yet |
+| 0 | Refuse |
+
+## Locks
+
+`create backup` takes a per-target lock file,
+`<backup-root>/<target>/.<target>-backup.lock`, for the whole run including
+retention. A second backup of the same target waits up to `--lock-timeout`
+(default 2m), then fails. A lock left by a dead process is removed
+automatically. A cluster restore takes the same lock without waiting. Instance
+restores and `prune backups` do not lock.
 
 ## Pre-restore backup
 
-When you run `ark-cli restore backup`, the system automatically takes a
-pre-restore backup before clearing and extracting the new one. This means you
-can always undo a restore by restoring again from the most recent backup (which
-will be the pre-restore snapshot).
+`restore backup` first archives the instance's current `Saved/` as
+`<instance>-pre-restore-<timestamp>.tar.gz` in the same directory as the
+archive being restored, then clears and extracts. To undo a restore, restore
+that file by name. `--backup latest` does not pick it while timestamped
+backups exist (see [Formats and naming](#formats-and-naming)), and retention
+prunes it before regular backups.
 
 ## Backup validation
 
-Before restoring, you can verify a backup archive is intact and its database
-files are not corrupted:
+Every new instance archive is checked inside the container right after it is
+written: the archive is listed and the SQLite-backed world files under
+`SavedArks/` get an integrity check. A failed check is retried
+(`BACKUP_VERIFY_MAX_RETRIES`).
+
+To check an existing archive on the host before restoring:
 
 ```sh
 ark-cli validate backup --instance my-server --backup latest
 ```
 
-This extracts the archive, finds the `.sqlite` files (tribe and profile databases), and runs
-SQLite integrity checks on them. It exits non-zero if any file fails.
+This extracts the archive and runs `PRAGMA integrity_check` on each `.sqlite`
+file (needs `sqlite3` on the host). It fails if any check fails or the archive
+contains no `.sqlite` files.
 
 ## Backing up a stopped server
 
-If the server is stopped when `create backup` is run, a temporary container
-starts to produce the archive and then exits. No need to start the full server.
+If the instance is stopped, `create backup` runs the backup script in a
+temporary container from the same service, then removes it. The full server
+does not start.
 
-That temporary container is only used when the server is known to be stopped.
-It can't trigger an in-game save, so if a backup of a *running* server fails
-(for example, the save is never confirmed), `create backup` reports the error
-rather than copying files the server may still be writing. The same applies
-when the CLI can't tell whether the server is running.
-
-## Related
-
-- `docs/user/how-to/schedule-backups.md` — schedule automatic backups
-- `docs/user/how-to/restore-backup.md` — restore from a backup
+The temporary container can't trigger an in-game save, so it is used only
+when the instance is known to be stopped. If a backup of a running server
+fails (for example, the save is never confirmed), or the CLI can't tell
+whether the instance is running, `create backup` fails rather than copy files
+the server may still be writing.
 
 ## How saves are confirmed before backup
 
-Before archiving, the backup script forces an in-game save via RCON
-`saveworld` and waits for the server to acknowledge it in the log. This avoids
-backing up a partially-written save.
+On a running server the backup script sends RCON `saveworld` and waits for
+`World Save Complete` in the server log before archiving, so a partly written
+save is never archived.
 
-### Only a save made after the request counts
+- The script records the end of the log before sending `saveworld`. Only a
+  marker written after that point counts, so an earlier autosave can't stand
+  in for a failed save. The shutdown script confirms its final save the same
+  way.
+- Each confirmation attempt polls for up to
+  `BACKUP_SAVE_CONFIRM_TIMEOUT_SECONDS` (default 60) every
+  `BACKUP_SAVE_CONFIRM_POLL_SECONDS` (default 2). A missed marker retries the
+  whole confirmation (`BACKUP_SAVE_CONFIRM_MAX_RETRIES`,
+  `BACKUP_SAVE_CONFIRM_RETRY_DELAY_SECONDS`).
+- A failed `saveworld` RCON call is retried (`BACKUP_RCON_SAVE_MAX_RETRIES`,
+  `BACKUP_RCON_SAVE_RETRY_DELAY_SECONDS`).
 
-Before issuing `saveworld`, the script records the current end of the server
-log. Only a `World Save Complete` line written after that point confirms the
-backup, so an earlier autosave can't stand in for a save that failed. The
-shutdown script confirms its final save the same way.
+All defaults: [configuration.md](../reference/configuration.md).
 
-### Confirmation polling
+## Related
 
-After `saveworld` is issued, the script polls the log lines written since the
-recorded position for the world-saved marker. Within each confirmation attempt, it polls
-for up to `BACKUP_SAVE_CONFIRM_TIMEOUT_SECONDS` (default `60`) with
-`BACKUP_SAVE_CONFIRM_POLL_SECONDS` (default `2`) intervals. If the marker is not
-found, the entire confirmation is retried up to
-`BACKUP_SAVE_CONFIRM_MAX_RETRIES` times with `BACKUP_SAVE_CONFIRM_RETRY_DELAY_SECONDS`
-delay between attempts.
-
-### RCON retry
-
-The `saveworld` RCON command itself can fail transiently. It is retried up to
-`BACKUP_RCON_SAVE_MAX_RETRIES` times with
-`BACKUP_RCON_SAVE_RETRY_DELAY_SECONDS` delay between attempts.
-
-See [configuration.md](../reference/configuration.md) for the full list of
-related env vars and their defaults.
+- [Schedule automatic backups](../how-to/schedule-backups.md)
+- [Restore a backup](../how-to/restore-backup.md)

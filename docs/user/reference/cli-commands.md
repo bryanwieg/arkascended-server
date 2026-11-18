@@ -1,615 +1,467 @@
 # CLI Commands (ark-cli)
 
-Complete reference for `ark-cli` commands. For how the CLI and the container
-divide the work, see [How It Works](../explanation/architecture.md).
+Reference for every `ark-cli` command and flag. How the CLI and the container
+split the work: [How It Works](../explanation/architecture.md).
 
-Command groups:
+Syntax: `ark-cli [global options] <verb> <object> [flags]`. Targets are flags
+(`--instance`, `--name`, `--backup`, `--port`), never positional arguments.
 
-- Instance lifecycle and inspection (`create/reconfigure/update/show/list/start/stop/restart/save/logs/check/wait/remove instance`, `teardown instances`)
-- Container-side INI editing (`edit/show ini`)
-- Backups/restore/maintenance (`create/list/show/validate/restore backup`, `prune backups`)
-- Schedule management (`create/list/show/update/enable/disable/check/run/validate/apply/remove schedule`)
-- Host and network checks (`check/fix/restore host-kernel-config`, `check reachability`, `listen port`, `enable/disable remote-rcon`)
+## Global options
 
-Command style is `<verb> <object>` (for example `create instance`, `create
-backup`, `check reachability`).
+Place these before `<verb> <object>`.
 
-Global options:
+| Option | Description |
+|---|---|
+| `-h`, `--help` | Top-level usage and command list. `<verb> <object> --help` shows a command's flags. |
+| `--version` | Print the CLI version (`dev` for local builds). |
+| `-v`, `--verbose` | Print executed commands and captured output. |
+| `-v <logfile>`, `-v=<logfile>`, `--verbose=<logfile>` | Verbose, and also write verbose output to `<logfile>`. |
+| `--runtime docker\|podman` | Container runtime. Default: `ARK_CONTAINER_RUNTIME`, else auto-detect from `PATH` (prefers Docker). |
 
-- `-h`, `--help`: show top-level usage and command list.
-- `--version`: print the CLI version (`dev` for local builds).
-- `-v`, `--verbose`: print executed commands and captured command output.
-- `-v <logfile>` or `--verbose=<logfile>`: also write verbose output to a file.
-- `--runtime docker|podman`: force a specific container runtime. Auto-detected
-  from `$PATH` if omitted (prefers Docker when both are present). Can also be
-  set via the `ARK_CONTAINER_RUNTIME` environment variable (flag takes
-  priority). Podman 5.0+ is required; Docker works with any recent version.
+Every command checks the runtime first: daemon Docker 28.0+ or Podman 5.0+, and
+`<runtime> compose version` must succeed (a Compose provider is required).
 
-Subcommand arguments:
+Common flags:
 
-- Subcommand targets are passed as flags (`--instance`, `--name`, `--backup`,
-  `--port`) rather than positional arguments, making commands self-documenting.
-- Global flags (`-v`, `--verbose`) are still parsed before the command route
-  (`<verb> <object>`), so place them before `start`, `restore`, etc.
+- `--compose-file <path>`: compose file to use. Default `./docker-compose.yaml`,
+  or `COMPOSE_FILE` if set. Accepted by every command that reads compose,
+  except `validate backup` and `show backup` (see below).
+- `--instance all`: where accepted, targets every service in the compose file.
+- Backup root: `<compose-dir>/backups/`, or `ARK_BACKUP_DIR`. Archives for an
+  instance go in `<backup-root>/<instance>/`.
 
-## Create a compose file
+## Instances
 
-Create (or extend) a `docker-compose.yaml` with a new service:
+### create instance
 
-```sh
-ark-cli create instance --name asa-server-1 \
-  --server-password "ChangeMe" \
-  --admin-password "MyAdminPass"
-```
+Add an instance service to the compose file (created if missing). Session name
+is set to the instance name. RCON host port is the next free TCP port from
+27020, published on `127.0.0.1` only. The new service uses
+`image: ark-server:latest` until the first `start instance` builds and pins it.
 
-The session name is set to the instance name to keep service names, backups, and
-in-game session identifiers aligned.
-
-Optional flags include `--map-name`, `--asa-port` (UDP port; host and container port are kept in sync), `--tz`,
-and `--compose-file`. Use `--interactive` to prompt for values instead of passing flags.
-Use `--no-server-password` to create an instance with no server password (sets `SERVER_PASSWORD` to empty).
-
-Note: For rootful installs, avoid running the server as UID 1000 if it is your
-default login user. Consider creating a dedicated `ark` user (in the docker
-group) to own the server and manage the repo.
-
-## Instance lifecycle
-
-Start all instances in the compose project:
+| Flag | Default | Description |
+|---|---|---|
+| `--name` | required | Instance name. `cluster` is reserved. Fails if the service already exists. |
+| `--admin-password` | required | `SERVER_ADMIN_PASSWORD`. |
+| `--server-password` | | `SERVER_PASSWORD`. One of this or `--no-server-password` is required. |
+| `--no-server-password` | `false` | Empty `SERVER_PASSWORD`. Mutually exclusive with `--server-password`. |
+| `--map-name` | `TheIsland_WP` | `MAP_NAME`. Warns if the name does not end in `_WP`. |
+| `--asa-port` | next free UDP from 27015 | Game port; host and container port kept equal. |
+| `--tz` | `America/New_York` | `TZ`. |
+| `--interactive` | `false` | Prompt for values not given as flags. |
+| `--compose-file` | | See [common flags](#global-options). |
 
 ```sh
-ark-cli start instance --instance all
+ark-cli create instance --name asa-server-1 --server-password ChangeMe --admin-password MyAdminPass
 ```
 
-Start always makes sure the `ark-server` image exists locally and never
-pulls. A new instance's compose file says `image: ark-server:latest` (not built
-or pinned yet); the first start builds the image if needed and pins compose to
-`ark-server:<build-id>-<recipe-id>`. The build runs on the host (about 15–25 minutes) and
-needs the free disk space set by `ARK_BUILD_REQUIRED_FREE_GB`. Only
-`ark-server` images are supported; any other image in compose is an error.
-See [How updates work](../explanation/updates.md).
+For rootful installs, don't run the server as UID 1000 if that is your login
+user; use a dedicated `ark` user in the `docker` group.
 
-Stop an instance gracefully with configurable timeout (default 15m):
+### reconfigure instance
+
+Change compose settings of one existing instance. At least one setting flag is
+required. Refuses a running instance unless `--force`.
+
+| Flag | Description |
+|---|---|
+| `--instance` | Required. One instance (`all` is rejected). |
+| `--tz` | `TZ`. |
+| `--map-name` | `MAP_NAME`. Only allowed when it equals the current value (or none is set); changing the map of an existing instance is an error. |
+| `--session-name` | `SESSION_NAME`. |
+| `--admin-password` | `SERVER_ADMIN_PASSWORD`. |
+| `--server-password` | `SERVER_PASSWORD`. |
+| `--mods` | `MOD_IDS`: comma-separated CurseForge mod IDs. |
+| `--cluster-id` | `CLUSTER_ID` (letters, digits, `_`, `-`). Instances with the same ID share transfers. |
+| `--asa-port` | Published game UDP port (host and container port kept equal). |
+| `--rcon-port` | Published RCON TCP host port (maps to container 27020/tcp). |
+| `--force` | Allow changes while running; a restart is still needed to apply them. |
+| `--restart` | After saving, restart the instance if it was running. A stopped instance is not started. |
+| `--compose-file` | |
 
 ```sh
-ark-cli stop instance --instance asa-server-1                    # 15-minute default
-ark-cli stop instance --instance asa-server-1 --timeout 0s       # no delay (SIGTERM immediately)
-ark-cli stop instance --instance asa-server-1 --timeout 2m       # 2-minute grace period
-ark-cli stop instance --instance asa-server-1 --kill             # bypass RCON, kill immediately
+ark-cli reconfigure instance --instance asa-server-1 --mods 940975,1386057 --cluster-id my-cluster
+ark-cli reconfigure instance --instance asa-server-1 --rcon-port 28020 --force --restart
 ```
 
-Stop all instances:
+### enable / disable remote-rcon
 
-```sh
-ark-cli stop instance --instance all
-```
+`enable remote-rcon` publishes RCON on all interfaces (IPv4 and IPv6);
+`disable remote-rcon` publishes it on `127.0.0.1` only (the default for new
+instances; instances created before that default keep an all-interfaces binding
+until you disable it). Only the RCON port binding changes. The CLI's own RCON
+use runs inside the container and works either way.
 
-Restart an instance (stop then start):
+Flags: `--instance` (required), `--force`, `--restart`, `--compose-file`, with
+the same meaning as in [reconfigure instance](#reconfigure-instance).
 
-```sh
-ark-cli restart instance --instance asa-server-1
-```
-
-Trigger an in-game saveworld via RCON:
-
-```sh
-ark-cli save instance --instance asa-server-1
-```
-
-Remove an instance (backs up Saved first):
-
-```sh
-ark-cli remove instance --instance asa-server-1
-ark-cli remove instance --instance asa-server-1 --dry-run   # preview without changes
-```
-
-Kill a running instance before removal:
-
-```sh
-ark-cli remove instance --instance asa-server-1 --kill
-```
-
-Skip the pre-remove backup:
-
-```sh
-ark-cli remove instance --instance asa-server-1 --skip-backup
-```
-
-Tear down the full compose project (stop all services + `compose down`):
-
-```sh
-ark-cli teardown instances             # prompts for confirmation in interactive shells
-ark-cli teardown instances --skip-confirm   # bypass prompt (for scripts/CI)
-```
-
-## Backups and restore
-
-Create a backup archive for a specific instance:
-
-```sh
-ark-cli create backup --instance asa-server-1
-```
-
-The archive lands in `<compose-dir>/backups/<instance>/` by default.
-You can override the backup root for backup/restore/list with `ARK_BACKUP_DIR`.
-Backups run inside the container; if the instance is stopped, a temporary
-container is started to produce the archive.
-Each backup archive includes embedded metadata (`backup-metadata.json`)
-containing the server version, build ID, instance name, map name, and backup
-timestamp.
-
-Optional flags: use `--format` to choose archive format (default `tar.gz`),
-`--dest` to specify an output directory, `--name` to name the archive,
-and `--compose-file` to target a non-default compose file.
-
-Retention defaults are enabled: `--retain-count 20`, `--retain-days 7`,
-and `--retain-size-gb 5` (set any of these to `0` to disable that rule).
-Use `--lock-timeout` to control how long backup waits for a per-instance
-backup lock before failing (default `2m`), and `--backup-wait-timeout`
-to control helper/archive completion wait time (default `10m`).
-Retention size is treated as a hard target, but the CLI keeps at least
-two backups by default (drops to one under severe disk pressure).
-When free space falls below ~5 GiB, retention prunes aggressively and logs
-warnings; startup may be blocked if there is not enough space to keep even
-one backup for a service.
-
-Back up all instances, then the shared cluster data:
-
-```sh
-ark-cli create backup --instance all
-```
-
-`cluster` is a reserved target for the shared cluster volume (uploaded
-characters, items and dinos). It works with `create backup`, `restore backup`,
-`list backups`, `prune backups` and backup schedules; archives go to
-`<compose-dir>/backups/cluster/`. No instance can be named `cluster`.
-See [Cluster backups](../explanation/backups.md#cluster-backups).
-
-```sh
-ark-cli create backup --instance cluster
-ark-cli list backups --instance cluster
-ark-cli prune backups --instance cluster
-```
-
-Restore a named backup for an instance:
-
-```sh
-ark-cli restore backup --instance asa-server-1 --archive asa-server-1-backup-YYYYmmdd-HHMMSS
-```
-
-Restore the most recent backup for an instance:
-
-```sh
-ark-cli restore backup --instance asa-server-1 --archive latest
-```
-
-Restore and automatically start the service after restore:
-
-```sh
-ark-cli restore backup --instance asa-server-1 --archive latest --auto-start
-```
-
-Restore a backup into a new instance (added to the compose file with the next free ports):
-
-```sh
-ark-cli restore backup --new-instance asa-server-2 --archive asa-server-1:latest
-```
-
-The new instance takes its admin and server passwords from the backup's
-`GameUserSettings.ini`, the same ones the restored server uses. Override them with
-`--admin-password`, `--server-password` or `--no-server-password`. If the backup
-has no admin password, the restore stops before changing anything and asks for
-`--admin-password`.
-
-List backups for an instance:
-
-```sh
-ark-cli list backups --instance asa-server-1
-```
-
-Verify a backup archive before restore by opening the archive and running
-SQLite integrity checks on the `.sqlite` files inside it:
-
-```sh
-ark-cli validate backup --instance asa-server-1 --backup latest
-```
-
-- Resolve the backup archive (`latest` or named archive)
-- Extract to a temporary verification directory
-- Find `.sqlite` files inside the backup payload
-- Run SQLite integrity checks on each (for example `PRAGMA integrity_check`)
-- Report pass/fail per file and return non-zero on integrity errors
-
-Show metadata for a backup archive:
-
-```sh
-ark-cli show backup --instance asa-server-1 --backup latest
-```
-
-Backup archives include embedded metadata (`backup-metadata.json`) containing
-the server version, build ID, instance name, map name, and backup timestamp.
-Use `show backup` to view this metadata. Older archives without metadata will
-display `-` for metadata fields.
-
-Prune backups without creating a new backup (applies retention rules only):
-
-```sh
-ark-cli prune backups --instance asa-server-1
-ark-cli prune backups --instance all
-ark-cli prune backups --instance asa-server-1 --dry-run   # preview what would be removed
-```
-
-Add `--json` to `list backups` and `show backup` for machine-readable output.
-
-Restores run in a one-shot maintenance container path (without starting the
-game server), take a pre-restore backup into the backup directory, clear the
-save directory, and then extract the selected archive. The shared cluster
-directory (`Saved/clusters/`) is left untouched, and is skipped if an older
-archive contains it.
-If the archive contains embedded metadata, it is logged during restore so
-you can verify which backup is being applied.
-The instance must be stopped before restore. Stop it first with `ark-cli stop instance --instance <name>`, then restore.
-
-Restore the shared cluster data (every instance that uses the cluster must be
-stopped; the error names any that are running):
-
-```sh
-ark-cli restore backup --instance cluster --archive latest
-```
-
-With `cluster`, `--archive` takes a backup name or `latest` without an
-`<instance>:` prefix, and `--auto-start` is rejected. A
-`cluster-pre-restore-<timestamp>.tar.gz` is written first.
-`validate backup` and `show backup` do not apply to cluster archives.
-
-## Instance visibility and operations
-
-List all compose-managed instances:
-
-```sh
-ark-cli list instances
-ark-cli list instances --json   # machine-readable output
-```
-
-Show instance status and config summary:
-
-```sh
-ark-cli show instance --instance asa-server-1
-ark-cli show instance --instance asa-server-1 --json
-```
-
-Reconfigure selected compose-backed instance settings:
-
-```sh
-ark-cli reconfigure instance --instance asa-server-1 \
-  --tz America/New_York \
-  --map-name TheCenter \
-  --session-name MySession \
-  --admin-password AdminPass123 \
-  --server-password ServerPass123 \
-  --mods 940975,1386057 \
-  --cluster-id my-cluster \
-  --asa-port 28015 \
-  --rcon-port 28020
-```
-
-`--mods` sets `MOD_IDS`, the comma-separated CurseForge mod IDs the server
-loads. `--cluster-id` sets `CLUSTER_ID`; instances with the same ID share
-character, item and dino transfers.
-
-If the server is running, the command refuses to reconfigure unless you pass
-`--force`, then reminds you to restart after saving. Add `--restart` together
-with `--force` to restart the instance automatically after saving:
-
-```sh
-ark-cli reconfigure instance --instance asa-server-1 --map-name Aberration --force --restart
-```
-
-Without `--restart`, the command applies compose changes and exits successfully
-with a reminder that restart is required for settings to take effect.
-If `--restart` is provided but the instance was not running, the command applies
-changes and exits successfully without starting the instance.
-
-Control whether RCON can be reached from other machines. New instances publish
-RCON on `127.0.0.1` only, so RCON tools on the Docker host work and nothing else
-can connect. The CLI's own RCON use (stop, save, backup) runs inside the
-container and works either way.
-
-```sh
-ark-cli enable remote-rcon --instance asa-server-1    # publish on all interfaces (IPv4 and IPv6)
-ark-cli disable remote-rcon --instance asa-server-1   # back to 127.0.0.1 only
-```
-
-Both commands change only the RCON port binding in compose and take the same
-`--force`, `--restart` and `--compose-file` flags as `reconfigure instance`.
-Instances created before this default keep their existing binding (all
-interfaces) until you run `disable remote-rcon`.
-
-RCON sends the admin password in plain text. Ports published by Docker bypass
-`ufw` and `firewalld`, so a host firewall rule does not restrict them; when
-remote RCON is enabled, limit who can reach it with a rule in Docker's
-`DOCKER-USER` iptables chain. For example, to allow only `203.0.113.7` to
-reach an instance whose RCON host port is `28020`:
+RCON sends the admin password in plain text, and Docker-published ports bypass
+`ufw`/`firewalld`. Restrict remote RCON in the `DOCKER-USER` chain, e.g. allow
+only `203.0.113.7` to host port `28020`:
 
 ```sh
 sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 28020 ! -s 203.0.113.7 -j DROP
 ```
 
-Check image updates for all instances without applying (compares each
-instance's `io.ark.server.build_id` image label with Steam's current public
-build):
+### start instance
+
+Start service(s) and wait until ready (log line `Server has completed startup
+and is now advertising for join.`). Never pulls: builds the `ark-server` image
+locally if missing and pins compose to `ark-server:<build-id>-<recipe-id>`
+(build takes ~15–25 min and needs the free space set by
+`ARK_BUILD_REQUIRED_FREE_GB`). Any non-`ark-server` image is an error. Refuses
+to start when backup disk space is critically low; see
+[Disk-space check at start](../explanation/backups.md#disk-space-check-at-start)
+and [How updates work](../explanation/updates.md).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | Instance or `all`. |
+| `--wait-timeout` | `5m` or `ARK_START_WAIT_TIMEOUT` | Max wait for ready. |
+| `--no-wait` | `false` | Return right after starting. |
+| `--compose-file` | | |
+
+### stop instance
+
+Graceful stop: the container saves the world over RCON, then exits.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | Instance or `all`. |
+| `--timeout` | `15m` | Grace period before SIGKILL (Go duration, `>= 0`). |
+| `--kill` | `false` | SIGKILL immediately, no save. Mutually exclusive with `--timeout`. |
+| `--compose-file` | | |
+
+### restart instance
+
+Stop, then start and wait for ready (fixed 5m wait; `ARK_START_WAIT_TIMEOUT`
+does not apply).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | Instance or `all`. |
+| `--timeout` | `15m` | Stop grace period, as in `stop instance`. |
+| `--compose-file` | | |
+
+### save instance
+
+Run RCON `saveworld` in each running target.
+
+Flags: `--instance` (required; instance or `all`), `--compose-file`.
+
+### update instance
+
+Compare each instance's image label `io.ark.server.build_id` with Steam's
+current public build and build a new image when it differs. Without
+`--rollout`, compose is left unchanged and the CLI prints
+`Built ark-server:<id>. Switch with: ark-cli update instance --instance <name> --rollout`.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | `all` | Instance or `all`. |
+| `--check` | `false` | Print the update table only; build and change nothing. |
+| `--rollout` | `false` | Switch instances to the new image one at a time, rolling back on failure. |
+| `--restart` | `false` | Alias for `--rollout`. |
+| `--compose-file` | | |
+
+Rollout, per instance in name order: stop (save), `pre-update` backup, switch
+compose tag, start, wait for ready. On failure: switch compose back, restore the
+pre-update backup, start the old image, print
+`Update of <name> to <new> failed; rolled back to <old>: <reason>`, skip the
+remaining instances, exit 1. A failed build changes nothing.
+
+### remove instance
+
+Remove one service from compose and delete its `<instance>-saved` volume. A
+regular backup is taken first unless `--skip-backup`. A running instance is
+refused unless `--kill`. `--instance all` is rejected; use
+`teardown instances`.
+
+| Flag | Description |
+|---|---|
+| `--instance` | Required. |
+| `--kill` | SIGKILL a running instance (no save) before removal. |
+| `--skip-backup` | Skip the pre-remove backup. |
+| `--dry-run` | Print what would happen. |
+| `--compose-file` | |
+
+### teardown instances
+
+Stop all services and run compose down for the project. Prompts for
+confirmation on a TTY; without a TTY, `--skip-confirm` is required.
+
+Flags: `--skip-confirm`, `--compose-file`.
+
+### list instances
+
+List instances with status and health indicators. Flags: `--json`,
+`--compose-file`.
+
+### show instance
+
+Status and config summary. Flags: `--instance` (required), `--json`,
+`--compose-file`.
+
+### show volume-paths
+
+Volume mount paths for an instance. Alias: `show vol-paths`. Flags:
+`--instance` (required), `--compose-file`.
+
+### logs instance
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | One instance. |
+| `--tail` | `200` | Lines from the end (`>= 0`). |
+| `--follow` | `false` | Follow output. |
+| `--timestamps` | `false` | Prefix timestamps. |
+| `--compose-file` | | |
+
+### check instance
+
+Health check: container running and startup-ready marker seen. Exits non-zero
+when not healthy. After `result:`, prints
+`last_update: <result> at <time> (<from> -> <to>)` (and
+`last_update_message:` when present) for the latest update attempt; this does
+not affect the exit code.
+
+Flags: `--instance` (required), `--compose-file`.
+
+### wait instance
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | One instance. |
+| `--for` | `ready` | `started` (container running), `advertising` / `ready` (advertising for join), `stopped`. |
+| `--timeout` | `10m` | Max wait (`> 0`). |
+| `--interval` | `2s` | Poll interval (`> 0`). |
+| `--compose-file` | | |
+
+### validate compose / show compose
+
+`validate compose` parses the compose file and prints the service count.
+`show compose` prints a summary. Flag: `--compose-file`.
+
+## INI files
+
+### edit ini
+
+Open an INI file in an editor inside the container (running container, or a
+one-off container if stopped), so volume ownership stays correct. Refuses a
+running instance unless `--force`. `--file gameusersettings` refuses until the
+file exists (created on the instance's first start); `Game.ini` is created by
+editing it.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game` (Game.ini), `gameusersettings` or `gus` (GameUserSettings.ini). |
+| `--editor` | `nano` | Editor command in the container. The image ships only `nano`. |
+| `--force` | `false` | Allow editing while running. |
+| `--restart` | `false` | With `--force` on a running instance: restart after saving. |
+| `--compose-file` | | |
+
+### show ini
+
+Print an INI file. Same `--file` values. Reports a missing file.
+
+Flags: `--instance` (required), `--file` (required), `--compose-file`.
+
+## Backups and restore
+
+`cluster` is a reserved target for the shared cluster volume. It works with
+`create backup`, `restore backup`, `list backups`, `prune backups` and backup
+schedules; archives go to `<backup-root>/cluster/`. `validate backup` and
+`show backup` do not apply to it. See
+[Cluster backups](../explanation/backups.md#cluster-backups). Retention, safety
+floor, locks, metadata and naming:
+[Understanding Backups](../explanation/backups.md).
+
+### create backup
+
+Runs inside the instance's container, or a temporary one if stopped. With
+`--instance all`, backs up every instance, then the cluster (if the compose file
+has one).
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | Instance, `cluster` or `all`. |
+| `--dest` | `<backup-root>/<instance>` | Output directory. |
+| `--name` | | Archive name becomes `<instance>-<name>.<format>` instead of `<instance>-backup-<YYYYmmdd-HHMMSS>.<format>`. |
+| `--format` | `tar.gz` | `tar`, `tar.gz` or `tar.zst`. |
+| `--retain-count` | `20` | Max archives kept (`0` disables). |
+| `--retain-days` | `7` | Max age in days (`0` disables). |
+| `--retain-size-gb` | `5` | Max total GiB (`0` disables). |
+| `--lock-timeout` | `2m` | Wait for the per-instance backup lock. |
+| `--backup-wait-timeout` | `10m` | Wait for the archive to complete (`> 0`). |
+| `--compose-file` | | |
+
+Retention keeps at least two archives (one when free space is below 5 GiB).
+
+### restore backup
+
+Three forms:
 
 ```sh
-ark-cli update instance --check
+ark-cli restore backup --instance <name> --archive [<src-instance>:]<backup|latest>
+ark-cli restore backup --new-instance <name> --archive <src-instance>:<backup|latest>
+ark-cli restore backup --instance cluster --archive <backup|latest>
 ```
 
-Build the new image for one instance and leave compose unchanged:
+| Flag | Description |
+|---|---|
+| `--instance` | Existing instance, or `cluster`. Mutually exclusive with `--new-instance`. |
+| `--new-instance` | Add a new instance to compose (next free ports) and restore into it. |
+| `--archive` | Required. Backup name or `latest`; prefix `<src-instance>:` to take it from another instance (required with `--new-instance`, rejected for `cluster`). |
+| `--auto-start` | Start the service after restore. Rejected for `cluster`. |
+| `--admin-password` | `--new-instance` only. Default: the one in the backup's GameUserSettings.ini; if the backup has none, restore stops before changing anything. |
+| `--server-password` | `--new-instance` only. Default: the one in the backup. |
+| `--no-server-password` | `--new-instance` only. Mutually exclusive with `--server-password`. |
+| `--compose-file` | |
 
-```sh
-ark-cli update instance --instance asa-server-1
-# prints: Built ark-server:<id>. Switch with: ark-cli update instance --instance asa-server-1 --rollout
-```
+Instance restore: the instance must be stopped. Runs in a one-shot maintenance
+container, writes `<instance>-pre-restore-<timestamp>.tar.gz` to the backup
+directory, clears the save directory, extracts the archive, and logs the
+archive's metadata if present. `Saved/clusters/` is left untouched (and skipped
+if an older archive contains it).
 
-Switch to the new image with a safe rollout (`--restart` is an alias):
+Cluster restore: every instance using the cluster must be stopped (the error
+names running ones). Writes `cluster-pre-restore-<timestamp>.tar.gz` first.
 
-```sh
-ark-cli update instance --instance all --rollout
-```
+### list backups
 
-For each instance, in name order, the rollout stops it (saving the world),
-creates a `pre-update` backup, switches compose to the new tag, starts it and
-waits until ready. If the new image fails, compose is switched back, the
-pre-update backup is restored, the old image is started, and the command
-prints `Update of <name> to <new> failed; rolled back to <old>: <reason>`,
-skips the remaining instances and exits with code 1. A failed build changes
-nothing.
+Flags: `--instance` (required; instance, `cluster` or `all`), `--json`,
+`--compose-file` (used to find the backup root and, for `all`, the instances).
 
-Edit server INI files in the container (defaults to `nano`):
+### show backup
 
-```sh
-ark-cli edit ini --instance asa-server-1 --file gameusersettings
-ark-cli edit ini --instance asa-server-1 --file game --editor vi
-```
+Archive metadata (server version, build ID, instance, map, timestamp from
+`backup-metadata.json`; `-` for archives without it).
 
-The CLI edits the INI file inside the container so volume file ownership stays
-consistent. If the server is running, the command refuses to edit unless you
-pass `--force`, then reminds you to restart after saving. Add `--restart`
-together with `--force` to restart the instance automatically after saving.
+Flags: `--instance` (required), `--backup` (required; name or `latest`),
+`--json`. Backup root comes from `ARK_BACKUP_DIR` or the directory of
+`COMPOSE_FILE` / `./docker-compose.yaml`; there is no `--compose-file`.
 
-Print an INI file to the terminal:
+### validate backup
 
-```sh
-ark-cli show ini --instance asa-server-1 --file game
-ark-cli show ini --instance asa-server-1 --file gameusersettings
-```
+Extract the archive to a temporary directory and run SQLite integrity checks on
+every `.sqlite` file. Reports per file; exits non-zero on any failure or if no
+`.sqlite` file is found.
 
-`--file` accepts `game` (Game.ini) or `gameusersettings` / `gus`
-(GameUserSettings.ini). The command uses `cat` inside the container for a
-running instance, or an ephemeral container if the instance is stopped.
-A missing file is reported: `GameUserSettings.ini` appears on the instance's
-first start; `Game.ini` exists only once you create it with `edit ini`.
-`edit ini --file gameusersettings` refuses until the file exists.
+Flags: `--instance` (required), `--backup` (required; name or `latest`).
+Backup root as for `show backup`.
 
-Show volume mount paths for an instance:
+### prune backups
 
-```sh
-ark-cli show volume-paths --instance asa-server-1
-ark-cli show vol-paths --instance asa-server-1   # short alias
-```
+Apply retention without creating a backup.
 
-Show container logs:
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | Instance, `cluster` or `all`. |
+| `--retain-count` | `20` | As in `create backup`. |
+| `--retain-days` | `7` | |
+| `--retain-size-gb` | `5` | |
+| `--dry-run` | `false` | Print what would be removed. |
+| `--compose-file` | | Needed to resolve `all`. |
 
-```sh
-ark-cli logs instance --instance asa-server-1 --tail 200 --timestamps
-```
+## Schedules
 
-Check instance health (running + startup-ready marker):
+Managed backup schedules. Files, relative to the current directory:
 
-```sh
-ark-cli check instance --instance asa-server-1
-```
+| Path | Content |
+|---|---|
+| `.ark-manage/schedules.yaml` | Schedule config |
+| `.ark-manage/generated/schedules.crontab` | Generated crontab (regenerated by every change) |
+| `.ark-manage/logs/schedules/<name>.log` | Run log |
+| `.ark-manage/state/schedules/<name>.last.json` | Last run result |
+| `.ark-manage/locks/schedule-<name>.lock` | Run lock |
 
-After `result:`, the output includes `last_update: <result> at <time> (<from> -> <to>)`
-(and `last_update_message:` when there is a message) for the instance's most
-recent update attempt. It does not change the exit code.
+Changes only regenerate the crontab file; run `apply schedules` to install it.
 
-Wait for an instance to reach a target state:
+### create schedule backup
 
-```sh
-ark-cli wait instance --instance asa-server-1 --for started       # container running (before advertising)
-ark-cli wait instance --instance asa-server-1 --for advertising   # fully advertising for join (alias: ready)
-ark-cli wait instance --instance asa-server-1 --for stopped       # service exited
-```
-
-Use `--timeout` to override the default 10-minute wait (e.g. `--timeout 5m`) and
-`--interval` to change the polling interval (default 2s).
-
-Validate compose configuration (parses and validates the compose file, reports
-service count and any config errors):
-
-```sh
-ark-cli validate compose
-ark-cli show compose
-```
-
-Both commands accept `--compose-file` to target a non-default compose file.
-
-## Port reachability
-
-Check if the instance ports are reachable from the internet:
-
-```sh
-ark-cli check reachability --instance asa-server-1
-```
-
-For an instance, the CLI derives ports from compose and checks both:
-
-- ASA game port (UDP, derived from the `ark.port.asa` compose label or port binding)
-- RCON port (TCP, derived from compose port bindings, fallback `27020`)
-
-If the instance's RCON port is published on `127.0.0.1` only (the default), the
-command prints a note: RCON showing CLOSED from remote or another host is then
-expected, not a fault.
-
-It reports pass/fail for each derived port. The CLI derives the published host
-ports from compose (so non-default ARK ports are supported). External checks use
-`starrupture-utilities.com` first, with `portchecker.io` used as a TCP-only
-fallback when needed. Instance checks require the service to be running unless
-you use `--listen`.
-
-Optional instance target and port selection:
-
-```sh
-ark-cli check reachability --instance asa-server-1 --ports asa
-ark-cli check reachability --instance asa-server-1 --ports rcon
-ark-cli check reachability --instance asa-server-1 --ports all
-```
-
-To check a specific port without reading compose:
-
-```sh
-ark-cli check reachability --port 27015
-```
-
-Optional manual protocol selection:
-
-```sh
-ark-cli check reachability --port 27015 --protocol tcp
-ark-cli check reachability --port 27015 --protocol udp
-ark-cli check reachability --port 27015 --protocol both
-```
-
-Choose where to probe from (default: both):
-
-```sh
-ark-cli check reachability --port 27015 --from local
-ark-cli check reachability --port 27015 --from remote
-ark-cli check reachability --port 27015 --from 10.0.0.1
-ark-cli check reachability --port 27015 --from both
-```
-
-To test port forwarding without relying on an already-running local service, add
-`--listen` and the CLI will open temporary local listener(s) during the
-external probe:
-
-```sh
-ark-cli check reachability --port 27015 --protocol tcp --listen
-ark-cli check reachability --port 27015 --protocol udp --listen
-```
-
-Notes:
-
-- `--protocol` is port mode only (`check reachability --port <num>`).
-- `--ports` is instance mode only (`check reachability --instance <name>`).
-- In instance mode, `--listen` will fail if the service is already running and
-  already bound to the same ports. Stop the instance or omit `--listen`.
-- UDP checks in `--listen` mode send a small reply payload so external UDP
-  checkers can classify the port as open.
-
-## Listen port
-
-Open listeners on a port and block until Ctrl+C (no probe; for firewall testing):
-
-```sh
-ark-cli listen port --port 27015
-ark-cli listen port --port 27015 --protocol udp
-ark-cli listen port --port 27015 --protocol both
-```
-
-## Scheduling (managed backup schedules)
-
-Schedules are stored in a repo-local config file and a managed crontab file is
-generated from that config.
-
-Default paths:
-
-- `.ark-manage/schedules.yaml`
-- `.ark-manage/generated/schedules.crontab`
-- `.ark-manage/logs/schedules/<name>.log`
-- `.ark-manage/state/schedules/<name>.last.json`
-- `.ark-manage/locks/schedule-<name>.lock`
-
-Create a backup schedule:
+| Flag | Default | Description |
+|---|---|---|
+| `--name` | required | Unique schedule name. |
+| `--instance` | required | Instance, `cluster` or `all` (`all` includes the cluster). |
+| `--cron` | required | 5-field cron expression. |
+| `--format` | `tar.gz` | `tar`, `tar.gz` or `tar.zst`. |
+| `--retain-count` | `20` | |
+| `--retain-days` | `7` | |
+| `--retain-size-gb` | `5` | |
+| `--disabled` | `false` | Create disabled. |
+| `--compose-file` | | Compose file the scheduled run uses. |
 
 ```sh
 ark-cli create schedule backup --instance asa-server-1 --name nightly-asa1 --cron "0 3 * * *"
 ```
 
-`--instance` takes an instance name, `cluster` or `all` (`all` includes the
-cluster), here and in `update schedule`.
+### update schedule
 
-List and inspect schedules:
+`--name` (required) plus at least one of: `--cron`, `--instance`,
+`--compose-file`, `--format`, `--retain-count`, `--retain-days`,
+`--retain-size-gb`, `--enabled`, `--disabled` (the last two are mutually
+exclusive). Unset flags keep their current value.
 
-```sh
-ark-cli list schedules
-ark-cli list schedules --json
-ark-cli show schedule --name nightly-asa1
-ark-cli show schedule --name nightly-asa1 --json
-```
+### Other schedule commands
 
-Enable or disable a schedule without removing it:
+| Command | Flags | Description |
+|---|---|---|
+| `list schedules` | `--json` | Schedules with last status, exit code and finish time. |
+| `show schedule` | `--name` (required), `--json` | Schedule details. |
+| `enable schedule` / `disable schedule` | `--name` (required) | Toggle without removing. |
+| `check schedule` | `--name` (required) | Running status and last result; non-zero exit if the last run failed. |
+| `run schedule` | `--name` (required) | Run now. |
+| `validate schedule` | `--name` (optional; all if omitted) | Report config problems. |
+| `remove schedule` | `--name` (required) | Delete the schedule. |
+| `apply schedules` | `--skip-validate` | Validate all, regenerate, and install with `crontab <file>`. This replaces the user's entire crontab. |
 
-```sh
-ark-cli enable schedule --name nightly-asa1
-ark-cli disable schedule --name nightly-asa1
-```
+## Port reachability
 
-Check a schedule's running status and last result (exits non-zero if last run failed):
+### check reachability
 
-```sh
-ark-cli check schedule --name nightly-asa1
-```
+Two modes; `--port` and `--instance` are mutually exclusive.
 
-Update a schedule:
+- Instance mode (`--instance`): checks the game UDP port (from the
+  `ark.port.asa` label or port binding) and the host port published for RCON
+  container port 27020/tcp. The instance must be running unless `--listen`. If
+  RCON is published on `127.0.0.1` only, a note says CLOSED from remote is
+  expected.
+- Port mode (`--port`): checks one port without reading compose.
 
-```sh
-ark-cli update schedule --name nightly-asa1 --cron "0 4 * * *" --retain-days 14
-```
+External probes use `starrupture-utilities.com`, with `portchecker.io` as a
+TCP-only fallback.
 
-Validate one schedule or all schedules:
-
-```sh
-ark-cli validate schedule --name nightly-asa1
-ark-cli validate schedule
-```
-
-Run a schedule immediately (manual test/trigger):
-
-```sh
-ark-cli run schedule --name nightly-asa1
-```
-
-Apply the generated managed crontab to your user crontab:
-
-```sh
-ark-cli apply schedules
-```
-
-Remove a schedule:
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | | Instance mode. |
+| `--port` | | Port mode. |
+| `--ports` | `all` | Instance mode only: `asa`, `rcon`, `all`. |
+| `--protocol` | `both` | Port mode only: `tcp`, `udp`, `both`. |
+| `--from` | `both` | Probe from `local`, `remote`, `both`, or a host address. |
+| `--listen` | `false` | Open temporary listeners during the probe (tests forwarding without a running server; UDP listeners reply so external checkers see the port open). Not allowed with `--from remote`. In instance mode, fails if the running server already holds the ports. |
+| `--compose-file` | | |
 
 ```sh
-ark-cli remove schedule --name nightly-asa1
+ark-cli check reachability --instance asa-server-1 --ports asa
+ark-cli check reachability --port 27015 --protocol udp --listen
 ```
+
+### listen port
+
+Open listeners and block until Ctrl+C; no probe.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port` | required | |
+| `--protocol` | `both` | `tcp`, `udp`, `both`. |
 
 ## Host kernel configuration
 
-ARK: Survival Ascended via Proton/Wine requires certain kernel settings (e.g.
-`vm.max_map_count`). Use these commands to check, apply, and revert them.
+No flags. `fix` and `restore` require root.
 
-Check current kernel settings:
-
-```sh
-ark-cli check host-kernel-config
-```
-
-Apply required settings (persisted to `/etc/sysctl.d/`; requires root):
-
-```sh
-sudo ark-cli fix host-kernel-config
-```
-
-Revert to the pre-fix backup:
-
-```sh
-sudo ark-cli restore host-kernel-config
-```
+| Command | Description |
+|---|---|
+| `check host-kernel-config` | Report `vm.max_map_count`, `net.core.rmem_max`, `net.core.wmem_max`, `fs.file-max` and the nofile hard limit against required minimums. |
+| `fix host-kernel-config` | Save current values to a backup, apply missing settings, persist them (`/etc/sysctl.d/99-ark-server.conf`; nofile via `/etc/security/limits.d/99-ark-server.conf` and `/etc/systemd/system.conf.d/99-ark-server.conf`). |
+| `restore host-kernel-config` | Revert to the values saved by `fix`. |

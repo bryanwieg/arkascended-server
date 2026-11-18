@@ -165,7 +165,7 @@ Packages and the commands they register (`app/ark-cli/internal/cmd/registry_entr
 | `create/` | `create instance` | Settings validation; filesystem fixtures |
 | `health/` | `check instance`, `wait instance`, `validate compose` | `MockHealthChecker.IsReadyFn`/`WaitFor*Fn` |
 | `host/` | `check`/`fix`/`restore host-kernel-config` | `HostDeps.ReadKernelParam`, `HostDeps.GetNofileHardLimit` |
-| `ini/` | `edit ini`, `show ini` | `MockCompose.RunningServicesFn`/`RunOneOffInteractiveFn`/`ExecInteractiveFn` |
+| `ini/` | `edit ini`, `show ini` | `MockCompose.RunningServicesFn`/`RunOneOffFn`/`ExecFn` (scripts), `RunOneOffInteractiveFn`/`ExecInteractiveFn` (editor) |
 | `listenport/` | `listen port` | Real TCP/UDP listeners on test ports |
 | `reachability/` | `check reachability` | `HostDeps.FetchText` |
 | `reconfigure/` | `reconfigure instance`, `enable`/`disable remote-rcon` | `MockCompose.LoadProjectFn`/`SaveProjectFn`/`RunningServicesFn`, `RestartStopInstance`/`RestartStartInstance` |

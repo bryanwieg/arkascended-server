@@ -305,9 +305,9 @@ flowchart TD
 
     D -->|"yes, edit, no --force"| X[refuse]
     D -->|"yes, edit, --force"| E[ExecInteractive: editor, default nano]
-    D -->|"yes, show"| F[ExecInteractive: cat INI]
+    D -->|"yes, show"| F[Exec: ark-ini.py get]
     D -->|"no, edit"| G[RunOneOffInteractive: editor in removed container]
-    D -->|"no, show"| H[RunOneOffInteractive: cat INI]
+    D -->|"no, show"| H[RunOneOff: ark-ini.py get in removed container]
 
     E --> I{--restart?}
     I -->|"yes"| J[DoRestartStopInstance, DoRestartStartInstance with ready wait]

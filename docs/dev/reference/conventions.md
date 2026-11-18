@@ -49,10 +49,14 @@ Project-specific coding rules. Rationale lives in
   [architecture.md](../explanation/architecture.md#container-script-boundary).
 - A script returns results on stdout (JSON when the host parses it), problems
   on stderr through `_logging.py`, and a non-zero exit on failure. The caller
-  reads `ExecResult`.
-- Known exceptions, to be moved behind scripts: `show ini` and `show instance`
-  (inline `cat`), `edit ini` (inline file prep before the editor), backup
-  artifact cleanup (`rm -f`), and the helper-container backup glue
+  reads `ExecResult`. A short CLI-facing script (`ark-rcon.py`, `ark-ini.py`)
+  instead writes one plain `Error: …` message to stderr, which the CLI shows
+  as is; it is a reply to the caller, not a container log line.
+- The script, not the CLI, enforces its safety rules (`ark-ini.py set` refuses
+  while the server runs, for example), so no caller can skip them.
+- Known exceptions, to be moved behind scripts: `edit ini` (inline file prep
+  before the editor), backup artifact cleanup (`rm -f`), and the
+  helper-container backup glue
   (`sh -c "ark-backup.py … && touch … && sleep 600"`).
 
 ## Lint

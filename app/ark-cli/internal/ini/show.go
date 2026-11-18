@@ -4,6 +4,7 @@ import (
 	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
 	"errors"
+	"fmt"
 	"strings"
 
 	"pkg/ark"
@@ -41,26 +42,50 @@ func RunShowIni(d *core.AppDeps, args []string) error {
 		return err
 	}
 
-	script := IniCatShellScript(fileSpec)
-	if running {
-		return d.ComposeService.ExecInteractive(d.Context(), composeFile, instance,
-			[]string{"/bin/sh", "-lc", script})
+	content, err := ReadIni(d, composeFile, instance, running, fileSpec)
+	if err != nil {
+		return err
 	}
-	return d.ComposeService.RunOneOffInteractive(d.Context(), composeFile, instance,
-		[]string{"-lc", script},
-		ark.RunOptions{Remove: true, NoDeps: true, Entrypoint: "/bin/sh"})
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	core.Infof("%s", content)
+	return nil
 }
 
-// IniCatShellScript returns a shell script that cats an INI file inside the container.
-func IniCatShellScript(fileSpec IniFileSpec) string {
-	qPath := shellSingleQuote(iniContainerPath(fileSpec))
-	qNotFoundMsg := shellSingleQuote(missingIniMessage(fileSpec))
-	return strings.Join([]string{
-		"set -e",
-		"if [ ! -f " + qPath + " ]; then",
-		"  echo " + qNotFoundMsg + " >&2",
-		"  exit 1",
-		"fi",
-		"cat " + qPath,
-	}, "\n")
+const iniScriptPath = "/home/ark-user/scripts/runtime/ark-ini.py"
+
+// ReadIni returns an instance INI file's content via ark-ini.py get.
+func ReadIni(d *core.AppDeps, composeFile, instance string, running bool, fileSpec IniFileSpec) (string, error) {
+	return runIniScript(d, composeFile, instance, running, "get", "--file", fileSpec.Key)
+}
+
+// runIniScript runs ark-ini.py in the running container, or in a one-off container when the
+// instance is stopped, and returns its stdout. A non-zero exit returns the script's message.
+func runIniScript(d *core.AppDeps, composeFile, instance string, running bool, args ...string) (string, error) {
+	var result ark.ExecResult
+	var err error
+	if running {
+		result, err = d.ComposeService.Exec(d.Context(), composeFile, instance,
+			append([]string{"/usr/bin/python3.14", iniScriptPath}, args...), ark.ExecOptions{DisableTTY: true})
+	} else {
+		result, err = d.ComposeService.RunOneOff(d.Context(), composeFile, instance,
+			append([]string{iniScriptPath}, args...),
+			ark.RunOptions{Remove: true, NoDeps: true, DisableTTY: true, Entrypoint: "/usr/bin/python3.14"})
+	}
+	if err != nil {
+		return "", err
+	}
+	if result.ExitCode != 0 {
+		msg := strings.TrimSpace(result.Stderr)
+		// Images built by an older ark-cli don't have the script; update instance rebuilds them.
+		if strings.Contains(msg, "can't open file") && strings.Contains(msg, "ark-ini.py") {
+			return "", fmt.Errorf("Error: %s runs an image built before ark-cli managed its INI files; rebuild it with: ark-cli update instance --instance %s", instance, instance)
+		}
+		if !strings.HasPrefix(msg, "Error:") {
+			msg = fmt.Sprintf("Error: ark-ini.py exited %d in %s: %s", result.ExitCode, instance, msg)
+		}
+		return "", errors.New(msg)
+	}
+	return result.Stdout, nil
 }

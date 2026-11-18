@@ -221,23 +221,11 @@ func RunShowInstance(d *core.AppDeps, args []string) error {
 }
 
 func captureIniContent(d *core.AppDeps, composeFile, instance string, running bool, fileSpec ini.IniFileSpec) string {
-	script := ini.IniCatShellScript(fileSpec)
-	var result ark.ExecResult
-	var err error
-	if running {
-		result, err = d.ComposeService.Exec(d.Context(), composeFile, instance,
-			[]string{"/bin/sh", "-lc", script}, ark.ExecOptions{DisableTTY: true})
-	} else {
-		result, err = d.ComposeService.RunOneOff(d.Context(), composeFile, instance,
-			[]string{"-lc", script}, ark.RunOptions{Remove: true, NoDeps: true, DisableTTY: true, Entrypoint: "/bin/sh"})
+	content, err := ini.ReadIni(d, composeFile, instance, running, fileSpec)
+	if err != nil {
+		return err.Error()
 	}
-	if err != nil || result.ExitCode != 0 {
-		if msg := strings.TrimSpace(result.Stderr); msg != "" {
-			return msg
-		}
-		return "(error reading file)"
-	}
-	content := strings.TrimSpace(result.Stdout)
+	content = strings.TrimSpace(content)
 	if content == "" {
 		return "(empty)"
 	}

@@ -22,6 +22,9 @@ const ClusterMountPath = "/home/ark-user/ark-server/ShooterGame/Saved/clusters"
 
 const containerOutputDir = "/home/ark-user/maintenance/output"
 
+// ErrClusterNameReserved is returned when a new instance would be called ClusterTarget.
+var ErrClusterNameReserved = errors.New("Error: instance name 'cluster' is reserved for cluster backups.")
+
 // ErrNoClusterVolume means no service in the compose file mounts anything at ClusterMountPath.
 var ErrNoClusterVolume = errors.New("Error: no instance in the compose file mounts a cluster volume at Saved/clusters.")
 

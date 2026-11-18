@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"ark-cli/internal/core"
+	"ark-cli/internal/testutil"
 
 	"pkg/ark"
 	"pkg/ark/arktest"
@@ -365,6 +366,92 @@ func TestParseArchiveMapName(t *testing.T) {
 			if got != tt.want {
 				t.Fatalf("parseArchiveMapName(%q) = %q, want %q", tt.listing, got, tt.want)
 			}
+		})
+	}
+}
+
+// --- Cluster restore ---
+
+func clusterRestoreDeps(t *testing.T, running map[string]struct{}, commands *[][]string) func(*core.AppDeps) {
+	t.Helper()
+	composeMock := &arktest.MockCompose{
+		LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
+			return fakeProject(clusterServices(true, "asa1", "asa2")), nil
+		},
+		RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
+			return running, nil
+		},
+		RunOneOffFn: func(_ context.Context, _, _ string, command []string, opts ark.RunOptions) (ark.ExecResult, error) {
+			*commands = append(*commands, command)
+			writePreRestoreArtifactFromRunOneOff(t, command, opts)
+			return ark.ExecResult{}, nil
+		},
+	}
+	return func(d *core.AppDeps) {
+		d.ComposeService = composeMock
+		d.BackupService = pkgbackup.New(&arktest.MockEngine{}, composeMock, nil, &arktest.MockCommandRunner{}, d.Logger)
+	}
+}
+
+func seedClusterBackups(t *testing.T, names ...string) {
+	t.Helper()
+	root := t.TempDir()
+	setEnv(t, "ARK_BACKUP_DIR", root)
+	setEnv(t, "COMPOSE_FILE", "docker-compose.yaml")
+	if err := os.MkdirAll(filepath.Join(root, "cluster"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		createBackupArchive(t, filepath.Join(root, "cluster"), name)
+	}
+}
+
+func TestRunRestoreClusterLatest(t *testing.T) {
+	seedClusterBackups(t, "cluster-backup-20260101-000000.tar.gz", "cluster-backup-20260102-000000.tar.gz")
+	var commands [][]string
+	withPatchedAppDeps(t, clusterRestoreDeps(t, map[string]struct{}{}, &commands), func() {
+		out := testutil.CaptureStdout(t, func() {
+			if err := RunRestore(core.CurrentAppDeps(), []string{"--instance", "cluster", "--archive", "latest"}); err != nil {
+				t.Fatalf("RunRestore: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Restored cluster data (ark-cluster-1). Pre-restore backup:") {
+			t.Fatalf("output = %q", out)
+		}
+	})
+	if len(commands) != 1 || commands[0][len(commands[0])-1] != "--cluster" {
+		t.Fatalf("commands = %v", commands)
+	}
+	if !strings.Contains(strings.Join(commands[0], " "), "cluster-restore-input-") {
+		t.Fatalf("archive not passed: %v", commands[0])
+	}
+}
+
+func TestRunRestoreClusterRefusesWhileInstanceRuns(t *testing.T) {
+	seedClusterBackups(t, "cluster-backup-20260101-000000.tar.gz")
+	var commands [][]string
+	withPatchedAppDeps(t, clusterRestoreDeps(t, map[string]struct{}{"asa2": {}}, &commands), func() {
+		err := RunRestore(core.CurrentAppDeps(), []string{"--instance", "cluster", "--archive", "latest"})
+		if err == nil || !strings.Contains(err.Error(), "asa2") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	if len(commands) != 0 {
+		t.Fatalf("restore ran: %v", commands)
+	}
+}
+
+func TestRunRestoreClusterRejectsFlags(t *testing.T) {
+	for name, args := range map[string][]string{
+		"auto-start": {"--instance", "cluster", "--archive", "latest", "--auto-start"},
+		"src prefix": {"--instance", "cluster", "--archive", "asa1:latest"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			withPatchedAppDeps(t, nil, func() {
+				if err := RunRestore(core.CurrentAppDeps(), args); err == nil {
+					t.Fatal("expected an error")
+				}
+			})
 		})
 	}
 }

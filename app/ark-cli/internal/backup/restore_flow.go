@@ -117,6 +117,9 @@ func scaffoldComposeService(composeFile, instance, mapName, adminPassword, serve
 	if err := runtime.ValidateComposeName(instance, "instance name"); err != nil {
 		return err
 	}
+	if instance == pkgbackup.ClusterTarget {
+		return pkgbackup.ErrClusterNameReserved
+	}
 	if composeStr != "" && serviceExistsInComposeText(composeStr, instance) {
 		return fmt.Errorf("Error: instance '%s' already exists. Use 'restore backup --instance %s --archive ...' instead.", instance, instance)
 	}

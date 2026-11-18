@@ -49,6 +49,15 @@ func validateScheduleComposeTarget(composeFileFlag, instance string) error {
 	if err != nil {
 		return err
 	}
+	return ensureBackupTarget(project, instance)
+}
+
+// ensureBackupTarget checks that a non-'all' schedule target exists: an instance, or a cluster volume for 'cluster'.
+func ensureBackupTarget(project *ark.ComposeProject, instance string) error {
+	if instance == backup.ClusterTarget {
+		_, err := backup.ResolveClusterVolume(project)
+		return err
+	}
 	return project.EnsureService(instance)
 }
 
@@ -85,7 +94,7 @@ func validateScheduleEntry(s schedule.BackupSchedule, seen map[string]bool, comp
 		project = loadedProject
 		composeConfigs[composeFile] = project
 	}
-	return project.EnsureService(s.Instance)
+	return ensureBackupTarget(project, s.Instance)
 }
 
 func validateScheduleFile(file schedule.ScheduleFile, target string) (int, error) {

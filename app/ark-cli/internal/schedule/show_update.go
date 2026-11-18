@@ -175,7 +175,7 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	)
 	nameFlag := fs.String("name", "", "Schedule name.")
 	cronExpr := fs.String("cron", "", "Cron expression (5 fields).")
-	instance := fs.String("instance", "", "Backup instance target (`all` allowed).")
+	instance := fs.String("instance", "", "Backup target: instance name, 'cluster' or 'all'.")
 	composeFileFlag := fs.String("compose-file", "", "Compose file to use when schedule runs.")
 	format := fs.String("format", "", "Backup format: tar, tar.gz, or tar.zst.")
 	retainCount := fs.Int("retain-count", -1, "Retention count.")

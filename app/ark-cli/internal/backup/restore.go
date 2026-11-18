@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"ark-cli/internal/core"
+
+	pkgbackup "pkg/ark/backup"
 )
 
 // ErrInstanceAndBackupNameRequired is the error message for missing instance and backup name arguments.
@@ -18,11 +20,12 @@ func RunRestore(d *core.AppDeps, args []string) error {
 		[]string{
 			"restore backup --instance <name> --archive [<src-instance>:]<backup>",
 			"restore backup --new-instance <name> --archive <src-instance>:<backup> [--admin-password <pw>] [--server-password <pw> | --no-server-password]",
+			"restore backup --instance cluster --archive <backup|latest>",
 		},
 		"Restore an instance from a backup archive. Use --instance for an existing instance or --new-instance to create one.",
 	)
 
-	instanceFlag := fs.String("instance", "", "Target existing instance name.")
+	instanceFlag := fs.String("instance", "", "Target existing instance name, or 'cluster' for the shared cluster data.")
 	newInstanceFlag := fs.String("new-instance", "", "Create and restore to a new instance name.")
 	archiveFlag := fs.String("archive", "", "Backup archive in the form [<src-instance>:]<backup-name>.")
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
@@ -52,6 +55,15 @@ func RunRestore(d *core.AppDeps, args []string) error {
 	}
 
 	archive := *archiveFlag
+	if *instanceFlag == pkgbackup.ClusterTarget {
+		if *autoStart {
+			return errors.New("Error: --auto-start does not apply to the cluster; start the instances yourself.")
+		}
+		if strings.Contains(archive, ":") {
+			return errors.New("Error: --archive for the cluster takes a backup name or 'latest', without an instance prefix.")
+		}
+		return runRestoreCluster(archive, *composeFileFlag)
+	}
 	srcInstance, backupName := parseArchiveFlag(archive, instanceFlag, newInstanceFlag)
 
 	if srcInstance == "" {

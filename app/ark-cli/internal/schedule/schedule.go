@@ -29,7 +29,7 @@ func runCreateScheduleBackup(args []string) error {
 		[]string{"create schedule backup --instance <instance> --name <name> --cron \"m h dom mon dow\" [options]"},
 		"Create a managed backup schedule entry and regenerate the managed crontab file.",
 	)
-	instanceFlag := fs.String("instance", "", "Backup instance target.")
+	instanceFlag := fs.String("instance", "", "Backup target: instance name, 'cluster' or 'all'.")
 	name := fs.String("name", "", "Unique schedule name.")
 	cronExpr := fs.String("cron", "", "Cron expression (5 fields).")
 	composeFileFlag := fs.String("compose-file", "", "Compose file to use when schedule runs.")

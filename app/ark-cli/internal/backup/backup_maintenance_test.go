@@ -206,3 +206,61 @@ func createTarWithSQLite(t *testing.T, dir, filename string) string {
 	}
 	return archivePath
 }
+
+func TestRunPruneBackupsAllIncludesCluster(t *testing.T) {
+	backupRoot := t.TempDir()
+	setEnv(t, "ARK_BACKUP_DIR", backupRoot)
+	clusterDir := filepath.Join(backupRoot, pkgbackup.ClusterTarget)
+	for _, dir := range []string{clusterDir, filepath.Join(backupRoot, "a")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	for _, ts := range []string{"20240101-000000", "20240102-000000", "20240103-000000", "20240104-000000"} {
+		if err := os.WriteFile(filepath.Join(clusterDir, "cluster-backup-"+ts+".tar.gz"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	bs := pkgbackup.New(nil, nil, nil, &arktest.MockCommandRunner{}, slog.Default())
+	bs.DiskUsage = func(_ string) (int64, int64, error) {
+		return pkgbackup.MinFreeBackupBytes + 1024, 0, nil
+	}
+	withPatchedAppDeps(t, func(d *core.AppDeps) {
+		d.ComposeService = &arktest.MockCompose{
+			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
+				return fakeProject(types.Services{"a": {Name: "a"}}), nil
+			},
+		}
+		d.BackupService = bs
+	}, func() {
+		args := []string{"--instance", "all", "--retain-count", "2", "--compose-file", "docker-compose.yaml"}
+		if err := RunPruneBackups(core.CurrentAppDeps(), append(args, "--dry-run")); err != nil {
+			t.Fatalf("dry run: %v", err)
+		}
+		if err := RunPruneBackups(core.CurrentAppDeps(), args); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+	})
+	if left, _ := pkgbackup.ListArchives(clusterDir); len(left) != 2 {
+		t.Fatalf("left = %v", left)
+	}
+}
+
+func TestRunPruneBackupsDryRunAllWithoutClusterDir(t *testing.T) {
+	backupRoot := t.TempDir()
+	setEnv(t, "ARK_BACKUP_DIR", backupRoot)
+	if err := os.MkdirAll(filepath.Join(backupRoot, "a"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	withPatchedAppDeps(t, func(d *core.AppDeps) {
+		d.ComposeService = &arktest.MockCompose{
+			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
+				return fakeProject(types.Services{"a": {Name: "a"}}), nil
+			},
+		}
+	}, func() {
+		if err := RunPruneBackups(core.CurrentAppDeps(), []string{"--instance", "all", "--dry-run", "--compose-file", "docker-compose.yaml"}); err != nil {
+			t.Fatalf("dry run: %v", err)
+		}
+	})
+}

@@ -66,10 +66,10 @@ func RunBackupFromScheduleImpl(name string, args []string) error {
 func ParseBackupCreateCommandRequest(args []string) (BackupCreateCommandRequest, error) {
 	fs := core.NewCommandFlagSet(
 		"backup",
-		[]string{"create backup --instance <instance|all> [options]"},
-		"Create backup archives for one instance or all compose services.",
+		[]string{"create backup --instance <instance|cluster|all> [options]"},
+		"Create backup archives for one instance, the shared cluster data, or all of them.",
 	)
-	instanceFlag := fs.String("instance", "", "Target instance name or 'all'.")
+	instanceFlag := fs.String("instance", "", "Target instance name, 'cluster' (shared cluster data) or 'all'.")
 	dest := fs.String("dest", "", "Destination directory for backup archives (default: ~/ark-backups/<instance>).")
 	name := fs.String("name", "", "Backup name prefix.")
 	format := fs.String("format", "tar.gz", "Archive format.")
@@ -142,6 +142,10 @@ func RunBackupCreateCommand(req BackupCreateCommandRequest) error {
 		services := config.ServiceNames()
 		if len(services) == 0 {
 			return errors.New("Error: compose config has no services to back up.")
+		}
+		// The cluster joins 'all' whenever the compose file has one; other cluster errors show as its failed row.
+		if _, err := pkgbackup.ResolveClusterVolume(config); !errors.Is(err, pkgbackup.ErrNoClusterVolume) {
+			services = append(services, pkgbackup.ClusterTarget)
 		}
 		return runBackupsForAllServices(services, execCtx.runTarget)
 	}

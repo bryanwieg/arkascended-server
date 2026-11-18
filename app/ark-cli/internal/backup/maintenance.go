@@ -74,10 +74,10 @@ func RunVerifyBackup(d *core.AppDeps, args []string) error {
 func RunPruneBackups(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"prune backups",
-		[]string{"prune backups --instance <instance|all> [options]"},
+		[]string{"prune backups --instance <instance|cluster|all> [options]"},
 		"Apply backup retention policies without creating a new backup.",
 	)
-	instanceFlag := fs.String("instance", "", "Target instance name or 'all'.")
+	instanceFlag := fs.String("instance", "", "Target instance name, 'cluster' or 'all'.")
 	retainCount := fs.Int("retain-count", 20, "Max backups to keep per instance (0 disables count-based pruning).")
 	retainDays := fs.Int("retain-days", 7, "Max age in days for backups (0 disables age-based pruning).")
 	retainSizeGB := fs.Int("retain-size-gb", 5, "Max total backup size per instance in GiB (0 disables size-based pruning).")
@@ -116,8 +116,11 @@ func RunPruneBackups(d *core.AppDeps, args []string) error {
 		if len(services) == 0 {
 			return errors.New("Error: compose config has no services to prune.")
 		}
-		for _, service := range services {
+		for _, service := range append(services, pkgbackup.ClusterTarget) {
 			destDir := filepath.Join(backupRoot, service)
+			if _, err := os.Stat(destDir); err != nil && service == pkgbackup.ClusterTarget {
+				continue // no cluster backups yet
+			}
 			if err := dryRunRetention(destDir, service, policy); err != nil {
 				return err
 			}
@@ -137,7 +140,7 @@ func RunPruneBackups(d *core.AppDeps, args []string) error {
 	if len(services) == 0 {
 		return errors.New("Error: compose config has no services to prune.")
 	}
-	for _, service := range services {
+	for _, service := range append(services, pkgbackup.ClusterTarget) {
 		if err := pruneBackupsForService(d, backupRoot, service, policy); err != nil {
 			return err
 		}

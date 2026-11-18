@@ -4,12 +4,14 @@ package create
 
 import (
 	"ark-cli/internal/core"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	pkgbackup "pkg/ark/backup"
 	"pkg/ark/runtime"
 )
 
@@ -105,6 +107,20 @@ func TestRunCreateEnsuresClusterAndSaveVolume(t *testing.T) {
 	}
 	if !strings.Contains(text, "ark-cluster-1:") {
 		t.Fatal("expected cluster volume entry")
+	}
+}
+
+// TestRunCreateRejectsClusterName verifies 'cluster' is reserved for cluster backups.
+// - Expect: RunCreate fails with ErrClusterNameReserved and leaves the compose file alone.
+func TestRunCreateRejectsClusterName(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	setEnv(t, "COMPOSE_FILE", composePath)
+	err := RunCreate(core.CurrentAppDeps(), []string{"--name", "cluster", "--admin-password", "adminpass", "--server-password", "serverpass"})
+	if !errors.Is(err, pkgbackup.ErrClusterNameReserved) {
+		t.Fatalf("got %v", err)
+	}
+	if _, statErr := os.Stat(composePath); statErr == nil {
+		t.Fatal("compose file was written")
 	}
 }
 

@@ -129,9 +129,9 @@ All container runtime scripts emit through
 `container/scripts/runtime/_logging.py`:
 
 ```python
-emit_event(phase, msg)    # stdout + PID1 mirror; "[{phase}] {msg}"
+emit_event(phase, msg)  # stdout + PID1 mirror; "[{phase}] {msg}"
 emit_warning(phase, msg)  # stderr + PID1 mirror; "[{phase}] Warning: {msg}"
-emit_error(phase, msg)    # stderr + PID1 mirror; "[{phase}] Error: {msg}"
+emit_error(phase, msg)  # stderr + PID1 mirror; "[{phase}] Error: {msg}"
 ```
 
 Phases in use: `entrypoint`, `server`, `server-args`, `server-oom`,

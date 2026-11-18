@@ -37,6 +37,21 @@ containers through domain services that call the backend interfaces. All
 server-state operations (save, graceful stop, backup) go through RCON or
 container-internal scripts.
 
+### Container script boundary
+
+The runtime scripts in `container/scripts/runtime/` are the container's API.
+The CLI, ark-web and any other host process call them through
+`ComposeService.Exec` or `RunOneOff`, and read their output and exit code.
+They never read, write or delete files inside a container themselves, and
+never run inline shell (`sh -c "cat …"`, `mv`, `rm`) against container paths.
+File formats such as the INI files are parsed only by container scripts, so
+the image can change its layout without breaking the host side.
+
+A host feature that needs something from inside the container adds or extends
+a runtime script, with tests in `tests/container/`, and calls that. Rule and
+current exceptions:
+[conventions.md](../reference/conventions.md#container-access).
+
 The SDK backend implements both `ContainerEngine` and `ComposeService` and
 must pass the conformance tests in `app/pkg/ark/conformance/`. See
 [backends.md](backends.md).

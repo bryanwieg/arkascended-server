@@ -114,14 +114,14 @@ watch -n5 'docker ps --format "table {{.Names}}\t{{.Status}}"'
 ## Test artifacts
 
 Check these first when a test fails. Each run writes
-`.tests/<YYMMDD-HHMMSS>-{suiterun|singlerun}/<test-node>/`:
+`.tests/<YYMMDD-HHMMSS>-{suiterun|singlerun}/[<batch-label>/]<test-node>/`
+([details](../reference/test-logging.md)):
 
 | File | Contents |
 |---|---|
 | `commands.log` | `run_cmd` invocations: exit code, stdout, stderr |
 | `compose.<service>.log` | Streamed service log |
-| `docker.log` | Container diagnostics (state, image, PID) before teardown |
-| `failure.log` | Docker state captured at failure |
+| `docker.log` | Container diagnostics before teardown, plus a `compose ps --all` snapshot on failure |
 | `framework.log` | Framework trace (polls, locks, lifecycle, compose, SDK calls) |
 | `pytest.log` | Phase outcomes with captured stdout/stderr |
 | `cli.log` | `ark-cli` output, when the CLI ran |

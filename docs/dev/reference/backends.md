@@ -16,7 +16,7 @@ container, image or volume) and `ErrConflict` (in use).
 
 | Method | Behavior |
 |--------|----------|
-| `InspectState` | Runtime state of a container. `ErrNotFound` if missing |
+| `InspectState` | Runtime state of a container (`Running`, `Restarting`, `ExitCode`, `StartedAt`). `ErrNotFound` if missing |
 | `RemoveContainer` | Force-remove a container. `ErrNotFound` if missing |
 | `ContainerLogs` | Reader for combined stdout/stderr |
 | `ImageExists` | Whether an image exists locally |
@@ -40,7 +40,7 @@ container, image or volume) and `ErrConflict` (in use).
 |-------|---------|
 | Project | `LoadProject`, `SaveProject` |
 | Lifecycle | `Up`, `Stop`, `Kill`, `Down`, `Remove`, `Create` |
-| Status | `RunningServices`, `ExitedServices`, `AllServices` |
+| Status | `RunningServices`, `ExitedServices`, `AllServices`, `ServiceContainers` (container name and state per service) |
 | Exec | `Exec`, `ExecInteractive`, `RunOneOff`, `RunOneOffDetached`, `RunOneOffInteractive` |
 | Logs | `Logs` |
 | Copy | `CopyFromService` |

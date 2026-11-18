@@ -90,7 +90,7 @@ func FillTestDefaults(d *core.AppDeps, cfg TestDepsConfig) {
 		}
 	}
 	if d.HealthChecker == nil && d.ComposeService != nil {
-		d.HealthChecker = health.New(d.ComposeService, d.Logger)
+		d.HealthChecker = health.New(d.ComposeService, d.Engine, d.Logger)
 	}
 	if d.Lifecycle == nil && d.ComposeService != nil && d.HealthChecker != nil {
 		d.Lifecycle = lifecycle.New(d.ComposeService, d.HealthChecker, d.Logger)

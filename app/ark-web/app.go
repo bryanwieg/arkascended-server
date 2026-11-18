@@ -60,7 +60,7 @@ func (w *WebApp) Run(addr string) error {
 		return err
 	}
 
-	hc := health.New(sdkComp, logger)
+	hc := health.New(sdkComp, sdkEng, logger)
 	lc := lifecycle.New(sdkComp, hc, logger)
 
 	deps := &server.Deps{

@@ -499,6 +499,26 @@ func (c *SDKCompose) CopyFromService(ctx context.Context, composeFile, service, 
 var _ ark.ComposeService = (*SDKCompose)(nil)
 
 // filterByState filters ContainerSummary by container state for RunningServices/ExitedServices.
+func (c *SDKCompose) ServiceContainers(ctx context.Context, composeFile string) (map[string]ark.ServiceContainer, error) {
+	c.logger.Debug("ServiceContainers", "file", composeFile)
+	_, name, err := c.loadProject(ctx, composeFile)
+	if err != nil {
+		return nil, err
+	}
+	containers, err := c.svc.Ps(ctx, name, api.PsOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]ark.ServiceContainer, len(containers))
+	for _, ct := range containers {
+		if ct.Service == "" {
+			continue
+		}
+		result[ct.Service] = ark.ServiceContainer{Name: ct.Name, State: strings.ToLower(string(ct.State))}
+	}
+	return result, nil
+}
+
 func filterByState(containers []api.ContainerSummary, state string) map[string]struct{} {
 	result := make(map[string]struct{})
 	for _, c := range containers {

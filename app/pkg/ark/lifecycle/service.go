@@ -49,22 +49,11 @@ func (s *Service) Start(ctx context.Context, req StartRequest) (*StartResult, er
 		timeout = DefaultStartWaitTimeout
 	}
 
-	// Snapshot running services before waiting so we can use fresh-log
-	// detection for newly-started services.
-	preRunning, _ := s.compose.RunningServices(ctx, req.ComposeFile)
-	since := time.Now().UTC().Add(-1 * time.Second)
-
 	for _, svc := range req.Services {
-		var sincePtr *time.Time
-		if preRunning != nil {
-			if _, wasRunning := preRunning[svc]; !wasRunning {
-				sincePtr = &since
-			}
-		}
+		// No Since: the checker reads logs from the container's current start.
 		opts := health.WaitOptions{
 			Timeout:  timeout,
 			Interval: DefaultStartWaitInterval,
-			Since:    sincePtr,
 		}
 		if err := s.health.WaitForReady(ctx, req.ComposeFile, svc, opts); err != nil {
 			return result, err

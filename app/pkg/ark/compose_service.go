@@ -57,6 +57,9 @@ type ComposeService interface {
 	// AllServices returns the set of all service names (any state).
 	AllServices(ctx context.Context, composeFile string) (map[string]struct{}, error)
 
+	// ServiceContainers returns the project's containers keyed by service name (all states).
+	ServiceContainers(ctx context.Context, composeFile string) (map[string]ServiceContainer, error)
+
 	// Exec
 
 	// Exec runs a command in a running service container and returns the

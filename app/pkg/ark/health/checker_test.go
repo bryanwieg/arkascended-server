@@ -18,7 +18,7 @@ func TestLogsContainMarker(t *testing.T) {
 			return io.NopCloser(strings.NewReader("line 1\n" + StartedMarker + "\nline 3\n")), nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	found, err := c.LogsContainMarker(context.Background(), "dc.yaml", "svc1", StartedMarker, nil)
 	if err != nil {
@@ -43,7 +43,7 @@ func TestIsStarted(t *testing.T) {
 			return io.NopCloser(strings.NewReader(StartedMarker)), nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	ok, err := c.IsStarted(context.Background(), "dc.yaml", "svc1", nil)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestIsReady(t *testing.T) {
 			return io.NopCloser(strings.NewReader(ReadyMarker)), nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	ok, err := c.IsReady(context.Background(), "dc.yaml", "svc1", nil)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestIsRunning(t *testing.T) {
 			return map[string]struct{}{"svc1": {}}, nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	ok, err := c.IsRunning(context.Background(), "dc.yaml", "svc1")
 	if err != nil {
@@ -102,7 +102,7 @@ func TestCheckNotExited(t *testing.T) {
 			return map[string]struct{}{"svc1": {}}, nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	err := c.CheckNotExited(context.Background(), "dc.yaml", "svc1")
 	if err == nil {
@@ -129,7 +129,7 @@ func TestWaitForStarted(t *testing.T) {
 			return io.NopCloser(strings.NewReader("not yet")), nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	err := c.WaitForStarted(context.Background(), "dc.yaml", "svc1", WaitOptions{
 		Timeout: 5 * time.Second, Interval: 10 * time.Millisecond,
@@ -153,7 +153,7 @@ func TestWaitForStopped(t *testing.T) {
 			return map[string]struct{}{"svc1": {}}, nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	err := c.WaitForStopped(context.Background(), "dc.yaml", "svc1", WaitOptions{
 		Timeout: 5 * time.Second, Interval: 10 * time.Millisecond,
@@ -172,7 +172,7 @@ func TestWaitForStartedTimeout(t *testing.T) {
 			return io.NopCloser(strings.NewReader("not yet")), nil
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	err := c.WaitForStarted(context.Background(), "dc.yaml", "svc1", WaitOptions{
 		Timeout: 50 * time.Millisecond, Interval: 10 * time.Millisecond,
@@ -194,7 +194,7 @@ func TestWaitForStartedExitedEarly(t *testing.T) {
 			return map[string]struct{}{"svc1": {}}, nil // exited
 		},
 	}
-	c := New(mock, slog.Default())
+	c := New(mock, nil, slog.Default())
 
 	err := c.WaitForStarted(context.Background(), "dc.yaml", "svc1", WaitOptions{
 		Timeout: 1 * time.Second, Interval: 10 * time.Millisecond,
@@ -204,5 +204,35 @@ func TestWaitForStartedExitedEarly(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "exited prematurely") {
 		t.Fatalf("expected premature exit error, got: %v", err)
+	}
+}
+
+// With no explicit since, logs are read from the current container start with
+// no tail limit, so an old run's marker can't match and a long run can't drop it.
+func TestLogsContainMarkerReadsFromCurrentRunStart(t *testing.T) {
+	started := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	var got ark.LogOptions
+	mock := &arktest.MockCompose{
+		ServiceContainersFn: func(context.Context, string) (map[string]ark.ServiceContainer, error) {
+			return map[string]ark.ServiceContainer{"svc1": {Name: "proj-svc1-1", State: "running"}}, nil
+		},
+		LogsFn: func(_ context.Context, _, _ string, opts ark.LogOptions) (io.ReadCloser, error) {
+			got = opts
+			return io.NopCloser(strings.NewReader("")), nil
+		},
+	}
+	engine := &arktest.MockEngine{
+		InspectStateFn: func(_ context.Context, name string) (ark.ContainerState, error) {
+			if name != "proj-svc1-1" {
+				t.Fatalf("inspected %q", name)
+			}
+			return ark.ContainerState{Running: true, StartedAt: started}, nil
+		},
+	}
+	if _, err := New(mock, engine, slog.Default()).IsReady(context.Background(), "dc.yaml", "svc1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got.Since == nil || !got.Since.Equal(started) || got.Tail != 0 {
+		t.Fatalf("log options = %+v, want Since=%v Tail=0", got, started)
 	}
 }

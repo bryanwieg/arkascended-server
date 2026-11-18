@@ -13,8 +13,9 @@ Two fixed markers, defined in `app/pkg/ark/health/checker.go`:
 | `has successfully started!` | `health.StartedMarker` | Server process has launched |
 | `Server has completed startup and is now advertising for join.` | `health.ReadyMarker` | Server accepts player connections |
 
-`IsStarted` / `IsReady` call `LogsContainMarker`: fetch the last 300 log lines
-via `ComposeService.Logs` (optionally filtered by `since`) and substring-match.
+`IsStarted` / `IsReady` call `LogsContainMarker`: fetch every log line since
+`since` via `ComposeService.Logs` and substring-match (see [The `since`
+filter](#the-since-filter)).
 
 Users: `start instance` (waits for started, then advertising), `wait instance`,
 `check instance`.
@@ -23,9 +24,8 @@ Users: `start instance` (waits for started, then advertising), `wait instance`,
 silently (waits time out, `check` reports `starting`). Keep the constants in
 step with server output.
 
-**300-line window:** without `since`, only the last 300 lines are searched. On
-a long-running server with chatty logs the ready marker can scroll out of that
-window.
+**300-line fallback:** only when no start time is known (no engine wired, no
+container) does the search fall back to the last 300 lines.
 
 ## Poll loop
 
@@ -57,15 +57,18 @@ checks the running state.
 ## The `since` filter
 
 `WaitOptions.Since` limits the log search to lines after a timestamp, so a
-marker from a previous run in the same container's log doesn't count.
+marker from a previous run in the same container's log doesn't count. With
+`since` set there is no tail limit.
 
-`start instance` snapshots running services and records `since` (now - 1s)
-before `compose up`. Services that were not running get the `since` filter;
-services already running are checked without it, since their current run
-already printed the markers.
+When `since` is nil (`wait instance`, `check instance`,
+`lifecycle.Service.Start`), the checker uses the container's start time:
+`ComposeService.ServiceContainers` finds the container and
+`ContainerEngine.InspectState` returns `StartedAt`. A long-running server's
+marker therefore never scrolls out, and after an in-place restart the previous
+run's marker doesn't match.
 
-`wait instance` and `check instance` never set `since`. After an in-place
-restart (same container, logs kept), they can match the previous run's marker.
+`start instance` passes its own `since` (now - 1s, taken before `compose up`)
+for services that were not running.
 
 ## RAM headroom check
 

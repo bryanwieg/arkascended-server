@@ -35,18 +35,29 @@ type InstanceHealthChecker interface {
 // Checker provides health-check and readiness-polling for compose services.
 type Checker struct {
 	compose ark.ComposeService
+	engine  ark.ContainerEngine // optional; finds the current run's start time
 	logger  *slog.Logger
 }
 
-// New creates a Checker backed by the given ComposeService.
-func New(compose ark.ComposeService, logger *slog.Logger) *Checker {
-	return &Checker{compose: compose, logger: logger}
+// New creates a Checker backed by the given ComposeService. engine may be nil;
+// then a nil since falls back to the last defaultLogTail log lines.
+func New(compose ark.ComposeService, engine ark.ContainerEngine, logger *slog.Logger) *Checker {
+	return &Checker{compose: compose, engine: engine, logger: logger}
 }
 
-// LogsContainMarker scans recent logs for the given marker string.
-// If since is non-nil, only logs after that time are checked.
+// LogsContainMarker scans the service's logs for the given marker string.
+// If since is nil, it checks every line since the container last started, so
+// a marker from a previous run (in-place restart) never counts and a
+// long-running server's marker is never pushed out of a fixed tail.
 func (c *Checker) LogsContainMarker(ctx context.Context, composeFile, service, marker string, since *time.Time) (bool, error) {
-	reader, err := c.compose.Logs(ctx, composeFile, service, ark.LogOptions{Tail: defaultLogTail, Since: since})
+	if since == nil {
+		since = c.currentRunStart(ctx, composeFile, service)
+	}
+	opts := ark.LogOptions{Tail: defaultLogTail, Since: since}
+	if since != nil {
+		opts.Tail = 0 // everything since the start
+	}
+	reader, err := c.compose.Logs(ctx, composeFile, service, opts)
 	if err != nil {
 		return false, err
 	}
@@ -56,6 +67,27 @@ func (c *Checker) LogsContainMarker(ctx context.Context, composeFile, service, m
 		return false, err
 	}
 	return strings.Contains(string(data), marker), nil
+}
+
+// currentRunStart returns when the service's container last started, or nil
+// when it can't tell (no engine, no container, never started).
+func (c *Checker) currentRunStart(ctx context.Context, composeFile, service string) *time.Time {
+	if c.engine == nil {
+		return nil
+	}
+	containers, err := c.compose.ServiceContainers(ctx, composeFile)
+	if err != nil {
+		return nil
+	}
+	ct, ok := containers[service]
+	if !ok || ct.Name == "" {
+		return nil
+	}
+	state, err := c.engine.InspectState(ctx, ct.Name)
+	if err != nil || state.StartedAt.IsZero() {
+		return nil
+	}
+	return &state.StartedAt
 }
 
 // IsStarted returns true if the service's logs contain the startup marker.

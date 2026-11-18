@@ -120,6 +120,24 @@ func TestComposeService(t *testing.T, svc ark.ComposeService) {
 		}
 	})
 
+	t.Run("ServiceContainers", func(t *testing.T) {
+		composeFile := writeTestComposeFile(t)
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		containers, err := svc.ServiceContainers(ctx, composeFile)
+		if err != nil {
+			t.Fatalf("ServiceContainers: %v", err)
+		}
+		c, ok := containers["test-svc"]
+		if !ok || c.Name == "" || c.State != "running" {
+			t.Fatalf("expected running test-svc with a name, got %+v", containers)
+		}
+	})
+
 	t.Run("Exec", func(t *testing.T) {
 		composeFile := writeTestComposeFile(t)
 		t.Cleanup(func() {

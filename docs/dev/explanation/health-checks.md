@@ -1,94 +1,116 @@
 # Health Checks and Readiness Polling
 
-The CLI determines instance health by scanning container logs for specific marker
-strings emitted by the ARK server process. Host RAM is checked by the container
-entrypoint, not the CLI.
+The CLI judges instance health by scanning container logs for marker strings
+the ARK server prints. Host RAM is checked by the container entrypoint, not the
+CLI.
 
 ## Log-marker mechanism
 
-`check instance` and `wait instance` work by reading recent Docker Compose logs and
-searching for two fixed marker strings:
+Two fixed markers, defined in `app/pkg/ark/health/checker.go`:
 
 | Marker | Constant | Meaning |
 |--------|----------|---------|
 | `has successfully started!` | `health.StartedMarker` | Server process has launched |
-| `Server has completed startup and is now advertising for join.` | `health.ReadyMarker` | Server is accepting player connections |
+| `Server has completed startup and is now advertising for join.` | `health.ReadyMarker` | Server accepts player connections |
 
-`IsStarted` scans for the started marker; `IsReady` scans for the ready marker. Both use
-`LogsContainMarker`, which fetches the last 300 log lines via `ComposeService.Logs` and
-checks for the marker substring.
+`IsStarted` / `IsReady` call `LogsContainMarker`: fetch the last 300 log lines
+via `ComposeService.Logs` (optionally filtered by `since`) and substring-match.
 
-**Coupling:** If the container-side ARK server output changes these strings, health
-checks break silently. Any change to server log output must be coordinated with the
-marker constants in `app/pkg/ark/health/checker.go`.
+Users: `start instance` (waits for started, then advertising), `wait instance`,
+`check instance`.
+
+**Coupling:** if the ARK server changes these strings, health checks break
+silently (waits time out, `check` reports `starting`). Keep the constants in
+step with server output.
+
+**300-line window:** without `since`, only the last 300 lines are searched. On
+a long-running server with chatty logs the ready marker can scroll out of that
+window.
 
 ## Poll loop
 
-`WaitForStarted`, `WaitForReady`, and `WaitForStopped` all use a `poll` function that
-calls a check function at a configurable interval until it returns true, the timeout
-expires, or the context is cancelled.
+`WaitForStarted`, `WaitForReady` and `WaitForStopped` share `poll`: run the
+check every interval until it returns true, the timeout expires, or the
+context is cancelled.
 
-Default values:
-- `lifecycle` package: start wait timeout 5 minutes (`DefaultStartWaitTimeout`), start wait interval 2 seconds (`DefaultStartWaitInterval`), graceful stop timeout 15 minutes (`DefaultStopTimeout`)
-- `wait instance` CLI: `--timeout` default is 10 minutes (overrides the package default when the user does not pass `--timeout`)
+| Caller | Timeout | Interval |
+|--------|---------|----------|
+| `start instance` | 5m (`--wait-timeout` / `ARK_START_WAIT_TIMEOUT`) | 2s |
+| `wait instance` | 10m (`--timeout`) | 2s (`--interval`) |
+| `lifecycle.Service.Start` with `WaitForReady` | 5m (`DefaultStartWaitTimeout`) | 2s (`DefaultStartWaitInterval`) |
 
-The `wait instance` CLI command exposes `--timeout` and `--interval` flags.
+The CLI calls `lifecycle.Service.Start` with `WaitForReady: false` and runs its
+own wait to drive the progress display. With `--verbose`, `start instance`
+follows the log stream for the ready marker instead of polling.
+
+`wait instance --for` takes `started`, `advertising` (alias `ready`, the
+default) or `stopped`.
 
 ### Premature exit detection
 
-During `WaitForStarted` and `WaitForReady`, each poll iteration first checks whether
-the service is still running. If the container has exited, `CheckNotExited` queries
-`ExitedServices` and fails immediately rather than waiting for timeout.
+In `WaitForStarted` / `WaitForReady`, each iteration checks whether the
+service is running. If not, `CheckNotExited` queries `ExitedServices`; an
+exited service fails the wait at once instead of running out the timeout. An
+error from `ExitedServices` is ignored (keeps polling). `WaitForStopped` only
+checks the running state.
 
-## The `since` parameter
+## The `since` filter
 
-`WaitOptions.Since` filters log lines to only those after a given timestamp. This
-prevents matching stale markers from a previous server run. The `lifecycle.Start`
-method sets `Since` to the time just before `compose up`, so only logs from the current
-startup are considered.
+`WaitOptions.Since` limits the log search to lines after a timestamp, so a
+marker from a previous run in the same container's log doesn't count.
+
+`start instance` snapshots running services and records `since` (now - 1s)
+before `compose up`. Services that were not running get the `since` filter;
+services already running are checked without it, since their current run
+already printed the markers.
+
+`wait instance` and `check instance` never set `since`. After an in-place
+restart (same container, logs kept), they can match the previous run's marker.
 
 ## RAM headroom check
 
-The container entrypoint (`check_memory_headroom` in `container-entrypoint.py`)
-checks host RAM on every container start, so it also covers direct
-`docker compose up` and restart-policy restarts. It compares `MemAvailable` from
-`/proc/meminfo` against the container's memory reservation, read from cgroup
-`memory.low` (v2) or `memory.soft_limit_in_bytes` (v1). If the reservation reads
-as unset or `0`, it says nothing. That includes runtimes that don't apply
-`mem_reservation` to the cgroup.
+`check_memory_headroom` in `container/scripts/runtime/container-entrypoint.py`
+runs at the start of the default startup workflow, so it covers every start
+path: `start instance`, direct `docker compose up`, restart-policy restarts.
 
-When RAM is short it **warns and starts anyway**. The wording depends on whether
-the host is already under memory pressure (PSI `full avg10 > 0` in
-`/proc/pressure/memory`, or swap over 90% full):
+It compares `MemAvailable` from `/proc/meminfo` with the container's memory
+reservation from cgroup `memory.low` (v2) or `memory.soft_limit_in_bytes` (v1).
+Reservation unset, `0` or unlimited: no check. That includes runtimes that
+don't apply `mem_reservation` to the cgroup.
 
-- Under pressure: the server will likely be killed by the OOM killer.
-- No pressure: the server may run out of memory, which is expected on
-  balloon-memory VMs (e.g. Hyper-V Dynamic Memory), where `MemAvailable` stays
-  low until the hypervisor adds memory on demand.
+Short on RAM: **warn and start anyway**. Wording depends on current memory
+pressure (PSI `full avg10 > 0` in `/proc/pressure/memory`, or swap over 90%
+full):
 
-*Why a warning, not a refusal:* exiting failed the container, which
-`restart: unless-stopped` then restarted in an endless loop, and it refused
-balloon VMs that would have supplied the memory. A pre-start check can only
-guess anyway. The definite signal comes after the fact: when the kernel's OOM
-killer kills the server, `ark-server-start.py` sees the cgroup `oom_kill`
-counter rise and logs a `[server-oom]` error.
+- Pressure: the server will likely be killed by the OOM killer.
+- No pressure: the server may run out of memory; expected on balloon-memory
+  VMs (e.g. Hyper-V Dynamic Memory), where `MemAvailable` stays low until the
+  hypervisor adds memory on demand.
 
-The CLI does no RAM check. *Why:* the container check runs on every start path,
-while a CLI check only covers `start instance`. The CLI also reads the memory of
-the machine it runs on, which isn't always the Docker host.
+*Why warn, not refuse:* exiting failed the container, which
+`restart: unless-stopped` restarted in an endless loop, and it refused balloon
+VMs that would have supplied the memory. A pre-start check can only guess. The
+definite signal comes after the fact: when the OOM killer kills the server,
+`ark-server-start.py` sees the cgroup `oom_kill` counter rise and logs a
+`[server-oom]` error.
 
-`ARK_SKIP_RAM_CHECK=1` in the instance's compose `environment` silences the
-warning.
+*Why not in the CLI:* the container check runs on every start path; a CLI
+check would only cover `start instance`, and it would read the memory of the
+machine the CLI runs on, which isn't always the Docker host.
+
+`ARK_SKIP_RAM_CHECK=1` in the instance's compose `environment` skips the check.
 
 ## Health result classification
 
-`check instance` returns one of four states:
+`check instance` derives `status` (`running` or `stopped`) from the running
+services, checks the ready marker only when running, and prints:
 
-| Result | Condition |
-|--------|-----------|
-| `healthy` | Container running + ready marker found |
-| `starting` | Container running + ready marker not yet found |
-| `stopped` | Container not running |
-| `unhealthy` | None of the above |
+| Result | Condition | Exit |
+|--------|-----------|------|
+| `healthy` | Running + ready marker found | 0 |
+| `starting` | Running + ready marker not found | non-zero |
+| `stopped` | Not running | 0 |
+| `unhealthy` | Fallback; unreachable while status is only `running`/`stopped` | non-zero |
 
-The command exits 0 for `healthy` or `stopped`, non-zero for `starting` or `unhealthy`.
+It also prints the last update attempt (`last_update`), which never changes
+the exit code.

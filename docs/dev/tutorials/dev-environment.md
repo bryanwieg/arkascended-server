@@ -1,19 +1,20 @@
 # Development Environment Setup
 
-This tutorial takes you from a fresh clone to a passing test run.
+Fresh clone to a passing test run.
 
 ## Prerequisites
 
-- Docker Engine (with Compose v2 plugin) and access to the Docker socket
-- Go at the version in `go.work` or later (required to build the CLI from source)
-- Python 3.10 or later
-- `git`
+- Docker Engine with the Compose v2 and buildx plugins, and access to the Docker socket
+  (`build-image.sh` uses `docker buildx build`; the test framework drives `docker compose`)
+- Go at the version in `go.work` or later
+- Python 3.14 (the version CI uses)
+- `git`, `curl`
 
 ## 1. Clone the repo
 
 ```sh
-git clone <repo-url>
-cd ark-docker
+git clone https://github.com/bryanwieg/arkascended-server.git
+cd arkascended-server
 ```
 
 ## 2. Build the CLI binary
@@ -22,8 +23,8 @@ cd ark-docker
 ./.github/build-cli.sh
 ```
 
-The binary is written to `app/ark-cli/ark-cli`. Add it to your `PATH`,
-or invoke it as `./app/ark-cli/ark-cli` from the repo root.
+Output: `app/ark-cli/ark-cli`. The CLI test fixtures rebuild it on every run, so
+this step is only needed to use the CLI by hand.
 
 ## 3. Build the Docker image
 
@@ -31,90 +32,58 @@ or invoke it as `./app/ark-cli/ark-cli` from the repo root.
 ./.github/build-image.sh
 ```
 
-This produces `ark-server:latest` and tagged variants. The integration test
-suite expects this image to exist. Re-run this script any time you change
-container scripts or the Dockerfile.
+Produces `ark-server:latest` plus tags for the ARK version and Steam build ID.
+Downloads the current ARK server files with SteamCMD on first run. Integration
+tests expect this image; re-run after changing anything under `container/`.
+Build stages and env vars: [Image build pipeline](../reference/image-build.md).
 
-## 4. Set up the Python virtual environment
+## 4. Set up the Python venv
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 ```
 
-The test runner and container test suite expect the venv at `./.venv`.
+`run-tests.py` uses `./.venv/bin/python` unless `--python` or
+`TEST_BATCH_PYTHON` is set.
 
-## 5. Run the unit test suite
+## 5. Run the unit suite
 
-Unit tests require no Docker and run in seconds:
+No Docker, runs in seconds:
 
 ```sh
 ./run-tests.py --suite unit
 ```
 
-All tests should pass before you proceed to integration tests.
+## 6. Run one container integration test
 
-## 6. Run a container integration test
-
-Pick a single integration test to verify your image and Docker setup:
+Run pytest directly to pick a single test file (with `run-tests.py`, `-k` is
+applied to every batch and batches with no matching test fail):
 
 ```sh
-./run-tests.py --suite container -- -k test_ark_server_start_script -v
+.venv/bin/python -m pytest tests/container/integration/slow/test_ark_server_start_script.py -v
 ```
 
-This test starts an ARK container and verifies the startup flow. Expect it to
-take 5–10 minutes on first run (server startup is slow). A pass here means
-your image and Docker permissions are correctly set up.
+Starts an ARK container and checks the startup flow. Expect 5–10 minutes. A
+pass confirms the image and Docker access.
 
-## 7. Run the CLI test suite
+## 7. Run the CLI suites
+
+Python end-to-end tests against real containers (Docker required):
 
 ```sh
 ./run-tests.py --suite cli
 ```
 
-CLI tests exercise `ark-cli` end-to-end, including compose editing and backup
-operations. The integration-tagged tests require Docker; the Go unit/contract
-tests do not.
-
-To run only the fast Go contract tests without Docker:
+Go unit and contract tests, no Docker:
 
 ```sh
 cd app/ark-cli && go test ./...
 ```
 
-## Useful environment variables
-
-| Variable | Purpose |
-|---|---|
-| `ARK_START_WAIT_TIMEOUT=15m` | Extend the start readiness timeout on slow or loaded hosts |
-| `ARK_TEST_IMAGE` | Override the Docker image used by integration tests (default `ark-server:latest`) |
-| `ARK_TEST_ARTIFACTS_DIR` | Override the directory for test artifacts (default `.tests`) |
-| `ARK_TEST_ARTIFACTS_RETENTION` | Days to keep test artifacts (default `7`) |
-| `ARK_TEST_ARTIFACTS_WIPE_THRESHOLD` | Minimum artifacts to keep when pruning (default `3`) |
-
-## Monitoring containers during a test run
-
-```sh
-# Terminal 1 — run tests
-./run-tests.py --suite container -v
-
-# Terminal 2 — watch running containers
-watch -n5 'docker ps --format "table {{.Names}}\t{{.Status}}"'
-```
-
-## Cleaning up
-
-Remove generated test artifacts, caches, and temp files without touching
-tracked files or Docker resources:
-
-```sh
-./clean-repo.sh
-./clean-repo.sh --dry-run --verbose   # preview what would be removed
-```
-
 ## Next steps
 
-- `docs/dev/reference/test-architecture.md` — test layers and seam injection
-  patterns
-- `docs/dev/how-to/add-cli-command.md` — add a new `ark-cli` command
-- `docs/dev/reference/repo-map.md` — key file locations
+- [Run tests](../how-to/run-tests.md) — all suites, env vars, monitoring, artifacts, cleanup
+- [Test architecture](../reference/test-architecture.md) — test layers and seam injection
+- [Add a CLI command](../how-to/add-cli-command.md)
+- [Repo map](../reference/repo-map.md) — key file locations

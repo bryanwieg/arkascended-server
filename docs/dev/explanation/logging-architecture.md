@@ -1,131 +1,127 @@
 # Logging and CLI output architecture
 
-How the CLI, domain packages, and container scripts emit text; which
-channel to use for what; and why the design is shaped this way. For the
-channel-rule table operators and authors reach for first, see
-[conventions.md — Logging and CLI output](../reference/conventions.md#logging-and-cli-output).
+Which channel each kind of output uses, and why. Channel-rule table and
+enforcement: [conventions.md — Logging and CLI output](../reference/conventions.md#logging-and-cli-output).
 
 ## Core idea
 
-Two channels, one discipline, three rendering modes.
+Two channels:
 
-1. **User-facing text channel** — stdout for results and progress; stderr
-   for warnings, errors, and prompts. Spinner-aware. Every substring
-   assertion in the integration test suite targets this channel.
-2. **Operational event channel** — an injected `*slog.Logger` at the
-   `pkg/ark` boundary. Writes to stderr via a text handler; level gates
-   visibility. Never used for user-facing text.
+1. **User-facing text**: stdout for results and progress; stderr for
+   warnings, errors and prompts. Spinner-aware. Integration tests assert
+   substrings on this channel.
+2. **Operational events**: an injected `*slog.Logger` passed into
+   `pkg/ark` services. Text handler on stderr in the CLI
+   (`core.NewCLILogger`); level gates visibility. Never carries
+   user-facing text.
 
-Rendering modes — default text output, `--json` for structured output, and an
-orthogonal `--verbose` / `--log-file PATH` — adjust how these channels
-render but never swap them.
+`--json` and `--verbose` change how output renders, not which channel it
+uses.
 
-The three-layer architecture (CLI → `pkg/ark` → container) is preserved:
-domain services only emit operational events through the injected
-logger; they never reach into `os.Stdout` / `os.Stderr` or call the
-CLI's `core.*` primitives. Handlers render, services compute.
+Layer boundary: `pkg/ark` services emit only through the injected logger.
+They never write `os.Stdout`/`os.Stderr` or call the CLI's `core.*`
+printers. Handlers render, services compute.
 
 ## Message kinds
 
-Every output has exactly one kind. The channel is determined by kind, not
-by preference or location.
+Each output has one kind; the kind decides the channel.
 
 | Kind | What it is | Audience |
 |---|---|---|
-| User text | status, results, progress narration, tables, YAML-ish detail blocks | human in terminal |
-| Structured output | single JSON (later: YAML) document representing the command's result | scripts, dashboards |
-| Warning | actionable problem; operation continues or succeeds with caveats | human |
+| User text | status, results, progress, tables, detail blocks | human in terminal |
+| Structured output | one JSON document for the command's result | scripts, dashboards |
+| Warning | actionable problem; operation continues | human |
 | Error | terminal failure | human |
 | Prompt | synchronous input request | human |
-| Operational event | what the system did internally (`exec cmd=…`, `backup-started svc=…`) | operator debugging |
+| Operational event | what the system did internally (`cmd args=…`) | operator debugging |
 | Spinner frame | transient terminal UI; never persisted | human (TTY only) |
 
 ## Why two channels instead of one
 
-Unified single-channel models (everything structured, consumer demuxes)
-were considered and rejected:
+A single structured channel (consumer demuxes) was rejected:
 
-- Integration tests parse substrings from process stdout/stderr. Putting
-  `"Created schedule nightly"` inside a JSON envelope would force every
-  assertion to become a JSON decode. The test suite has ~50 such
-  assertions; rewriting them is a large churn with no gain.
-- Operators pipe `ark-cli show list` into `grep`, `awk`, or their eyes.
-  Human-readable text on stdout is the contract they already expect.
-- Structured event emission (slog) is still useful for debugging
-  subprocess traces and domain events — separating it prevents contamination
-  of the human channel and keeps `-v` mode meaningful.
+- Integration tests match substrings in process stdout/stderr. A JSON
+  envelope would turn every assertion into a decode.
+- Operators pipe `ark-cli show list` into `grep`/`awk`. Readable text on
+  stdout is the expected contract.
+- slog stays useful for subprocess traces and domain events; keeping it
+  separate stops it leaking into the human channel and keeps `-v`
+  meaningful.
 
-The cost is one discipline rule: handlers must not emit user-facing text
-through `slog`, and domain services must not emit at all except via
-`slog`. Static and runtime checks enforce this (see
+Cost: handlers must not send user text through slog, and domain services
+emit only through slog. `tests/test_logging_discipline.py` and the lint
+config enforce this (see
 [conventions.md](../reference/conventions.md#logging-and-cli-output)).
 
 ## Rendering modes
 
 ### Format
 
-- `--json` — boolean flag. When set, stdout is reserved for a single
-  JSON document. No progress narration on stdout; status goes to
-  stderr if emitted. Commands with no structured result reject `--json`
-  at flag parse time.
+`--json` is a per-command flag, defined only on commands with a
+structured result (`show`/`list` commands). Elsewhere it fails flag
+parsing as an unknown flag. With `--json`, stdout carries one JSON
+document only.
 
 ### Verbosity
 
-- default — slog level `Info`. Lifecycle events on stderr.
-- `--verbose` / `-v` — slog level `Debug`. Subprocess trace visible;
-  `verboseLogf` timestamped lines enabled.
+- Default: slog level `Info`.
+- `-v` / `--verbose` (global, before the verb): slog level `Debug`, so
+  subprocess traces show; `verboseLogf` lines (prefixed `[HH:MM:SS.mmm]`)
+  are enabled on stderr.
 
 ### Log-file tee
 
-`--log-file PATH` — tees everything in temporal order with tags. When
-`--verbose` is enabled, the tee also captures user-facing writes:
+There is no `--log-file` flag. The log file is an argument to the
+verbose flag: `-v FILE`, `-v=FILE` or `--verbose=FILE` (append mode,
+parent dirs created). A file without verbose mode is not possible.
 
-- `[cli-stdout]` — user text and structured output
-- `[cli-stderr]` — warnings and errors
-- `[docker-logs]` — test-infra capture of `docker compose logs`
+The file receives:
 
-Works with or without `--verbose` and any `--format`. An operator can
-combine `--json --log-file out.log` to get clean JSON on stdout
-and a complete trace in the file.
+- every `verboseLogf` line (same bytes as stderr);
+- user text from `core.Infof`/`Infoln`, tagged `[cli-stdout]`;
+- warnings from `core.Warnf`, tagged `[cli-stderr]`.
+
+slog events are not written to the file; they go to stderr only. JSON
+documents (`core.PrintJSONOutput`) and prompts are not mirrored.
+
+`core.TaggedTeeWriter` (`internal/core/tagged_tee.go`) is a line-tagging
+writer built for this tee but not yet wired in; the current mirror is
+`mirrorCLIToVerboseFile` in `app/ark-cli/verbose.go`.
 
 ### TTY detection
 
-Spinners auto-disable when stdout is not a TTY, when `TERM=dumb`, or
-when `--verbose` is set. Phase transitions render as discrete `Infof`
-lines in those cases.
+Spinners turn off when stdout is not a character device, when
+`TERM=dumb`, or with `--verbose`. Progress then prints as plain
+`core.Infof` lines (e.g. `Starting ark server: asa1 started`).
 
 ## PID1 file descriptor mirror (load-bearing)
 
-Container-side scripts invoked under `docker compose exec` write to the
-exec caller's stdio, not to `docker logs`. To surface the same event in
-both streams, `container/scripts/runtime/_logging.py` opens
-`/proc/1/fd/1` or `/proc/1/fd/2` and writes the bytes a second time.
+Scripts run via `docker compose exec` write to the exec caller's stdio,
+not to `docker logs`. `_logging.py` writes each line a second time to
+`/proc/1/fd/1` or `/proc/1/fd/2` so it shows in both.
 
-The canonical logging module is `container/scripts/runtime/_logging.py`,
-exposing `emit_event`, `emit_warning` and `emit_error`.
-
-This is how integration tests can assert the same `"[backup] starting
-backup workflow"` string in both `backup_result.stdout` (from
-`exec`) and `backup_logs.stdout` (from `docker logs`). Removing the
-mirror would silently break the `docker logs` assertion only. The
-mechanism is **load-bearing** and should not be removed without a
+Integration tests depend on this: they assert `[backup] starting backup
+workflow` in both the exec output and `docker logs`. Removing the mirror
+breaks only the `docker logs` side, silently. Do not remove it without a
 replacement.
 
-When the caller script *is* PID 1 (e.g. `ark-server-start.py`), the
-mirror is a no-op — writing to its own fd 1/2 is harmless.
+The mirror is skipped when the caller's stream already is PID 1's (PID 1
+itself, or a child sharing its output such as the stop script), so lines
+are not doubled in `docker logs`. It is best-effort: `/proc/1` errors are
+ignored.
 
 ## Subprocess stdio
 
-`cmdrunner.Runner.Run` captures stdout and stderr into
-`RunResult.Stdout` / `RunResult.Stderr` by default (`Capture: true`).
-When `Capture` is `false`, the subprocess inherits the caller's stdio
-streams directly. Used for long-running commands (image builds,
-crontab installs) where the operator needs live output.
+Two runners: `cmdrunner.Runner.Run` (`RunOptions`) and
+`Runtime.RunCommand` (`ark.CommandOptions`). Both capture stdout/stderr
+into the result only when `Capture: true`; the zero value inherits the
+CLI's stdio. Inherit is used where the operator must see or answer the
+subprocess, e.g. `RuntimeHelper.RunWithPrivs` (sudo password prompt);
+`cmdrunner.RunInteractive` always inherits. Inherited output bypasses
+the verbose tee.
 
-Inherited stdio must not run concurrently with a spinner. The spinner
-mechanism and the inherited subprocess both want exclusive control of
-the terminal; callers orchestrate this by suppressing the spinner for
-the subprocess's duration.
+An inheriting subprocess must not run while a spinner is active; both
+want the terminal. Callers keep them apart.
 
 ## Container-side logging
 
@@ -133,59 +129,58 @@ All container runtime scripts emit through
 `container/scripts/runtime/_logging.py`:
 
 ```python
-emit_event(phase, msg)  # stdout + PID1 mirror; "[{phase}] {msg}"
+emit_event(phase, msg)    # stdout + PID1 mirror; "[{phase}] {msg}"
 emit_warning(phase, msg)  # stderr + PID1 mirror; "[{phase}] Warning: {msg}"
-emit_error(phase, msg)  # stderr + PID1 mirror; "[{phase}] Error: {msg}"
+emit_error(phase, msg)    # stderr + PID1 mirror; "[{phase}] Error: {msg}"
 ```
 
-Phases in use: `entrypoint`, `server`, `shutdown`, `log-rotation`,
-`server-args`, `server-oom`, `stop`, `rcon`, `backup`, `archive`, `restore`,
-and `ini-defaults` (the image build's INI generator). Integration tests assert on these
-`[phase]` lines, so renaming a phase means updating its tests.
+Phases in use: `entrypoint`, `server`, `server-args`, `server-oom`,
+`shutdown`, `stop`, `log-rotation`, `rcon`, `backup`, `archive`,
+`restore`, `cluster-backup`, and `ini-defaults` (image build INI
+generator). Tests assert on `[phase]` lines; renaming a phase means
+updating its tests.
 
-`no-bare-print-in-container` in `tests/test_logging_discipline.py` rejects
-`print()` everywhere except `_logging.py`. A few places write raw stdio on
-purpose:
+`no-bare-print-in-container` in `tests/test_logging_discipline.py`
+rejects `print()` in `container/scripts/runtime/` except `_logging.py`.
+Deliberate raw stdio:
 
-- `ark-rcon.py` writes plain stderr: readiness polls call it every few
-  seconds, and the CLI reads its stdout as the RCON reply.
-- `ark-server-start.py` writes the crash log body raw after its
+- `ark-rcon.py`: RCON reply on plain stdout (the CLI parses it), usage
+  and errors on plain stderr. Readiness polls call it every few seconds.
+- `ark-server-start.py`: crash log body written raw after its
   `[server] Crash log detected …` line.
-- `container-entrypoint.sh` (bash) echoes two lines before Python starts.
+- `container-entrypoint.sh` (bash): one `Entrypoint: …` line on stderr
+  before Python starts.
 
 ## JSON output contract
 
-Each command that produces a structured result declares a schema struct
-in `app/ark-cli/internal/core/json_output.go`. The text and JSON
-renderers share one data source: the handler computes once, then either
-prints text lines or marshals JSON. This keeps the two representations
-from drifting.
+Each command with a structured result has a struct in
+`app/ark-cli/internal/core/json_output.go`. The handler computes once,
+then prints text or marshals the struct, so the two forms cannot drift.
 
-Field names are part of the schema and stable. Field order and tag
-semantics (`omitempty` vs always present) are enforced by committed
-golden files under `testdata/`.
+Field names are part of the schema. Tests (`*_json_test.go` in
+`app/ark-cli`, `internal/show`, `internal/schedule`) decode the output
+into the struct, check fields, and check no text-mode output leaks into
+stdout. There are no golden files. No doc promises schema stability to
+external consumers yet.
 
-No doc currently promises a stable JSON schema to external consumers.
-Golden-file tests track shape; promising stability is a future decision.
+## ark-web
+
+`app/ark-web` builds its own `*slog.Logger` (JSON handler, stderr, level
+`Info`) and injects it into the same `pkg/ark` services. It does not use
+the CLI's `core.*` printers; the services needed no changes.
 
 ## Non-goals
 
-- No additional log levels, handler formats, or transports beyond
-  stdout/stderr + optional file tee. Container scripts have exactly three
-  levels (event, warning, error) through `_logging.py`; the functions add
-  the `Warning:`/`Error:` prefix so call sites never type it.
+- No extra log levels, handler formats or transports beyond
+  stdout/stderr and the verbose log file. Container scripts have three
+  levels (event, warning, error); the functions add the
+  `Warning:`/`Error:` prefix.
 - No replacement of the spinner UI or two-phase start rendering.
-- No rewrite of container-side Python to use the `logging` module.
-- No change to the three-layer boundary: `pkg/ark` remains ignorant
-  of the CLI's rendering primitives.
+- No move of container-side Python to the `logging` module.
+- `pkg/ark` stays ignorant of CLI rendering primitives.
 
-## Future work
+## Possible cleanup
 
-- `cmd/ark-web/` (anticipated in `core/logging.go:11`) will inject a
-  JSON-handler `*slog.Logger` to the same `pkg/ark` services. The
-  domain packages need no changes — they already emit only through the
-  injected logger.
-- The `core.*` package-var seam in `internal/core/logging.go` works
-  today but is fragile. A later cleanup may replace it with an
-  `OutputSink` interface field on `AppDeps`. This does not affect the
-  architecture described above.
+The `core.*` package-var seam in `internal/core/logging.go` (assigned in
+`app/ark-cli/utils.go`) works but is fragile. It could become an
+`OutputSink` field on `AppDeps` without changing the design above.

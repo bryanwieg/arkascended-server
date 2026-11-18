@@ -1,13 +1,13 @@
 # User Documentation
 
-For ARK server admins. No prior Docker expertise required.
+For ARK server admins.
 
-## Tutorials — guided, step-by-step
+## Tutorials
 
-- [Your first ARK server](tutorials/first-server.md) — zero to a running server
-- [Adding a second instance](tutorials/second-instance.md) — multiple servers on one machine
+- [Your first ARK server](tutorials/first-server.md): install to running server
+- [Adding a second instance](tutorials/second-instance.md): several servers on one host
 
-## How-to guides — task recipes
+## How-to guides
 
 - [Schedule automatic backups](how-to/schedule-backups.md)
 - [Restore a backup](how-to/restore-backup.md)
@@ -15,16 +15,16 @@ For ARK server admins. No prior Docker expertise required.
 - [Edit server INI files](how-to/edit-ini.md)
 - [Reconfigure an instance](how-to/reconfigure-instance.md)
 - [Check port reachability](how-to/check-reachability.md)
-- [Rootless Docker setup](how-to/rootless-setup.md)
+- [Run as a non-root user](how-to/rootless-setup.md): dedicated `ark` user (rootful) or rootless Docker
 
-## Reference — complete technical information
+## Reference
 
-- [CLI commands](reference/cli-commands.md) — all `ark-cli` commands with flags and examples
-- [Configuration variables](reference/configuration.md) — all container environment variables
+- [CLI commands](reference/cli-commands.md): every `ark-cli` command and flag
+- [Configuration variables](reference/configuration.md): container and CLI environment variables
 
-## Explanation — background and concepts
+## Explanation
 
-- [How it works](explanation/architecture.md) — the two-layer host + container system
-- [Understanding backups](explanation/backups.md) — retention rules and safety guarantees
-- [How updates work](explanation/updates.md) — host-built images, safe rollout and rollback
-- [Rootful vs. rootless Docker](explanation/rootful-vs-rootless.md) — choosing the right setup
+- [How it works](explanation/architecture.md): host CLI + container
+- [Understanding backups](explanation/backups.md): contents, retention, save confirmation
+- [How updates work](explanation/updates.md): host-built images, rollout, automatic rollback
+- [Rootful vs. rootless Docker](explanation/rootful-vs-rootless.md): which to use

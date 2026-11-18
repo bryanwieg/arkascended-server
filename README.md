@@ -1,47 +1,46 @@
 # ARK Docker
 
 Docker image and management CLI for ARK: Survival Ascended dedicated servers
-on Linux. Handles server lifecycle, backups, scheduling, and updates via a
-simple `ark-cli` command-line tool.
+on Linux. `ark-cli` handles server lifecycle, backups, scheduling and
+updates.
 
 ## Prerequisites
 
 - Linux host with about 24 GB RAM
 - About 60-70 GB free disk (current and previous image at ~25 GB each, ~12 GB
   SteamCMD cache, and the build peak)
-- Docker Engine with Compose v2 plugin and BuildKit/buildx
+- Docker Engine 28+ with the Compose v2 plugin (`ark-cli` checks
+  `docker compose version` at startup), or rootless Podman 5+ with a compose
+  provider
 - Internet access to Steam (`api.steamcmd.net` and the Steam CDN) and `ghcr.io`
   (the ARK-free base image). Without `ghcr.io` the base is built locally, which
   needs GitHub (GE-Proton), Launchpad (deadsnakes PPA), NuGet (XAudio2) and
   Ubuntu mirrors
-- `ark-cli` binary on your PATH (see below)
 
 ## Setup
 
-**Preferred:** download the `ark-cli` binary from the
-[GitHub releases page](https://github.com/bryanwieg/arkascended-server/releases) and place it on your `PATH`.
+Download `ark-cli-<version>-linux-amd64` (and its `.sha256`) from
+[releases](https://github.com/bryanwieg/arkascended-server/releases), rename
+it to `ark-cli` and put it on your `PATH`.
 
-**Until releases are available** — clone the repo and build from source
-(requires the Go version in `go.work`):
+Or build from source (Go version in `go.work`):
 
 ```sh
 git clone https://github.com/bryanwieg/arkascended-server.git && cd arkascended-server
 ./.github/build-cli.sh   # writes app/ark-cli/ark-cli; put it on your PATH
 ```
 
-Apply required kernel settings for Proton/Wine:
+Apply the kernel settings Proton/Wine needs:
 
 ```sh
 sudo ark-cli fix host-kernel-config
 ```
 
-The server image is built on your host the first time you start an
-instance (about 15-25 minutes). Nothing is pulled from a registry. See
+The first start builds the server image on the host (15-25 minutes). See
 [How updates work](docs/user/explanation/updates.md).
 
 ## Quick start
 
-Create and start a server (the first start builds the image):
 
 ```sh
 ark-cli create instance --name my-server \
@@ -57,7 +56,7 @@ Core lifecycle commands:
 ark-cli stop instance --instance my-server      # graceful stop (saveworld, then exit)
 ark-cli restart instance --instance my-server   # stop then start
 ark-cli save instance --instance my-server      # trigger in-game saveworld
-ark-cli logs instance --instance my-server      # tail container logs
+ark-cli logs instance --instance my-server      # last 200 log lines (--follow to stream)
 ark-cli create backup --instance my-server      # create a backup archive
 ark-cli check instance --instance my-server     # check health and ready status
 ```

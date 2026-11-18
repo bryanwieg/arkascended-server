@@ -1,19 +1,17 @@
 # How Updates Work
 
-ARK images are built on your host from Steam's current public build. Nothing
-is pulled from a registry and no ARK images are published anywhere. Each
-image is immutable: the server files live inside it, and only
-`ShooterGame/Saved` and clusters are volumes. That is what makes rollback a
-tag switch.
+ARK images are built on the host from Steam's current public build. No ARK
+image is published or pulled; only the ARK-free base image comes from
+`ghcr.io`. Server files live inside the immutable image; only
+`ShooterGame/Saved` and clusters are volumes, so rollback is a tag switch.
 
 ## Building an image
 
 `ark-cli` builds `ark-server:<steam build id>-<recipe id>` (also tagged
 `ark-server:<version>` and `ark-server:latest`). The build recipe is embedded
-in the `ark-cli` binary and extracted to `<compose dir>/.ark-manage/build/context`
-when needed, so no repo clone is required. The recipe ID is a hash of that
-recipe, so a new `ark-cli` whose container scripts changed builds a new image
-even when ARK itself hasn't updated.
+in `ark-cli` and extracted to `<compose dir>/.ark-manage/build/context`. The
+recipe ID is its hash, so an `ark-cli` with changed container scripts builds a
+new image even when ARK hasn't updated.
 
 - The first `start instance` builds the image if it does not exist yet and
   pins compose to `ark-server:<build-id>-<recipe-id>`. If that image already
@@ -25,13 +23,8 @@ even when ARK itself hasn't updated.
   `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB. A lock stops two builds from
   running at once.
 
-Requirements: about 24 GB RAM, 60–70 GB free disk (current and previous image
-at about 25 GB each, the SteamCMD cache, and the build peak), and Docker with
-BuildKit/buildx. The host must reach Steam (`api.steamcmd.net` and the Steam
-CDN) and `ghcr.io`, where the ARK-free base image (packages, Proton) is
-published. If the base can't be pulled, it is built locally, which needs GitHub
-(GE-Proton), Launchpad (deadsnakes PPA), NuGet (XAudio2) and Ubuntu mirrors. A
-build takes about 15–25 minutes.
+A build takes 15-25 minutes. Host, disk and network requirements:
+[README](../../../README.md#prerequisites).
 
 ## Updating
 
@@ -41,7 +34,7 @@ recipe embedded in this `ark-cli`. Either difference is an update. Images built
 before recipe labels existed count as a recipe change once.
 
 1. `--check` only prints the comparison table.
-2. Without `--rollout` (or its alias `--restart`), it builds the new image and
+2. Without `--rollout` (same as `--restart`), it builds the new image and
    leaves compose unchanged. It prints
    `Built ark-server:<id>. Switch with: ark-cli update instance --instance <name> --rollout`.
 3. With `--rollout`, for each instance in name order: stop (the stop saves the
@@ -57,9 +50,8 @@ pre-update backup, starts the old image and records the attempt. It prints
 `Update of <name> to <new> failed; rolled back to <old>: <reason>`, skips the
 remaining instances and exits with code 1.
 
-Pre-update backups are normal tar.gz backups in the usual backup directory,
-named with the prefix `pre-update`, and follow the usual retention (20 backups,
-7 days, 5 GiB).
+The pre-update backup is `<instance>-pre-update.tar.gz` in the instance's
+backup directory.
 
 ## Alerts
 
@@ -87,6 +79,5 @@ images and unused build cache are removed.
 - Removed images are listed (`Removed old image …`). If removal fails, the
   command prints a warning but still succeeds.
 
-To run an update, see [Update your server](../how-to/update-server.md).
-For the build pipeline details, see the developer
+Steps: [Update your server](../how-to/update-server.md). Build pipeline:
 [image build reference](../../dev/reference/image-build.md).

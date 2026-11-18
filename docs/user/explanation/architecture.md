@@ -1,78 +1,61 @@
 # How It Works
 
-A high-level overview of how the ARK Docker server manager is structured,
-written for server admins rather than developers.
+Admin-level overview. Code layers and container internals:
+[developer architecture](../../dev/explanation/architecture.md).
 
 ## The two pieces
 
-There are two parts to this system:
-
-**`ark-cli`** is a command-line tool you run on your host machine. It handles
-everything you interact with directly: creating server configs, starting and
-stopping containers, creating backups, managing schedules, and checking status.
-Think of it as the control panel.
-
-**The Docker container** holds the actual ARK server process, Proton/Wine (the
-compatibility layer that lets the Windows ARK binary run on Linux), and a set
-of Python scripts that manage the server from inside the container.
-
-## What each part does
+| Piece | Runs | Does |
+|---|---|---|
+| `ark-cli` | On the host | Edits `docker-compose.yaml`, builds images, starts/stops containers, backups, schedules, status. Talks to Docker or rootless Podman through their API; never touches the ARK process directly. |
+| Container | One per instance, as `ark-user` | ARK server under GE-Proton (Wine), plus Python scripts for startup, save, shutdown, backup and restore. |
 
 ```
-Your terminal
-    ↓
-ark-cli (the control panel)
-    ↓  sends instructions via the Docker SDK
-Docker container
-    ↓
-ARK server process (via Proton/Wine)
+ark-cli ──Docker/Podman API──▶ container ──▶ ARK server (GE-Proton)
+                                   ▲
+                                   └── RCON (save, shutdown)
 ```
 
-When you run `ark-cli start instance --instance my-server`, the CLI tells Docker to start
-the container. The container's startup scripts then launch the ARK server
-process, wait for it to initialize, and report back when it's ready.
+## Start and stop
 
-When you run `ark-cli stop instance --instance my-server`, the CLI sends a message to the
-container's shutdown script, which tells the ARK server to warn players, save
-the world, and exit cleanly — no data loss.
+`start instance` starts the container and waits until the server log shows
+it is advertising for join (default 5 minutes).
 
-## Why Docker?
+`stop instance` stops the container with a 15-minute grace period. The
+container's stop script runs on SIGTERM: optional player warning
+(`SHUTDOWN_WARNING_MINUTES`, default 0), save the world over RCON, exit, and
+force-kill only if the server does not exit in time. `--kill` skips the save.
+Flags: [CLI reference](../reference/cli-commands.md).
 
-Running ARK in Docker means:
+## Images and volumes
 
-- The server is isolated from your host system.
-- You can run multiple server instances on the same machine, each on different
-  ports with separate save data.
-- Updates are atomic: pull a new image and restart, rather than patching files
-  in place.
-- Backups and restores are simple: the save data lives in a Docker volume that
-  can be archived and restored with standard tools.
+Server files live in the image; ARK images are built on the host from Steam's
+current build, not pulled. Per-instance data lives in volumes:
+
+| Volume | Mounted at | Holds |
+|---|---|---|
+| `<instance>-saved` | `ShooterGame/Saved` | World, player and tribe saves, INI files, logs |
+| `ark-cluster-1` | `ShooterGame/Saved/clusters` | Cluster transfer data, shared by all instances |
+
+So an update is an image tag switch, and rollback switches back. See
+[How Updates Work](updates.md).
 
 ## First boot
 
-The image includes ARK's default `GameUserSettings.ini`, generated when the
-image was built. When a server starts and its save volume has no
-`GameUserSettings.ini` yet (a new instance, or a volume or backup without one),
-the container copies the default in. The first start needs no extra setup
-step, and an existing `GameUserSettings.ini` is never replaced.
+The image ships ARK's default `GameUserSettings.ini`, generated at image build.
+If the save volume has none, the container copies it in; an existing file is
+never replaced. RCON and password settings from the compose environment are
+written into it on every start.
 
 ## Saves and backups
 
-ARK stores player and world data in a `ShooterGame/Saved/` directory inside
-the container's volume. The backup system archives this directory into
-compressed archives (`.tar.gz` by default). Restoring replaces that directory
-with the contents of the chosen archive.
-
-The CLI always keeps at least two normal backups, but under low disk space
-it keeps a minimum of one so a recovery point is always available.
+A backup archives the instance's `Saved/` volume, excluding logs and the
+shared cluster directory. Restore takes a pre-restore backup first, then
+replaces the save data with the archive. Retention never deletes the last two
+backups (one when disk is low). Details: [Understanding Backups](backups.md).
 
 ## RCON
 
-The stop and save commands work through a protocol called RCON (Remote Console),
-which is a built-in feature of ARK's dedicated server. This lets the system
-send commands to the running server — like "save the world now" or "warn
-players that shutdown is in 5 minutes" — and wait for confirmation that they
-completed before doing anything else.
-
-This is why graceful stops take a few minutes: the system is waiting for the
-server to actually save and exit cleanly, not just killing the process.
+Saves and graceful stops use RCON, ARK's built-in remote console, so the
+scripts can wait for the server to confirm a save before continuing. The RCON
+host port is bound to `127.0.0.1` unless you run `ark-cli enable remote-rcon`.

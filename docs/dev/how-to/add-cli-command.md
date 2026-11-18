@@ -1,234 +1,176 @@
 # Add a New CLI Command
 
-How to add a new `ark-cli` verb/object command to the host CLI.
-
-## Overview
-
-All commands follow the `<verb> <object>` pattern (e.g. `create instance`,
-`check reachability`). The routing table is a flat slice in
-`app/ark-cli/internal/cmd/registry_entries.go`. Adding a command is three steps:
-register the route, write the handler, write the tests.
+Commands are `<verb> <object>` (`create instance`, `check reachability`).
+Routing is a flat slice, `CommandRegistry`, in
+`app/ark-cli/internal/cmd/registry_entries.go`.
 
 ## Step 1: Register the route
 
-Add an entry to `CommandRegistry` in `app/ark-cli/internal/cmd/registry_entries.go`:
+Add an entry to `CommandRegistry`:
 
 ```go
-{
-    Verb:   "myverb",
-    Object: "myobject",
-    Route:  "myverb_myobject",
-    Handler: mypkg.RunMyVerbMyObject,
-    TopLevelHelp: []string{
-        "myverb myobject <name>            One-line description for ark-cli --help",
-    },
-},
+{Verb: "myverb", Object: "myobject", Route: "myverb_myobject", Handler: mypkg.RunMyVerbMyObject, TopLevelHelp: []string{
+    "myverb myobject --instance <inst>          One-line description for ark-cli --help",
+}},
 ```
 
-- `Route` is a unique string key; convention is `verb_object` with underscores (or bare verb when a verb has only one primary command).
-- `TopLevelHelp` lines appear in `ark-cli --help` output sorted alphabetically
-  by verb then object. Set to `nil` for hidden/compat aliases.
+- `Handler` has the signature `func(*core.AppDeps, []string) error`.
+- `Route`: unique key. Use `verb_object`. Some older entries use a bare
+  verb (`create`, `start`, `restore`).
+- `TopLevelHelp`: lines for `ark-cli --help`, sorted by verb, then object.
+  Use `nil` for hidden or compatibility aliases (see `show vol-paths`).
+
+The registry tests in `app/ark-cli/internal/cmd/registry_test.go` check
+that every route has a handler and that every verb has a parse spec.
 
 ## Step 2: Write the handler
 
-Add a function in a new or existing package under `app/ark-cli/internal/`:
+Put it in a new or existing package under `app/ark-cli/internal/`. The
+example below sets an environment variable on one compose service:
 
 ```go
 func RunMyVerbMyObject(d *core.AppDeps, args []string) error {
     fs := core.NewCommandFlagSet(
         "myverb myobject",
-        []string{"myverb myobject --instance <instance> [options]"},
+        []string{"myverb myobject --instance <instance> --session <name>"},
         "One-line description.",
     )
     instanceFlag := fs.String("instance", "", "Instance name.")
+    sessionFlag := fs.String("session", "", "Session name.")
+    composeFileFlag := fs.String("compose-file", "", "Path to compose file.")
     if err := core.ParseNoPositionalArgs(fs, args); err != nil {
         return err
     }
     if *instanceFlag == "" {
         return errors.New("Error: --instance is required.")
     }
-    name := *instanceFlag // use d.* seams for all side effects
-    result, err := d.Runtime.RunCommand(
-        []string{"docker", "inspect", name},
-        ark.CommandOptions{Capture: true},
+    instance := *instanceFlag
+
+    // Loads via ComposeService and checks that the service exists.
+    composeFile, project, err := compose.ResolveRequiredServiceConfig(
+        d, *composeFileFlag, instance, compose.ResolveRequiredComposeConfig,
     )
     if err != nil {
         return err
     }
-    core.Infof("%s\n", result.Stdout)
+    if err := composeutil.MutateService(project.Project, instance, func(svc *types.ServiceConfig) {
+        composeutil.SetEnv(svc.Environment, "SESSION_NAME", *sessionFlag)
+    }); err != nil {
+        return err
+    }
+    if err := d.ComposeService.SaveProject(d.Context(), composeFile, project); err != nil {
+        return err
+    }
+    core.Infof("Updated %s in %s\n", instance, composeFile)
     return nil
 }
 ```
 
 Rules:
-- Pass targets as flags (`--instance`, `--name`, `--backup`, `--port`), never
-  positionally, and parse with `core.ParseNoPositionalArgs`. Every command
-  uses flags so invocations are self-documenting and consistent.
-- Access Docker, filesystem, and external state only through `d.*` seams, not
-  package-level functions. This makes the handler testable without Docker.
-- Keep the handler to ~10–20 lines; extract helpers for logic used elsewhere.
-- Validate inputs before touching compose services or the filesystem.
+- Targets are flags (`--instance`, `--name`, `--backup`), never positional
+  arguments. Parse them with `core.ParseNoPositionalArgs`.
+- Reach Docker, the filesystem and other external state only through `d.*`
+  seams: `d.ComposeService`, `d.Engine`, the domain services (`d.Lifecycle`,
+  `d.BackupService`, `d.UpdateService`, `d.ScheduleService`,
+  `d.HealthChecker`) and `d.Runtime.RunCommand` for host commands. See
+  `AppDeps` in `app/ark-cli/internal/core/deps.go`.
+- Keep handlers short (about 10–20 lines): parse, validate, call a
+  service, print. Put domain logic in a service under `app/pkg/ark/` and
+  wire it into `AppDeps`.
+- Validate inputs before you touch compose services or the filesystem.
+- Print user-facing output with `core.Infof`, `core.Infoln` or `core.Warnf`
+  ([logging architecture](../explanation/logging-architecture.md)).
 
-### Delegating to a domain service
+### Compose files
 
-Most real commands delegate to a domain service rather than calling
-`d.Runtime.RunCommand` directly. The handler validates inputs, calls the service,
-and formats output.
+- To edit an existing service, load the project, change it in memory, then
+  save it with `ComposeService.SaveProject`, as in the example. Do not use
+  direct file I/O or hand-written YAML string edits.
+- `compose.ResolveRequiredComposeConfig(d, flag)` only loads the project.
+  `compose.ResolveRequiredServiceConfig(...)` also checks that the named
+  service exists. Both respect `--compose-file`, then `COMPOSE_FILE`.
+- To add or remove a whole service block, use the text-level helpers in
+  `app/pkg/ark/runtime/compose_edit.go` (`InsertService`,
+  `RemoveServiceBlock`, `EnsureVolumeEntry`, `RemoveVolumeEntry`), as
+  `create instance`, `remove instance` and `restore backup --new-instance`
+  do.
 
-```go
-func RunMyVerbMyObject(d *core.AppDeps, args []string) error {
-    fs := core.NewCommandFlagSet(
-        "myverb myobject",
-        []string{"myverb myobject --instance <instance> [options]"},
-        "One-line description.",
-    )
-    instanceFlag := fs.String("instance", "", "Instance name.")
-    composeFileFlag := fs.String("compose-file", "", "Path to compose file")
-    if err := core.ParseNoPositionalArgs(fs, args); err != nil {
-        return err
-    }
-    if *instanceFlag == "" {
-        return errors.New("Error: --instance is required.")
-    }
-    name := *instanceFlag
+### `--json` output
 
-    composeFile, project, err := compose.ResolveRequiredServiceConfig(
-        d, *composeFileFlag, name, compose.ResolveRequiredComposeConfig,
-    )
-    if err != nil {
-        return err
-    }
-
-    result, err := d.MyService.DoSomething(d.Context(), composeFile, name)
-    if err != nil {
-        return err
-    }
-    core.Infof("%s\n", result)
-    return nil
-}
-```
-
-The domain service (`d.MyService`) is injected via `AppDeps`. Domain services live
-in `app/pkg/ark/` packages.
-
-### Editing compose files
-
-Commands that modify `docker-compose.yaml` must use `LoadProject` → mutate →
-`SaveProject`. Never read or write compose files directly.
-
-Use `compose.ResolveRequiredComposeConfig(d, *composeFileFlag)` when you only
-need to load the compose project (no service name validation). Use
-`compose.ResolveRequiredServiceConfig(d, *composeFileFlag, name, compose.ResolveRequiredComposeConfig)`
-when the command targets a specific service — it loads the compose project and
-validates that the named service exists.
+Commands that show structured data should take a `--json` bool flag. Add
+an `XxxJSON` struct with `json` tags to
+`app/ark-cli/internal/core/json_output.go`:
 
 ```go
-composeFile, project, err := compose.ResolveRequiredComposeConfig(d, *composeFileFlag)
-if err != nil {
-    return err
-}
-
-// Mutate the project in memory
-if err := composeutil.MutateService(project, instance, func(svc *types.ServiceConfig) {
-    composeutil.SetEnv(svc.Environment, "SESSION_NAME", *session)
-}); err != nil {
-    return err
-}
-
-if err := d.ComposeService.SaveProject(d.Context(), composeFile, project); err != nil {
-    return err
-}
-```
-
-For lower-level AST editing (inserting services, removing volumes), use the
-package-level functions (`runtime.InsertService`, `runtime.RemoveServiceBlock`,
-`runtime.EnsureVolumeEntry`) in `app/pkg/ark/runtime/compose_edit.go`.
-
-### Adding `--json` output
-
-Commands that display structured data should support a `--json` boolean flag.
-Define a JSON struct in `app/ark-cli/internal/core/json_output.go` and branch
-on the flag.
-
-```go
-// In the handler:
 jsonFlag := fs.Bool("json", false, "Output as JSON.")
-
-// After computing results:
+// ...
 if *jsonFlag {
-    return core.PrintJSONOutput(core.MyResultJSON{
-        Name:   name,
-        Status: status,
-    })
+    return core.PrintJSONOutput(core.MyResultJSON{Name: name, Status: status})
 }
-// Otherwise print text table
-core.PrintTable(rows)
+core.PrintTable(rows) // first row is the header
 ```
-
-The JSON struct must have `json` tags. Follow the naming pattern `XxxJSON` for
-the struct name.
 
 ## Step 3: Write tests
 
-### Contract test (no Docker required)
+### Go contract test
+
+Use `testutil.WithPatchedAppDeps` to swap seams. No Docker is needed.
 
 ```go
-func TestMyVerbMyObjectDoesTheThing(t *testing.T) {
-    var gotCmd []string
+func TestMyVerbMyObjectSetsSessionName(t *testing.T) {
+    var saved *ark.ComposeProject
     testutil.WithPatchedAppDeps(t, testutil.TestDepsConfig{}, func(d *core.AppDeps) {
-        d.Runtime.RunCommand = func(cmd []string, _ ark.CommandOptions) (ark.ExecResult, error) {
-            gotCmd = cmd
-            return ark.ExecResult{ExitCode: 0, Stdout: "ok"}, nil
+        d.ComposeService = &arktest.MockCompose{
+            LoadProjectFn: func(context.Context, string) (*ark.ComposeProject, error) {
+                return &ark.ComposeProject{Project: &types.Project{Services: types.Services{
+                    "asa1": {Name: "asa1", Environment: types.MappingWithEquals{}},
+                }}}, nil
+            },
+            SaveProjectFn: func(_ context.Context, _ string, p *ark.ComposeProject) error {
+                saved = p
+                return nil
+            },
         }
     }, func() {
-        err := mypkg.RunMyVerbMyObject(core.CurrentAppDeps(), []string{"asa1"})
+        err := RunMyVerbMyObject(core.CurrentAppDeps(), []string{"--instance", "asa1", "--session", "Test"})
         if err != nil {
             t.Fatalf("unexpected error: %v", err)
         }
     })
-    if len(gotCmd) == 0 || gotCmd[1] != "inspect" {
-        t.Fatalf("unexpected command: %v", gotCmd)
+    if saved == nil || *saved.Project.Services["asa1"].Environment["SESSION_NAME"] != "Test" {
+        t.Fatalf("SESSION_NAME not saved: %+v", saved)
     }
 }
 ```
 
-### Integration test (Docker required)
+`TestDepsConfig` presets (`FullConfig`, `ComposeOnlyConfig`, and others)
+are in `app/ark-cli/internal/testutil/deps.go`.
 
-Integration tests live in `tests/app/ark_cli/integration/docker/fast/` (fast checks, no ARK server needed) and `tests/app/ark_cli/integration/docker/slow/` (full ARK server lifecycle). Podman-runtime equivalents re-export the same tests from `tests/app/ark_cli/integration/podman/fast/` and `tests/app/ark_cli/integration/podman/slow/`. Two examples:
+### Python integration tests
 
-- **Fast** (`fast/`) — compose manipulation, fake servers, no running ARK server.
-  Use these when you can fully verify behavior with mocked APIs or lightweight
-  fixtures. Mark with `@pytest.mark.container`.
-- **Slow** (`slow/`) — real Docker builds, real API calls, real container
-  lifecycle. **Every feature that touches Docker images, external APIs, or
-  container behavior must have slow tests** that prove it works against
-  real infrastructure. Mark with `@pytest.mark.container`.
+These are CLI-level tests in `tests/app/ark_cli/integration/`. For
+placement and markers, see
+[test architecture](../reference/test-architecture.md#test-layers):
 
-Example: the `update instance` command has fast tests in
-`tests/app/ark_cli/integration/docker/fast/test_update_local_check.py` that use a fake
-Steam API server, and slow tests in
-`tests/app/ark_cli/integration/docker/slow/test_update_local_check.py` that call the real
-Steam API and run a real `docker buildx build`.
+| Directory | Use for |
+|---|---|
+| `native/` | No container runtime needed (argument parsing, help output, port checks) |
+| `docker/fast/` | Compose manipulation, fake API servers, no running ARK server |
+| `docker/slow/` | Real images, real external APIs, full container lifecycle |
+| `podman/fast/`, `podman/slow/` | Re-export the Docker tests under Podman (`from ...docker.fast.test_x import *`) |
 
-For Go-level integration tests that need a real container, use the `integration`
-build tag in `app/pkg/ark/conformance/`. CLI-level integration tests are Python
-tests in `tests/app/ark_cli/integration/`.
+A feature that touches Docker images, external APIs or container behavior
+needs slow tests against real infrastructure. For example, `update
+instance` has `docker/fast/test_update_local_check.py`, which uses a fake
+Steam API server. It also has `docker/slow/test_update_local_check.py`,
+which calls the real Steam API and builds a real image.
+
+Go integration tests that need a real container use the `integration`
+build tag (backend conformance: `app/pkg/ark/conformance/`).
 
 ## Step 4: Update documentation
 
-- Add the new command to `docs/user/reference/cli-commands.md` with example
-  invocations.
-- If the command affects server lifecycle or is user-facing, add a how-to
-  guide under `docs/user/how-to/`.
-
-## File size check
-
-After adding your files, verify they stay within the ~300–350 line limit.
-Split by responsibility if they grow beyond that.
-
-## Compose editing
-
-Commands that modify compose files must use the `ComposeService.LoadProject` /
-`ComposeService.SaveProject` round-trip (see `app/pkg/ark/compose_service.go`).
-Do not load or save compose files directly, and do not hand-roll YAML string
-manipulation. See the "Editing compose files" subsection above for a code example.
+- Add the command and example invocations to
+  [cli-commands.md](../../user/reference/cli-commands.md).
+- If the command is user-facing or affects server lifecycle, add a how-to
+  under [docs/user/how-to/](../../user/how-to/).

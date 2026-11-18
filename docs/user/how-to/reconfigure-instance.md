@@ -1,120 +1,111 @@
 # Reconfigure an Instance
 
-How to change server settings (map, session name, ports, passwords, timezone)
-for an instance.
+Change session name, passwords, mods, cluster, ports or timezone of an
+existing instance.
 
 ## Apply one or more setting changes
 
 ```sh
 ark-cli reconfigure instance --instance my-server \
-  --map-name TheCenter \
-  --session-name "My Center Server"
+  --session-name "My Center Server" \
+  --tz Europe/Berlin
 ```
 
-You can change any combination of these in one command:
+Any combination in one command:
 
-| Flag | What it changes |
+| Flag | Changes |
 |---|---|
-| `--map-name` | The map (e.g. `TheIsland_WP`, `TheCenter`, `Aberration`) |
-| `--session-name` | In-game server name shown in the browser |
-| `--admin-password` | Admin password for in-game commands |
-| `--server-password` | Password players need to join (blank = public) |
-| `--mods` | CurseForge mod IDs the server loads (e.g. `940975,1386057`) |
-| `--cluster-id` | Cluster the server joins for character, item and dino transfers |
-| `--asa-port` | UDP port players connect to (host and container port kept in sync) |
-| `--rcon-port` | Published RCON host port used by stop/save/backup |
-| `--tz` | Timezone for the container (e.g. `America/New_York`) |
+| `--session-name` | `SESSION_NAME`: server name shown in the browser |
+| `--admin-password` | `SERVER_ADMIN_PASSWORD`: in-game admin and RCON password |
+| `--server-password` | `SERVER_PASSWORD`: password players need to join |
+| `--mods` | `MOD_IDS`: CurseForge mod IDs (e.g. `940975,1386057`) |
+| `--cluster-id` | `CLUSTER_ID`: cluster for character, item and dino transfers |
+| `--asa-port` | Game UDP port (host and container port kept in sync) |
+| `--rcon-port` | Published RCON host port (maps to `27020/tcp`) used by stop/save/backup |
+| `--tz` | `TZ` of the container (e.g. `America/New_York`) |
+| `--map-name` | `MAP_NAME`; only if not set yet, see [Change the map](#change-the-map) |
 
-Changes are written to `docker-compose.yaml`. They take effect on the next
-restart.
+Passwords: letters and digits only. An empty value means "not given", so
+`reconfigure` cannot clear a setting (e.g. make a server public or remove all
+mods); edit `docker-compose.yaml` for that.
+
+Changes are written to `docker-compose.yaml` and take effect on the next
+restart. To publish RCON beyond `127.0.0.1`, use `enable remote-rcon`; see
+[cli-commands.md](../reference/cli-commands.md).
 
 ## Reconfigure while the server is running
 
-If the server is currently running, the command refuses by default. Pass
-`--force` to allow reconfiguration while running:
+Refused by default. `--force` updates compose without restarting:
 
 ```sh
-ark-cli reconfigure instance --instance my-server --map-name TheCenter --force
+ark-cli reconfigure instance --instance my-server --session-name "New Name" --force
 ```
-
-This updates compose without restarting. Restart the server manually when
-ready for changes to take effect.
 
 ## Apply changes and restart immediately
 
-Add `--force --restart` to reconfigure a running instance and restart in one
-step:
-
 ```sh
-ark-cli reconfigure instance --instance my-server --map-name Aberration --force --restart
+ark-cli reconfigure instance --instance my-server --session-name "New Name" --force --restart
 ```
 
-If the instance is not currently running when you use `--restart`, the command
-applies the changes and exits without starting the instance.
-
-Without `--restart`, the command updates compose and exits with a reminder
-that a restart is needed.
+`--restart` stops (with save) and starts the instance, waiting for it to be
+ready. It only restarts an instance that was running; a stopped instance stays
+stopped.
 
 ## Change the map
 
-> **Note:** `MAP_NAME` cannot be changed on an existing instance. The
-> `reconfigure` command blocks map changes for instances that already have a
-> `MAP_NAME` set (all instances created via `create instance` have this set).
-> To use a different map, create a new instance with `--map-name`.
+`reconfigure` refuses to change `MAP_NAME` once set, and `create instance`
+always sets it. Create a new instance for a different map:
 
 ```sh
-ark-cli create instance --name my-scorched-server --map-name ScorchedEarth
+ark-cli create instance --name my-scorched-server --map-name ScorchedEarth_WP \
+  --admin-password <pw> --no-server-password
 ```
 
-Available official maps include: `TheIsland_WP`, `TheCenter_WP`, `ScorchedEarth_WP`,
+Official maps include: `TheIsland_WP`, `TheCenter_WP`, `ScorchedEarth_WP`,
 `Aberration_WP`, `Extinction_WP`, `Genesis_WP`, `Genesis2_WP`, `CrystalIsles_WP`,
-`Valguero_WP`, `LostIsland_WP`, `Fjordur_WP`.
-
-Map names for ARK: Survival Ascended must end in `_WP`. If you provide a map
-name without this suffix, a warning will be displayed.
+`Valguero_WP`, `LostIsland_WP`, `Fjordur_WP`. Names without `_WP` produce a
+warning; the server may fail to start.
 
 ## Load mods
 
-Pass the CurseForge project IDs of the mods, comma-separated:
+Comma-separated CurseForge project IDs:
 
 ```sh
 ark-cli reconfigure instance --instance my-server --mods 940975,1386057 --force --restart
 ```
 
-The server downloads and updates the mods itself on each start. They are
-stored in the container, not in the save volume, so they are downloaded again
-after the container is recreated (for example by `update instance`).
+The server downloads and updates mods on each start. They live in the
+container, not the save volume, so they are downloaded again after the
+container is recreated (e.g. by `update instance`).
 
-Mods add content to the save. Keep the same mods when you restore a save that
-used them; ARK deletes mod items, structures and creatures it can't load the
-next time it saves.
+Keep the same mods when restoring a save that used them: ARK deletes mod
+items, structures and creatures it can't load on its next save.
 
 ## Join servers into a cluster
 
-Give each server the same cluster ID; players can then upload characters,
-items and dinos on one map and download them on another:
+Same cluster ID on each server; players can then transfer characters, items
+and dinos between them:
 
 ```sh
 ark-cli reconfigure instance --instance island --cluster-id my-cluster --force --restart
 ark-cli reconfigure instance --instance aberration --cluster-id my-cluster --force --restart
 ```
 
-All instances in a compose project share the `ark-cluster-1` volume, mounted
-at `Saved/clusters`, where the server keeps transfer data. Servers without a
-cluster ID don't use it.
+Letters, digits, `_` and `-` only. Transfer data lives in the `ark-cluster-1`
+volume (shared by all instances in the compose project, mounted at
+`Saved/clusters`); servers without a cluster ID don't use it.
 
 ## Change ports
-
-If you need to move your server to different ports:
 
 ```sh
 ark-cli reconfigure instance --instance my-server \
   --asa-port 28015 \
   --rcon-port 28020 \
-  --restart
+  --force --restart
 ```
 
-Update your firewall/router rules to match the new ASA port.
+Fails if another instance in the compose file already publishes the port.
+Update firewall/router rules for the new game port.
 
 ## Verify the changes
 

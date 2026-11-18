@@ -1,75 +1,47 @@
 # Restore a Backup
 
-How to restore your ARK server from a backup archive.
+## Restore an instance
 
-## Before you restore
-
-The instance must be stopped before restoring. Attempting a restore on a
-running instance will be refused.
-
-### Safety gate
-
-Restore requires the container to be started with `ARK_MAINTENANCE_MODE=restore`.
-If this variable is not set, the restore script exits immediately with an error.
-This prevents accidental restore over a live instance. When using
-`ark-cli restore backup`, the container entrypoint detects the restore script
-path and sets `ARK_MAINTENANCE_MODE=restore` automatically. If running restore
-out-of-band, set it manually:
-
-```yaml
-environment:
-  - ARK_MAINTENANCE_MODE=restore
-```
+The instance must be stopped; restore refuses a running one.
 
 ```sh
 ark-cli stop instance --instance my-server
-```
-
-## Restore the most recent backup
-
-```sh
-ark-cli restore backup --instance my-server --archive latest
-```
-
-The CLI will:
-1. Take a pre-restore safety backup (in case you need to undo the restore).
-2. Extract the selected archive next to the current saves, in
-   `Saved/.restore-staging/`. If this fails (for example, the volume runs out
-   of space), the current saves are left unchanged. The volume needs room for
-   an uncompressed copy of the backup while the restore runs.
-3. Swap the restored saves into place, replacing everything in the save
-   directory except the shared cluster directory (`Saved/clusters/`), which
-   other instances also use.
-
-## Restore a specific backup
-
-List available backups first:
-
-```sh
 ark-cli list backups --instance my-server
+ark-cli restore backup --instance my-server --archive latest
+ark-cli start instance --instance my-server
 ```
 
-Then restore by name:
+`--archive` takes `latest` or a backup name
+(`my-server-backup-20260101-030000`). `--auto-start` starts the instance
+when the restore finishes.
+
+Steps:
+
+1. Pre-restore backup of the current saves, so the restore can be undone.
+2. Extract into `Saved/.restore-staging/` on the same volume. On failure
+   (for example, out of space) the current saves are untouched. The volume
+   needs room for an uncompressed copy of the backup.
+3. Swap the restored files in. Everything in `Saved/` is replaced except
+   the shared `Saved/clusters/`.
+
+## Restore into a new instance
 
 ```sh
-ark-cli restore backup --instance my-server --archive my-server-backup-20260101-030000
+ark-cli restore backup --new-instance my-server-copy --archive my-server:latest
 ```
 
-## Restore and automatically start the server
+Creates the instance, then restores into it. Passwords default to the ones in
+the backup; override with `--admin-password`, `--server-password` or
+`--no-server-password`.
 
-Add `--auto-start` to bring the server back up immediately after the restore
-completes:
+`--archive <src-instance>:<backup>` also restores another instance's backup
+into an existing one.
 
-```sh
-ark-cli restore backup --instance my-server --archive latest --auto-start
-```
+## Restore cluster data
 
-## Restore the cluster data
-
-The shared cluster data (uploaded characters, items and dinos) has its own
-backups; see [Cluster backups](../explanation/backups.md#cluster-backups).
-Restoring it rolls back transfers for every instance that shares the cluster,
-so stop all of them first:
+Restoring the shared cluster data rolls back transfers for every instance on
+the cluster. Background:
+[Cluster backups](../explanation/backups.md#cluster-backups).
 
 ```sh
 ark-cli stop instance --instance all
@@ -77,47 +49,21 @@ ark-cli list backups --instance cluster
 ark-cli restore backup --instance cluster --archive latest
 ```
 
-The restore is refused while any instance that uses the cluster is running,
-and names the ones still up. It first saves the current cluster data as
-`cluster-pre-restore-<timestamp>.tar.gz` in `backups/cluster/`, then swaps the
-restored files in the same way as an instance restore. `--archive` takes a
-backup name or `latest` without an instance prefix, and `--auto-start` is not
-available: start the instances yourself afterwards.
+- Refused while any instance using the cluster is running; the error names
+  them.
+- Saves the current data first as `cluster-pre-restore-<timestamp>.tar.gz`
+  in `backups/cluster/`.
+- `--archive`: a backup name or `latest`, no instance prefix.
+- No `--auto-start`; start the instances afterwards.
 
-## Verify a backup before restoring
-
-To check that a backup archive is not corrupted before restoring:
+## Inspect a backup first
 
 ```sh
-ark-cli validate backup --instance my-server --backup latest
-```
-
-This opens the archive, finds the `.sqlite` files inside, and runs
-SQLite integrity checks on them. It reports pass/fail per file and exits
-non-zero on errors.
-
-## Show backup metadata
-
-```sh
-ark-cli show backup --instance my-server --backup latest
-ark-cli show backup --instance my-server --backup my-server-backup-20260101-030000
-```
-
-## After the restore
-
-Start the server:
-
-```sh
-ark-cli start instance --instance my-server
-```
-
-Check that it comes up cleanly:
-
-```sh
-ark-cli check instance --instance my-server
+ark-cli validate backup --instance my-server --backup latest   # SQLite integrity check per file; non-zero exit on errors
+ark-cli show backup --instance my-server --backup latest       # metadata
 ```
 
 ## Related
 
-- `docs/user/how-to/schedule-backups.md` — set up automatic backups
-- `docs/user/explanation/backups.md` — how retention and safety guarantees work
+- [Schedule backups](schedule-backups.md)
+- [Understanding backups](../explanation/backups.md)

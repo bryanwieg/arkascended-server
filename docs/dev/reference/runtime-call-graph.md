@@ -1,58 +1,62 @@
 # Runtime Call Graph
 
-This document maps the execution flow of CLI commands and container runtime scripts.
-Some flows start from a CLI handler (e.g., `create instance`); others start from
-container entry points (e.g., startup). Each shows the call chain through domain
-services to backend interfaces or container-side scripts.
+Call order for container entry points and CLI commands, down to the domain
+services (`app/pkg/ark/*`) and container scripts (`container/scripts/`).
 
 ## Startup + Shutdown Flow
 
+`container-entrypoint.sh` → `container-entrypoint.py` → `ark-server-start.py`
+(all in `container/scripts/runtime/`).
+
 ```mermaid
 flowchart TD
-    A[container/dockerfile ENTRYPOINT] --> B[container-entrypoint.sh]
-    B --> C{Running as root?}
-    C -- yes --> D[exec setpriv ark-user python3 container-entrypoint.py]
-    C -- no --> E[exec python3 container-entrypoint.py]
-    D --> F[container-entrypoint.py main]
+    A[ENTRYPOINT container-entrypoint.sh] --> C{Running as root?}
+    C -->|"yes"| D[exec setpriv as ark-user: python3.14 container-entrypoint.py]
+    C -->|"no"| E[exec python3.14 container-entrypoint.py]
+    D --> F[main]
     E --> F
 
-    F --> G{Command override args present?}
-    G -- yes --> H[os.execvp provided command]
-    G -- no --> I[run_default_startup]
+    F --> G{Command override args?}
+    G -->|"yes"| H[os.execvp the command; sets ARK_MAINTENANCE_MODE=restore if it runs ark-restore.py]
+    G -->|"no"| I[run_default_startup]
 
-    I --> J[check_memory_headroom]
-    J --> J2[check_host_kernel_params]
-    J2 --> K[check_volume_mounts]
-    K --> L{GameUserSettings.ini exists?}
-    L -- no --> M[install_default_settings: copy the baked default]
-    L -- yes --> N[apply_rcon_settings from env]
-    M --> N
-    N --> R[exec ark-server-start.py]
+    I --> J[check_memory_headroom: warn only]
+    J --> J2[check_host_kernel_params: warn only]
+    J2 --> K{check_volume_mounts}
+    K -->|"fail"| X[exit 1]
+    K -->|"ok"| M[install_default_settings: copy baked default if GameUserSettings.ini missing]
+    M --> N[apply_rcon_settings from env]
+    M -->|"fail"| X
+    N -->|"fail"| X
+    N --> R[os.execv ark-server-start.py]
 
-    R --> S[start server via Proton]
-    S --> T[tail ShooterGame.log]
+    R --> R1[rotate_runtime_logs, clear stale stop status file]
+    R1 --> S[start server_command via Proton, new session]
+    S --> T[tail -F ShooterGame.log once it exists]
     T --> U{SIGTERM or SIGINT?}
-    U -- no --> V[wait for server exit]
-    U -- yes --> W[run ark-server-stop.py]
-    W --> X{graceful stop succeeded?}
-    X -- yes --> Y[wait for process exit]
-    X -- no --> Z[force kill process group]
-    Y --> V
+    U -->|"no"| V[server exits]
+    U -->|"yes"| W[run_graceful_stop_script: ark-server-stop.py]
+    W --> X2{script ok and server exits in time?}
+    X2 -->|"yes"| V
+    X2 -->|"no"| Z[killpg SIGTERM, then SIGKILL]
     Z --> V
-    V --> AA[parse status + logs, choose exit code]
+    V --> AA[report_oom_kill, print crash log, parse stop status file, choose exit code]
 ```
 
 ## Default GameUserSettings.ini (image build)
 
+`container/scripts/installer/generate-default-ini.py`, run in the `ini_defaults`
+stage of `container/dockerfile`.
+
 ```mermaid
 flowchart TD
-    A[dockerfile stage ini_defaults: generate-default-ini.py] --> B[start ARK via server_command]
+    A[stage ini_defaults: generate-default-ini.py] --> B[start ARK via server_command]
     B --> C{GameUserSettings.ini appears within 300 s?}
-    C -- no --> X[exit 1: build fails]
-    C -- yes --> D[SIGTERM the process group]
+    C -->|"no"| X[exit 1: build fails]
+    C -->|"yes"| D[SIGTERM the process group]
     D --> E{complete file: has ServerSettings, size settled, within 120 s?}
-    E -- no --> X
-    E -- yes --> F[SIGKILL leftovers]
+    E -->|"no"| X
+    E -->|"yes"| F[SIGKILL leftovers]
     F --> G[strip SessionSettings SessionName]
     G --> H[write /home/ark-user/config-defaults/GameUserSettings.ini]
     H --> I[final stage copies only that file]
@@ -60,64 +64,79 @@ flowchart TD
 
 ## Backup + Restore Invocation Paths
 
+Instance targets. Host side: `app/pkg/ark/backup/create.go`, `restore.go`.
+Container side: `ark-backup.py` (`ark_backup/`), `ark-restore.py`.
+
 ```mermaid
 flowchart TD
-    A[ark-cli create backup] --> B[ComposeService.Exec → python3 ark-backup.py --output ...]
-    B --> C[validate extension tar/tar.gz/tar.zst]
-    C --> D[tar archive ShooterGame/Saved]
+    A[ark-cli create backup] --> A1[BackupService.CreateForTarget: lock backups/instance]
+    A1 --> A2{instance running?}
+    A2 -->|"yes"| B[ComposeService.Exec → python3.14 ark-backup.py --output maintenance/...]
+    A2 -->|"no"| B2[ComposeService.RunOneOffDetached: same script in a helper container, then touch .ready]
+    B --> C[archive_args: validate extension tar/tar.gz/tar.zst]
+    B2 --> C
+    C --> D[pre_backup_save: RCON saveworld + wait for save marker, skipped if server not running]
+    D --> D1[write metadata, tar Saved excluding Logs and clusters]
+    D1 --> D2[validate_archive_contents: SQLite check of SavedArks .ark files]
+    D2 -->|"fail, retries left"| D
+    D2 -->|"ok"| D3[host: copy archive out, ApplyRetention]
 
-    E[ark-cli restore backup] --> F[ComposeService.Run --rm --no-deps ... python3 ark-restore.py --archive ... --pre-restore ...]
-    F --> G[list archive entries]
-    G --> H[reject unsafe paths or link targets]
-    H --> I[validate_archive_contents: SQLite integrity check on .ark files]
-    I --> J[create pre-restore backup tar.gz]
-    J --> K[extract archive into Saved/.restore-staging]
+    E[ark-cli restore backup] --> E1[BackupService.Restore: refuse if instance running]
+    E1 --> F[ComposeService.RunOneOff as uid 3000 → python3.14 ark-restore.py --archive ... --pre-restore ...]
+    F --> F1[require ARK_MAINTENANCE_MODE=restore and no server process]
+    F1 --> H[list entries, reject unsafe paths]
+    H --> I[validate_archive_contents]
+    I --> I1[swap_blocker check; remove stale Saved/.restore-staging]
+    I1 --> J[pre-restore tar.gz of Saved, excluding clusters]
+    J --> K[extract archive into Saved/.restore-staging, excluding clusters]
     K --> M{tar succeeded?}
-    M -- no --> N[remove staging; existing saves unchanged]
-    M -- yes --> L[swap_in: move old contents to .restore-previous, staged ones into Saved, delete previous]
+    M -->|"no"| N[remove staging; existing saves unchanged]
+    M -->|"yes"| L[swap_in: old contents to .restore-previous, staged ones into Saved, delete previous]
+    L --> L1[host: check pre-restore archive exists; --auto-start → ComposeService.Up]
 ```
 
 ### Cluster backup + restore (`--instance cluster`)
 
 The shared cluster volume is found by its mount at `Saved/clusters`
-(`pkgbackup.ResolveClusterVolume`); both paths run in a one-off container of the
-first instance that mounts it, as uid 3000, under the `cluster` backup lock.
+(`pkgbackup.ResolveClusterVolume`). Both paths run in a removed one-off container of
+the first instance that mounts it, as uid 3000, under the `cluster` backup lock.
 
 ```mermaid
 flowchart TD
     A[ark-cli create backup --instance cluster] --> B[ResolveClusterVolume]
     B --> C[BackupService.CreateCluster: lock backups/cluster]
-    C --> D[ComposeService.RunOneOff → python3 ark-cluster-backup.py --output maintenance/output/...]
+    C --> D[ComposeService.RunOneOff → python3.14 ark-cluster-backup.py --output maintenance/output/...]
     D --> E{tar exit}
-    E -- 1: files changed, under 3 attempts --> D2[retry after 2s]
+    E -->|"1: files changed, under 3 attempts"| D2[retry after 2s]
     D2 --> E
-    E -- 0 --> F[tar -tf the .partial archive, rename into place]
-    E -- other / 3rd change --> X[fail, no archive left]
+    E -->|"0"| F[tar -tf the .partial archive, rename into place]
+    E -->|"other / 3rd change"| X[fail, no archive left]
     F --> G[ApplyRetention on backups/cluster]
 
     R[ark-cli restore backup --instance cluster] --> S[ResolveClusterVolume]
-    S --> T{any instance using the cluster running?}
-    T -- yes --> U[refuse, naming them]
-    T -- no --> V[BackupService.RestoreCluster: lock, no wait]
-    V --> W[ComposeService.RunOneOff → python3 ark-restore.py --archive ... --pre-restore ... --cluster]
-    W --> Y[unsafe-path check, pre-restore tar.gz of clusters/]
+    S --> V[BackupService.RestoreCluster]
+    V --> T{any instance using the cluster running?}
+    T -->|"yes"| U[refuse, naming them]
+    T -->|"no"| V2[lock, no wait]
+    V2 --> W[ComposeService.RunOneOff → python3.14 ark-restore.py --archive ... --pre-restore ... --cluster]
+    W --> Y[unsafe-path check, no SQLite check, pre-restore tar.gz of clusters/]
     Y --> Z[extract into clusters/.restore-staging, swap_in with nothing kept]
 ```
 
 ## Create Instance Call Graph
 
-`ark-cli create instance` generates a compose service definition from a template and
-merges it into an existing `docker-compose.yaml`. It operates entirely on YAML text —
-no Docker commands are issued.
+Text-level YAML edit (`app/ark-cli/internal/create/create.go`); no container
+engine calls. Writes the file directly, not through `SaveProject`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli create instance] --> B[Parse flags + resolve inputs]
+    A[ark-cli create instance] --> A1[Read existing compose file, reject if instance exists]
+    A1 --> B[Parse flags + resolve inputs]
     B --> C[Assign ports: FindUsedPorts + PickNextPort]
     C --> D[RenderTemplate: substitute instance/map/password into YAML]
     D --> E{Compose file exists?}
-    E -- no --> F[Write rendered text as new file]
-    E -- yes --> G[EnsureServiceAbsent: reject if instance already in file]
+    E -->|"no"| F[Write rendered text as new file]
+    E -->|"yes"| G[EnsureServiceAbsent]
     G --> H[ExtractServiceBlock from rendered YAML]
     H --> I[InsertService into existing services section]
     I --> J[EnsureVolumeEntry for saved-config volume]
@@ -127,93 +146,96 @@ flowchart TD
 
 ## Update Instance Call Graph
 
-`ark-cli update instance` compares each instance's image with Steam's current public
-build, builds the new image if needed, and with `--rollout` switches to it safely.
+CLI: `app/ark-cli/internal/update/`. Domain: `app/pkg/ark/update/` (`local.go`,
+`build.go`, `rollout.go`). `--restart` and `--rollout` are aliases.
 
 ```mermaid
 flowchart TD
-    A[ark-cli update instance] --> B[Load compose project]
+    A[ark-cli update instance] --> B[LoadProject]
     B --> C[Resolve target services]
     C --> D{Image repo is ark-server?}
-    D -- no --> W[Warn: only locally built ark-server images are supported]
-    D -- yes --> F[CheckLocalUpdate]
-    F --> F1[InspectImageVersionInfo: read build ID label]
-    F1 --> F2[FetchSteamLatestBuildID via HTTP]
-    F2 --> G{Action?}
-    G -- skip/warn or --check --> H[Print plan table, no changes]
-    G -- update --> K[Build image: files image, base, labeled]
-    K --> M{--rollout or --restart?}
-    M -- no --> Q[Print: Built ark-server:id. Switch with --rollout]
-    M -- yes --> N[Stop instance: saves world]
-    N --> N1[Pre-update backup]
-    N1 --> N2[SaveProject: compose to new tag]
-    N2 --> O[Start new container]
-    O --> P[WaitForReady: poll for advertising marker]
-    P -- failed --> R[Compose back to old tag, restore backup, start old image]
-    R --> R1[Record attempt, webhook, exit 1]
-    P -- ready --> S[Record succeeded, cleanup old images]
+    D -->|"no"| W[Row: warn, only locally built ark-server images are supported]
+    D -->|"yes"| F[CheckLocalUpdate]
+    F --> F1[InspectImageVersionInfo: build ID + recipe labels]
+    F1 --> F2[FetchSteamLatestBuildID]
+    F2 --> G{build ID or recipe differs?}
+    G -->|"no"| H[Row: skip]
+    G -->|"yes, not --check"| K[BuildLocalImage once for all pending; failure recorded as build_failed]
+    K --> P0[Print plan table]
+    H --> P0
+    W --> P0
+    P0 --> M{--check / --rollout?}
+    M -->|"--check"| Q0[Done, no changes]
+    M -->|"neither"| Q[Print: Built ... Switch with --rollout; RemoveOldImages]
+    M -->|"--rollout"| R0[update.Rollout per instance, sorted]
+
+    R0 --> N[Stop: graceful, saves world]
+    N --> N1[Backup: CreateForTarget, name pre-update]
+    N1 --> N2[setPrevious: record rollback image in state]
+    N1 -->|"backup or state failed"| RB0[StartAndWait old image; record rolled_back]
+    N2 --> N3[SetImage: LoadProject, MutateService, SaveProject to new tag]
+    N3 --> O[StartAndWait: start, wait for ready; start removes unused images]
+    O -->|"ready"| S[record succeeded]
+    O -->|"failed"| R[SetImage old tag, Stop, Restore backup, StartAndWait]
+    R --> R1[record rolled_back or rollback_failed]
+    RB0 --> R2
+    R1 --> R2[CLI: alertFailure webhook; stop, skip remaining instances, exit 1]
 ```
 
 ## Reconfigure Instance Call Graph
 
-`ark-cli reconfigure instance` modifies environment variables and port bindings in the
-compose file, then optionally restarts the instance.
-
 ```mermaid
 flowchart TD
     A[ark-cli reconfigure instance] --> B[Validate inputs]
-    B --> C{--restart flag?}
-    C -- yes --> D[Check service is running]
-    C -- no --> E[Continue without status check]
-    D --> E
-    E --> F[Load compose project]
-    F --> G[Guard: reject MAP_NAME change on existing instance]
-    G --> H[Apply env var updates via SetEnv]
-    H --> I[Apply port updates via MutateService]
-    I --> J[Check for port conflicts]
-    J --> K[SaveProject: write compose file]
-    K --> L{--restart and was running?}
-    L -- yes --> M[Stop instance via Lifecycle]
-    M --> N[Start instance via Lifecycle]
-    N --> O[WaitForReady]
-    L -- no, changed --> P[Print restart-required message]
-    L -- no, unchanged --> Q[Print no-changes message]
+    B --> C[ServiceRunningStatus]
+    C --> D{running and no --force?}
+    D -->|"yes"| X[refuse]
+    D -->|"no"| F[LoadProject]
+    F --> G[guardReconfigureMapName: reject MAP_NAME change]
+    G --> H[Env updates via SetEnv in MutateService]
+    H --> I[Port updates: checkPortConflict, then MutateService]
+    I --> K{changed?}
+    K -->|"yes"| K1[SaveProject]
+    K -->|"no"| K2[Print no-changes message]
+    K1 --> L{--restart?}
+    K2 --> L
+    L -->|"yes, was running"| M[DoRestartStopInstance, DoRestartStartInstance with ready wait]
+    L -->|"yes, was stopped"| M2[Print: not started]
+    L -->|"no, changed"| P[Print restart-required message]
 ```
 
 ## Health Check / Wait Call Graph
 
-`ark-cli check instance` takes a snapshot; `ark-cli wait instance --for <state>` polls
-until a state is reached.
+`app/ark-cli/internal/health/health.go` → `app/pkg/ark/health/checker.go`.
 
 ```mermaid
 flowchart TD
     A[ark-cli check/wait instance] --> B[Resolve compose file + service config]
     B --> C{check or wait?}
-    C -- check --> D[IsRunning: ComposeService.RunningServices]
-    D --> E{Running?}
-    E -- yes --> F[IsReady: LogsContainMarker with ReadyMarker]
-    F --> G[Classify: healthy/starting/unhealthy]
-    E -- no --> H[Result: stopped]
-    C -- wait --> I[WaitForStarted/Ready/Stopped]
-    I --> J[Poll loop: check at interval until timeout]
-    J --> K{Each iteration}
-    K --> L[IsRunning: ComposeService.RunningServices]
-    L --> M{Running?}
-    M -- yes --> N[LogsContainMarker: scan last 300 log lines]
-    N --> O{Marker found?}
-    O -- yes --> P[Return success]
-    O -- no --> Q[Continue polling]
-    M -- no --> R[CheckNotExited: ExitedServices]
-    R --> S{Exited?}
-    S -- yes --> T[Return error: premature exit]
-    S -- no --> Q
+    C -->|"check"| D[RuntimeHelper.BuildInstanceSummary: status]
+    D --> E{running?}
+    E -->|"yes"| F[IsReady: LogsContainMarker with ReadyMarker]
+    F --> G[healthy / starting]
+    E -->|"no"| H[stopped / unhealthy]
+    G --> G1[printLastUpdate from update state]
+    H --> G1
+    C -->|"wait"| I{--for}
+    I -->|"started / ready, advertising"| J[waitForLogMarker: poll until timeout]
+    J --> L[IsRunning: ComposeService.RunningServices]
+    L --> M{running?}
+    M -->|"yes"| N[LogsContainMarker: last 300 log lines]
+    N -->|"found"| P[success]
+    N -->|"not found"| J
+    M -->|"no"| R[CheckNotExited: ExitedServices]
+    R -->|"exited"| T[error: premature exit]
+    R -->|"not exited"| J
+    I -->|"stopped"| WS[WaitForStopped: poll IsRunning until false]
 ```
 
 ## Host Kernel Config Call Graph
 
-The `check/fix/restore host-kernel-config` commands inspect and patch host sysctl
-parameters and NOFILE limits. They require root (fix/restore) and operate entirely on
-the host — no Docker calls.
+`app/ark-cli/internal/host/host.go` → `app/pkg/ark/host/kernel_config.go`. Host
+only; no container calls.
 
 ```mermaid
 flowchart TD
@@ -221,104 +243,97 @@ flowchart TD
     A --> C[fix host-kernel-config]
     A --> D[restore host-kernel-config]
 
-    B --> B1[Read /proc/sys/vm/max_map_count etc.]
-    B1 --> B2[Read NOFILE hard limit via getrlimit]
-    B2 --> B3[Scan /etc/sysctl.conf for conflicts]
-    B3 --> B4[Print status table]
+    B --> B1[CheckOneParam: read /proc/sys values]
+    B1 --> B2[CheckNofileLimit: getrlimit NOFILE hard]
+    B2 --> B4[Print status table]
+    B4 --> B3[ScanSysctlConf: note /etc/sysctl.conf overrides]
 
     C --> C1[RequireRoot]
-    C1 --> C2[SnapshotKernelParams: read current values]
-    C2 --> C3[WriteKernelParamBackup to ~/.config/ark-cli/]
+    C1 --> C2[SnapshotKernelParams]
+    C2 --> C3[WriteKernelParamBackup to ~/.config/ark-cli/kernel-params-backup.conf]
     C3 --> C4[sysctl -w for each param below minimum]
-    C4 --> C5[ApplyNofilePersistFiles: write limits.d + systemd override]
+    C4 --> C5[ApplyNofilePersistFiles: limits.d + systemd override, if not set]
     C5 --> C6[Write /etc/sysctl.d/99-ark-server.conf]
-    C6 --> C7[PatchSysctlConf: update /etc/sysctl.conf in-place]
+    C6 --> C7[PatchSysctlConf, AppendSysctlConfToBackup]
     C7 --> C8[Print status table]
 
     D --> D1[RequireRoot]
-    D1 --> D2[Read backup file from ~/.config/ark-cli/]
-    D2 --> D3[sysctl -w to restore each backed-up value]
+    D1 --> D2[Read backup file]
+    D2 --> D3[sysctl -w each backed-up value]
     D3 --> D4[Remove /etc/sysctl.d/99-ark-server.conf]
-    D4 --> D5[Revert /etc/sysctl.conf from backup values]
-    D5 --> D6[Remove limits.d + systemd override files]
+    D4 --> D5[RevertSysctlConf]
+    D5 --> D6[RemoveNofilePersistFiles]
     D6 --> D7[Print status table]
 ```
 
 ## Schedule Call Graph
 
-Schedule commands manage backup schedules stored in
-`.ark-manage/schedules.yaml`. `apply` generates crontab entries from the schedule file.
+`app/ark-cli/internal/schedule/` → `app/pkg/ark/schedule/`. Files under
+`<compose-dir>/.ark-manage/`.
 
 ```mermaid
 flowchart TD
     A[ark-cli schedule command] --> B{Verb?}
 
-    B -- create/update --> C[Parse schedule flags + validate]
-    C --> D[Load or create ScheduleFile]
-    D --> E[Write .ark-manage/schedules.yaml]
+    B -->|"create/update/enable/disable"| C[Parse + validate]
+    C --> E[SaveScheduleAndCrontab: write schedules.yaml + generated/schedules.crontab]
 
-    B -- apply --> F[Load ScheduleFile]
-    F --> G[Filter enabled schedules]
-    G --> H[Generate crontab entries per schedule]
-    H --> I[Write .ark-manage/generated/schedules.crontab]
-    I --> J[Install crontab via crontab command]
+    B -->|"apply"| F[LoadScheduleFile]
+    F --> G[validateScheduleFile unless --skip-validate]
+    G --> H[WriteManagedScheduleCrontab: enabled backup schedules only]
+    H --> J[crontab generated/schedules.crontab]
 
-    B -- check --> K[Load ScheduleFile]
-    K --> L[For each schedule: check last-run state file]
-    L --> M[Print status table]
+    B -->|"check"| K[LoadScheduleByName]
+    K --> L[Lock file held? + LoadRunState]
+    L --> M[Print status]
 
-    B -- run --> N[Load ScheduleFile]
-    N --> O[Find schedule by name]
-    O --> P[Call backup service: BackupService.CreateForTarget]
-    P --> Q[Write last-run state file]
-
-    B -- enable/disable --> R[Load ScheduleFile]
-    R --> S[Toggle enabled flag]
-    S --> T[Write .ark-manage/schedules.yaml]
+    B -->|"run"| N[LoadScheduleByName]
+    N --> O[AcquireLock, WriteRunState running]
+    O --> P[RunBackupFromSchedule → create backup command path]
+    P --> Q[WriteRunState success/failed]
 ```
 
 ## INI Edit/Show Call Graph
 
-`edit ini` and `show ini` use container exec or ephemeral containers to interact with
-game config files inside the instance.
+`app/ark-cli/internal/ini/`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli edit/show ini] --> B[Resolve INI file spec]
-    B --> C[Load compose project]
-    C --> D{Instance running?}
+    A[ark-cli edit/show ini] --> B[Resolve INI file spec + compose service]
+    B --> C[ServiceRunningStatus]
+    C --> D{running?}
 
-    D -- yes, edit --> E[ExecInteractive: open editor in running container]
-    D -- yes, show --> F[ExecInteractive: cat INI file in running container]
-    D -- no, edit --> G[RunOneOffInteractive: start temp container with editor]
-    D -- no, show --> H[RunOneOffInteractive: start temp container, cat INI file]
+    D -->|"yes, edit, no --force"| X[refuse]
+    D -->|"yes, edit, --force"| E[ExecInteractive: editor, default nano]
+    D -->|"yes, show"| F[ExecInteractive: cat INI]
+    D -->|"no, edit"| G[RunOneOffInteractive: editor in removed container]
+    D -->|"no, show"| H[RunOneOffInteractive: cat INI]
 
-    E --> I{--restart flag?}
-    I -- yes --> J[Stop + Start + WaitForReady]
-    I -- no --> K[Done]
+    E --> I{--restart?}
+    I -->|"yes"| J[DoRestartStopInstance, DoRestartStartInstance with ready wait]
+    I -->|"no"| K[Print restart-required message]
 ```
 
 ## Prune Backups Call Graph
 
-`prune backups` operates entirely on the host filesystem — no Docker commands. It
-applies retention policies to backup archives.
+Host filesystem only (`app/pkg/ark/backup/policy.go`). `--instance all` covers every
+service plus `cluster`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli prune backups] --> B[Parse retention flags: --retain-count/days/size-gb]
+    A[ark-cli prune backups] --> B[Parse --retain-count/days/size-gb]
     B --> C{--dry-run?}
-
-    C -- yes --> D[List archives in backup directory]
-    D --> E[Compute retention: sort by newest, apply count/age/size rules]
-    E --> F[Print what would be removed, no deletions]
-
-    C -- no --> G[ApplyRetention]
+    C -->|"yes"| D[DryRunRetention]
+    C -->|"no"| G[ApplyRetention]
+    D --> H
     G --> H[ListRetentionCandidates: os.ReadDir]
-    H --> I[SortByNewest: sort by timestamp]
-    I --> J[DiskUsage: syscall.Statfs for free space check]
-    J --> K[pruneByAge: mark backups older than retain-days]
-    K --> L[pruneByCount: mark excess beyond retain-count with 2-backup floor]
-    L --> M[pruneBySize: mark if total exceeds retain-size-gb]
-    M --> N[pruneForFreeSpace: mark if disk usage too high]
-    N --> O[removeRetainedBackups: os.Remove for each marked file]
+    H --> I[SortByNewest]
+    I --> J[DiskUsage: syscall.Statfs; floor 2 kept, 1 if under 5 GiB free]
+    J --> K[pruneByAge]
+    K --> L[pruneByCount]
+    L --> M[pruneBySize]
+    M --> N[pruneForFreeSpace]
+    N --> O{dry run?}
+    O -->|"yes"| P[Print remove/keep per file]
+    O -->|"no"| Q[removeRetainedBackups: os.Remove]
 ```

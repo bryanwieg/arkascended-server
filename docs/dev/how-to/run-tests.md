@@ -1,164 +1,155 @@
 # Run Tests
 
-How to run the test suites and clean up test artifacts.
+## Requirements
 
-## Test suites
+- Python venv at `./.venv`: `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`
+- Docker (or Podman via `ARK_CONTAINER_RUNTIME=podman`) with the `compose` CLI plugin. The test
+  harness shells out to `docker compose`, unlike `ark-cli`.
+- Image `ark-server:latest` (override: `ARK_TEST_IMAGE`). If missing, integration tests skip.
+- Go toolchain. CLI and `ark-web` tests rebuild their binary with `go build` on every session.
 
-| Suite | What it tests | Docker required? |
-|---|---|---|
-| `unit` | Python parsing, validation, and transform logic | No |
-| `container` | Container runtime scripts in a running container | Yes |
-| `cli` | `ark-cli` end-to-end command behavior | Yes (integration tag) |
-| `smoke` | Healthy server start and clean stop; CI's image publish gate. Not part of `all` | Yes |
+## Test suites (`run-tests.py`)
 
-## Layout
+`run-tests.py` runs fixed batches of test files, one pytest process per batch. `--list` prints
+the batches a suite selects.
 
-- `tests/container/unit/` — fast unit-only checks for pure Python/runtime helper behavior
-- `tests/container/integration/fast/` — fast container integration tests (short-lived containers)
-- `tests/container/integration/slow/` — slow container integration tests (running ARK server)
-- `tests/app/ark_cli/integration/docker/fast/` — fast CLI integration tests (compose manipulation, fake APIs)
-- `tests/app/ark_cli/integration/docker/slow/` — slow CLI integration tests (running ARK server)
-- `tests/app/ark_cli/integration/podman/fast/` — same tests re-exported for Podman runtime (fast)
-- `tests/app/ark_cli/integration/podman/slow/` — same tests re-exported for Podman runtime (slow)
-- `tests/app/ark_web/integration/fast/` — `ark-web` HTTP endpoint tests (builds the binary with `go build`)
-- `tests/fixtures/` — shared test fixtures (e.g. restore archives)
-- `app/ark-cli/*_test.go` — Go unit and contract tests live alongside source
-
-## Running tests
-
-Use the root `run-tests.py` runner:
+| `--suite` | Batches |
+|---|---|
+| `unit` | `test_log_rotation.py`, `test_rcon_client.py` only (not all of `tests/container/unit/`) |
+| `container-fast` / `container-slow` / `container` | Container script tests (fast, slow, both) |
+| `cli-fast` / `cli-slow` / `cli` | `ark-cli` Docker integration tests (fast, slow, both) |
+| `fast` / `slow` | Container + CLI, fast or slow |
+| `all` (default) | All of the above except `smoke` |
+| `smoke` | Healthy start + clean stop; CI's image publish gate |
 
 ```sh
-./run-tests.py --suite unit                     # fast, no Docker
-./run-tests.py --suite container-fast          # container tests (fast only)
-./run-tests.py --suite container-slow          # container tests (slow only)
-./run-tests.py --suite container              # all container tests
-./run-tests.py --suite smoke                  # healthy start + stop (CI gate)
-./run-tests.py --suite cli-fast               # CLI tests (fast only)
-./run-tests.py --suite cli-slow               # CLI tests (slow only)
-./run-tests.py --suite cli                    # all CLI tests
-./run-tests.py --suite fast                   # all fast tests (container + CLI)
-./run-tests.py --suite slow                   # all slow tests (container + CLI)
-./run-tests.py --suite all                    # everything
-./run-tests.py --list                         # list available tests
+./run-tests.py --suite container-fast
+./run-tests.py --suite cli --list
+./run-tests.py --suite cli-fast -- --maxfail=1 -v   # pytest args after --, applied to every batch
 ```
 
-Pass extra pytest arguments after `--`:
+| Option | Effect |
+|---|---|
+| `--python PATH` | Interpreter for pytest. Default `TEST_BATCH_PYTHON`, else `./.venv/bin/python`. Relative paths resolve against the repo root, so pass an absolute path for a system Python (`--python "$(command -v python3)"`). |
+| `--list` | Print selected batches, run nothing |
+| `-- ARGS` | Extra pytest args. Without `--`, flags such as `-v` are rejected. |
+
+Notes:
+
+- `-k` after `--` filters every batch. Batches with no match exit 5 and show as `FAIL(5)`. To
+  run one test, call pytest directly (below).
+- Batch output is captured and printed when the batch finishes, not live.
+- A batch that exceeds its timeout is killed and reported `FAIL(124)`.
+
+## Running pytest directly
+
+Use this for single files or tests, and for directories `run-tests.py` doesn't cover:
 
 ```sh
-./run-tests.py --suite container -- -k test_ark_backup_script -v
-./run-tests.py --suite cli -- --maxfail=1
-```
-
-## Podman and web tests
-
-`run-tests.py` batches cover the Docker suites only. Run the Podman and
-`ark-web` suites with pytest directly:
-
-```sh
+.venv/bin/python -m pytest tests/container/unit/                       # all Python unit tests
+.venv/bin/python -m pytest tests/container/integration/slow/test_rcon.py::test_rcon_client_against_a_real_server
+.venv/bin/python -m pytest tests/app/ark_cli/integration/native/       # CLI on the host, no containers
 .venv/bin/python -m pytest tests/app/ark_cli/integration/podman/fast/
 .venv/bin/python -m pytest tests/app/ark_web/integration/
 ```
 
-## Go CLI tests (without the runner)
+Markers (`pytest.ini`): `unit`, `container`, `fast`, `slow`, `podman`, `sdk_backend`. Example:
+`pytest -m unit tests/container/unit` (what CI runs).
 
-Fast contract tests, no Docker:
+## Layout
+
+| Path | Contents |
+|---|---|
+| `tests/container/unit/` | Python unit tests for container scripts |
+| `tests/container/integration/{fast,slow}/` | Container script tests: short-lived containers / running ARK server |
+| `tests/app/ark_cli/integration/docker/{fast,slow}/` | `ark-cli` against Docker |
+| `tests/app/ark_cli/integration/podman/{fast,slow}/` | The Docker tests re-exported for Podman |
+| `tests/app/ark_cli/integration/native/` | `ark-cli` arg parsing, create, schedules, kernel config; no containers |
+| `tests/app/ark_web/integration/fast/` | `ark-web` HTTP endpoints |
+| `tests/test_*.py` | Framework self-checks (baseline, CLI build, logging discipline) |
+| `tests/fixtures/` | Shared fixtures (e.g. restore archives) |
+| `tests/helpers/` | Test framework ([Test architecture](../reference/test-architecture.md)) |
+
+## Go tests
+
+Go tests live next to the source. From the repo root (`go.work` covers all modules):
 
 ```sh
-cd app/ark-cli && go test ./...
+go test ./app/ark-cli/... ./app/pkg/ark/... ./app/ark-web/... ./container/...   # what CI runs
 ```
 
-Domain package tests, no Docker:
-
-```sh
-cd app/pkg/ark && go test ./...
-```
-
-Backend conformance tests (require Docker; Podman variants auto-skip without a
-rootless Podman socket):
+Backend conformance tests need Docker; Podman variants skip without a rootless Podman socket:
 
 ```sh
 cd app/pkg/ark && go test -tags integration -v ./sdkbackend_test/
 ```
 
-## Requirements
-
-- Python venv at `./.venv` (create with `python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`)
-- Docker daemon access for container and CLI integration suites
-- Built `ark-server:latest` image for integration tests (override with `ARK_TEST_IMAGE`)
-- Go toolchain for CLI tests
-
-Override the venv location with `TEST_BATCH_PYTHON=/path/to/python`.
-
 ## Environment variables
 
-Full list: [Test architecture — environment variables](../reference/test-architecture.md#environment-variables-affecting-tests).
-Most commonly needed:
+Full list: [Test architecture: environment variables](../reference/test-architecture.md#environment-variables-affecting-tests).
 
 | Variable | Effect |
 |---|---|
-| `ARK_START_WAIT_TIMEOUT=15m` | Extend start readiness timeout on slow or loaded hosts |
-| `ARK_TEST_IMAGE` | Override the Docker image used by integration tests |
-| `ARK_TEST_ARTIFACTS_DIR` | Override the directory for test artifacts (default `.tests`) |
-| `ARK_TEST_ARTIFACTS_RETENTION` | Days to keep test artifacts (default `7`) |
-| `ARK_TEST_ARTIFACTS_WIPE_THRESHOLD` | Minimum artifacts to keep when pruning (default `3`) |
-| `TEST_BATCH_PYTHON` | Override the Python interpreter used by the runner |
+| `ARK_START_WAIT_TIMEOUT=15m` | Longer start readiness timeout on slow or loaded hosts |
+| `ARK_TEST_IMAGE` | Image for integration tests (default `ark-server:latest`) |
+| `ARK_CONTAINER_RUNTIME` | `docker` (default) or `podman` |
+| `ARK_TEST_ARTIFACTS_DIR` | Artifact directory (default `.tests`) |
+| `ARK_TEST_ARTIFACTS_RETENTION` | Number of recent run directories to keep (default `7`) |
+| `ARK_TEST_ARTIFACTS_WIPE_THRESHOLD` | If more tests than this are collected, wipe old artifacts; else prune (default `3`) |
+| `TEST_BATCH_PYTHON` | Default for `run-tests.py --python` |
 
-## Timing expectations
+## Timing
 
-ARK server startup commonly takes several minutes. Graceful shutdown adds
-about a minute. Prefer small batches (1–3 tests) for Docker-backed runs to
-keep iteration manageable.
+ARK server startup takes several minutes; graceful stop about one more. Keep Docker-backed
+runs to 1–3 tests while iterating.
 
-## Monitoring containers during a test run
+## Watching containers
+
+`run-tests.py` prints batch output only at batch end, so watch from a second terminal:
 
 ```sh
-# Terminal 1 — run tests
-./run-tests.py --suite container -v
-
-# Terminal 2 — watch containers
 watch -n5 'docker ps --format "table {{.Names}}\t{{.Status}}"'
 ```
 
 ## Test artifacts
 
-Each test node writes artifacts under `.tests/<run-timestamp>/<test-node>/`:
+Check these first when a test fails. Each run writes
+`.tests/<YYMMDD-HHMMSS>-{suiterun|singlerun}/<test-node>/`:
 
-- `commands.log` — all `run_cmd` invocations with exit codes, stdout, stderr
-- `compose.<service>.log` — per-service streaming log, captured continuously
-- `docker.log` — container-level diagnostics (state, image, PID) from just before teardown
-- `failure.log` — docker-level state captured immediately on test failure
-- `framework.log` — framework-level trace (poll, lock, lifecycle, compose events, SDK calls)
-- `pytest.log` — pytest phase outcomes with captured stdout/stderr
-- `cli.log` — captured `ark-cli` output (when CLI was invoked)
-- `compose/` — start and final compose file snapshots
+| File | Contents |
+|---|---|
+| `commands.log` | `run_cmd` invocations: exit code, stdout, stderr |
+| `compose.<service>.log` | Streamed service log |
+| `docker.log` | Container diagnostics (state, image, PID) before teardown |
+| `failure.log` | Docker state captured at failure |
+| `framework.log` | Framework trace (polls, locks, lifecycle, compose, SDK calls) |
+| `pytest.log` | Phase outcomes with captured stdout/stderr |
+| `cli.log` | `ark-cli` output, when the CLI ran |
+| `pytest-compose-<id>.yaml` | Compose file generated for the test |
 
-Generated runtime compose files are placed under
-`.tests/<run-timestamp>/compose-runtime/`.
+Details: [Test logging](../reference/test-logging.md).
 
-## Rebuilding before tests
+## Rebuilding the image
+
+Integration tests use the existing image; rebuild after changing `container/`:
 
 ```sh
-./.github/build-image.sh    # rebuild the Docker image
-./.github/build-cli.sh      # rebuild the ark-cli binary
+./.github/build-image.sh
 ```
 
-The CLI itself builds images natively via Docker buildx and never calls
-`build-image.sh` or `update-check.sh`; those scripts exist for CI and manual
-use (see [Image build pipeline](../reference/image-build.md)).
+`ark-cli` builds images itself through the Docker API with BuildKit and never calls
+`build-image.sh`; the script is for CI and manual use ([Image build pipeline](../reference/image-build.md)).
 
 ## Cleaning up
 
 ```sh
+./clean-repo.sh --dry-run --verbose   # preview
 ./clean-repo.sh
-./clean-repo.sh --dry-run --verbose   # preview what would be removed
 ```
 
-## CI vs. local split
+Removes generated files only; no tracked files, no Docker resources.
 
-CI minutes are limited. Run lightweight unit and crucial fast integration
-tests in CI. Run the full Docker-backed suites locally.
+## CI
 
-## See also
-
-- [Test architecture](../reference/test-architecture.md) — test layers, seam injection, and outcome-driven testing philosophy
+CI runs the Go tests, `pytest -m unit tests/container/unit`, the OOM-report test and `--suite smoke`.
+Run the other Docker-backed suites locally. Workflows: [CI and releases](../reference/ci.md).

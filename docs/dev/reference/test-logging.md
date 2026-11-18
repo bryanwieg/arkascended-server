@@ -1,48 +1,47 @@
 # Test logging architecture
 
-How the integration test framework captures and preserves diagnostic
-information for post-mortem analysis. This doc covers the logging
-infrastructure that lives **within the test suite itself** (`tests/helpers/`
-and `tests/conftest.py`), not the CLI's output channels (see
-[logging-architecture.md](../explanation/logging-architecture.md)).
+How the test framework (`tests/conftest.py`, `tests/helpers/`) records diagnostics
+for post-mortem analysis. For the CLI's own output channels see
+[logging-architecture.md](../explanation/logging-architecture.md).
 
 ## Artifact directory structure
 
-Every test run produces a directory under `.tests/`. The path depends on how
-the run was invoked:
+Root is `.tests/` (override `ARK_TEST_ARTIFACTS_DIR`; retention variables in
+[run-tests.md](../how-to/run-tests.md#environment-variables)).
 
-| Run mode | Artifact root | Example |
+| Run mode | Test-node directory |
+|---|---|
+| `run-tests.py` | `.tests/<YYMMDD-HHMMSS>-suiterun/<batch-label>/<test-node>/` |
+| `pytest`, exactly one test collected | `.tests/<YYMMDD-HHMMSS>-singlerun/<test-node>/` |
+| `pytest`, several tests collected | `.tests/<YYMMDD-HHMMSS>-suiterun/<test-node>/` |
+
+- `<batch-label>`: the batch label from `run-tests.py` (e.g. `scripts-server-oom-report`).
+  `run-tests.py` passes the run dir and label to each pytest batch via `ARK_TEST_RUN_DIR`
+  and `ARK_TEST_BATCH_LABEL`, and writes `suite.log` (per-batch status and duration) at the run root.
+- `<test-node>`: node ID with `/` and `::` replaced, e.g.
+  `tests_container_integration_slow_test_ark_server_start_script.py__test_ark_server_start_script`.
+- A name collision within the same second appends `-2`, `-3`, ...
+
+Test-node directory contents:
+
+| File | Contents | Written by |
 |---|---|---|
-| `run-tests.py` (batch) | `.tests/<YYMMDD-HHMMSS>-suiterun/<batch-stamp>-<batch-label>/<test-node>/` | `.tests/260504-211605-suiterun/211605-scripts-server-oom-report/tests_container_integration_fast_test_server_oom_report.py__test_server_start_reports_oom_kill/` |
-| `pytest` (single test) | `.tests/<YYMMDD-HHMMSS>-singlerun/<test-node>/` | `.tests/260504-220412-singlerun/tests_container_integration_slow_test_ark_server_start_script.py__test_ark_server_start_script/` |
+| `framework.log` | Framework trace (see [Logger](#logger-helpersframework_logger)) | `log_framework()`; configured by `configure_test_artifacts` in `tests/conftest.py` |
+| `pytest.log` | Phase outcomes with captured stdout/stderr | `write_pytest_report_artifact()` (`helpers/artifacts.py`), at teardown |
+| `commands.log` | `run_cmd` invocations (START, exit code, stdout, stderr), CLI heartbeats, phase snapshots | `helpers/diagnostics.py` |
+| `cli.log` | `ark-cli` verbose log; `run_with_compose_patch` adds `-v <cli.log>` unless the command sets `-v` | `ark-cli` |
+| `compose.<service>.log` | Streamed service output, one per service | Watchers in `helpers/compose_client.py` |
+| `docker.log` | Container state snapshots (name, id, image, created, status, running, exit code, PID) | `capture_diagnostics()` |
+| `pytest-compose-<id>.yaml` | The test's compose file (`COMPOSE_FILE`), one per test | `prepare_test_env()` (`helpers/infra.py`) |
+| `tmp/` | The test's `tmp_path` (replaces pytest's `/tmp` one so the daemon can bind-mount it) | `tests/conftest.py` |
 
-Each test-node directory contains:
-
-```
-<test-node-dir>/
-├── compose.<service>.log   # Per-service streaming log (one per compose service)
-├── docker.log              # Container-level diagnostics (state, ports, image)
-├── framework.log           # Framework-level trace (polls, locks, lifecycle)
-├── pytest.log              # pytest phase report
-├── pytest-compose-*.yaml   # The active compose file used by the SDK
-└── failure.log             # Diagnostics captured at failure time (only on test failures)
-```
-
-### When logs are captured
-
-| Log | Capture point | Captured by |
-|---|---|---|
-| `compose.<service>.log` | Streamed continuously by per-service watchers — start to teardown | `helpers/compose_client.py` |
-| `docker.log` | `capture_diagnostics()` — in cleanup_test_env or slow_test_protection | `helpers/diagnostics.py` |
-| `framework.log` | Every `log_framework()` call — poll loops, locks, compose ops | `helpers/framework_logger.py` |
-| `failure.log` | `pytest_runtest_makereport` hook — immediately on test call failure | `tests/conftest.py` |
-| `pytest-compose-*.yaml` | Created by `prepare_test_env()` — the SDK's active compose file | `helpers/infra.py` |
+Files appear only if the test exercises them (e.g. no `compose.*.log`, `docker.log` or
+compose YAML for tests without `test_env`).
 
 ## Logger: `helpers.framework_logger`
 
-The framework logger is the single point of collection for all
-test-infrastructure events. It is **not** the same as the CLI's operational
-event channel (`slog.Logger`) — it exists only inside the test process.
+Collects test-infrastructure events. Exists only in the test process; unrelated to
+the CLI's `slog` channel.
 
 ```python
 from helpers.framework_logger import log_framework
@@ -50,27 +49,28 @@ from helpers.framework_logger import log_framework
 log_framework("poll", "waiting for container (elapsed=%ds)", elapsed)
 ```
 
-### Output channels
+### Output
 
-- **Always** — appends to `framework.log` in the test's artifact directory
-- **When `ARK_TEST_DEBUG=1`** (default for `slow/` tests) — also writes to
-  stderr, visible with `pytest -s` or in failure reports
+Appends to `framework.log` in the current test's artifact directory, flushed per line.
+No stderr output, no level or env var switch. Calls made outside a configured test
+are dropped.
 
 ### Categories
 
-Every `log_framework` call has a category string that prefixes the log line:
+The first argument is a free-form category string. Categories in use:
 
-| Category | Source module | When emitted |
+| Category | Source | Emitted for |
 |---|---|---|
-| `framework` | `conftest.py`, `framework_logger.py` | Test start/end, logger configuration |
-| `cleanup` | `helpers/infra.py` | Orphan pruning, stale lock removal |
-| `lock` | `helpers/infra.py` | Slow-test lock acquire/release |
-| `compose` | `helpers/compose.py`, `helpers/compose_client.py` | Compose file writing, port assignment, log streamer start/stop |
-| `lifecycle` | `helpers/compose_client.py` | Container startup, RCON readiness |
-| `poll` | `helpers/infra.py`, `helpers/compose_client.py` | `wait_for` and `wait_for_container_state` |
-| `sdk` | `helpers/compose_client.py` | Every python-on-whales SDK call (up, down, exec, stop, kill) |
-| `cli-heartbeat` | `helpers/diagnostics.py` | Long-running CLI commands (>15s) |
-| `phase` | `helpers/diagnostics.py` | Phase snapshots during multi-step tests |
+| `framework` | `conftest.py`, `framework_logger.py` | Test start/finish, logger configured, failure diagnostics captured |
+| `cleanup` | `helpers/infra.py` | Orphaned resource pruning, stale lock removal |
+| `lock` | `helpers/infra.py` | Slow-test lock acquire/skip/release |
+| `compose` | `helpers/compose.py`, `helpers/compose_client.py` | Compose file edits (ports, restart policy, test-suite label), watcher start/stop |
+| `container` | `helpers/compose_client.py` | Watcher saw its container stop (expected) or exit unexpectedly, with exit code |
+| `lifecycle` | `helpers/compose_client.py` | Container start, startup-log and RCON readiness |
+| `poll` | `helpers/infra.py`, `helpers/compose_client.py` | `wait_for`, `wait_for_container_state`: start, progress, done, TIMEOUT |
+| `sdk` | `helpers/compose_client.py` | python-on-whales calls (see [SDK operation logging](#sdk-operation-logging)) |
+| `cli-heartbeat` | `helpers/diagnostics.py` | `ark-cli` command run via `run_cmd` still running after 15s, every 15s |
+| `phase` | `helpers/diagnostics.py` | `log_phase_snapshot()` in multi-step tests |
 
 ### Format
 
@@ -78,109 +78,84 @@ Every `log_framework` call has a category string that prefixes the log line:
 [HH:MM:SS.mmm] [category] message
 ```
 
-Example:
 ```
 [21:47:10.443] [lifecycle] waiting for startup log (instance=pytest-ark-ae9fb2d6, timeout=300s)
 [21:47:10.443] [poll] waiting for startup log readiness (timeout=300s)
 [21:47:10.603] [poll] waiting for startup log readiness (elapsed=0s, remaining=299s)
 ```
 
-### Configuration
-
-Logger state is set up per-test by the `configure_test_artifacts` autouse
-fixture in `tests/conftest.py`:
-
-```python
-ARK_TEST_DEBUG=1          # Force debug output (stderr + log file)
-ARK_TEST_DEBUG=0          # Suppress stderr, log file only
-ARK_TEST_DEBUG=<unset>    # Auto: enabled for slow/ tests, disabled for fast/
-```
-
 ## Per-service log watchers
 
-The `log_streamer` autouse fixture (in `tests/container/integration/conftest.py`)
-attaches per-service watcher threads that continuously stream container logs to
-`compose.<service>.log` in the test artifact directory. Watchers also detect
-container exits and log them to `framework.log`.
+The autouse `log_streamer` fixture (`tests/container/integration/conftest.py`, also
+pulled in by `tests/app/ark_cli/integration/conftest.py`) streams each compose service's
+output to `compose.<service>.log`.
 
-### How it works
-
-1. At fixture setup, the watcher infra discovers service names from the compose
-   YAML file.
-2. For each service, it starts a shell subprocess:
+1. At setup, reads service names from the compose YAML and starts a watcher per service:
    ```
-   docker compose -f <compose_file> logs --follow --timestamps --tail=all <service>
+   <runtime> compose -f <compose_file> logs --follow --timestamps --tail=all <service>
    ```
-3. A daemon thread reads the subprocess output (tee: log file + stderr).
-4. When the subprocess exits (container stopped/removed), the thread checks
-   ``_EXPECTED_STOP`` to distinguish planned stops from crashes and logs the
-   event and exit code to ``framework.log``.
-5. A discovery poll runs every 15s to attach watchers to services created
-   mid-test (e.g., by ``create instance``). It never restarts watchers for
-   dead containers.
-6. On teardown, all watcher subprocesses are killed (SIGTERM → SIGKILL).
-7. Lifecycle helpers (``compose_stop``, ``compose_kill``, ``container_start``,
-   ``start_container_instance``) manage the ``_EXPECTED_STOP`` flag so that
-   framework-originated stops are logged cleanly.
+   `<runtime>` is `ARK_CONTAINER_RUNTIME` (default `docker`). If the subprocess exits
+   within 2s (no container yet), no watcher is kept.
+2. A daemon thread copies the output to the log file and to stderr (captured by pytest
+   into `pytest.log`; live with `pytest -s`).
+3. When the subprocess exits, the thread checks `_EXPECTED_STOP` and logs a `[container]`
+   stopped or exited-unexpectedly line with the exit code.
+4. A discovery poll every 15s starts watchers for services added mid-test (e.g. by
+   `create instance`). Exited watchers are never restarted.
+5. `container_start` and `start_container_instance` clear the expected-stop flag and attach
+   a watcher after `compose up`; `cleanup_test_env` marks services as expected stops before
+   `compose down`.
+6. At teardown, all watcher process groups get SIGTERM, then SIGKILL after 5s.
 
 ### Shell over SDK
 
-The watcher deliberately uses shell subprocess (``subprocess.Popen``) instead
-of the python-on-whales SDK. The SDK's ``follow=True, stream=True`` blocks
-forever on the subprocess read pipe and cannot be cleanly terminated in
-fixture teardown — the iterator never returns until the container stops.
-Shell subprocesses give clean PIDs for SIGTERM/SIGKILL, and the SDK is a
-thin wrapper around the same CLI anyway. This is the one exception to the
-"prefer SDK" rule in the test architecture.
+Watchers use `subprocess.Popen` instead of python-on-whales: the SDK's
+`follow=True, stream=True` iterator blocks until the container stops and cannot be
+terminated cleanly in teardown. A subprocess has a PID (process group) to kill. This
+is the one exception to the "prefer SDK" rule in [test-architecture.md](test-architecture.md).
 
 ## Diagnostics capture: `helpers.diagnostics`
 
 ### `capture_diagnostics(dc, compose_file, output_path)`
 
-Captures container-level state in one call (the per-service streaming logs in
-``compose.<service>.log`` are the authoritative source for log content):
+Appends a timestamped `container states` block from `compose ps --all` to `docker.log`
+in `output_path`'s directory. The file name part of `output_path` is ignored. Log content
+comes from the `compose.<service>.log` files, not from here.
 
-1. **`docker.log`** — container-level detail for each service (name, id,
-   image, status, running, exit code, PID)
+Callers:
+- `slow_test_protection` fixture (slow tests): after the test, before compose down; sets
+  `_ARK_DIAGNOSTICS_CAPTURED` so `cleanup_test_env` skips a second capture.
+- `cleanup_test_env()`: normal teardown.
+- Failure hook (below).
 
-Called from:
-- `cleanup_test_env()` — normal teardown
-- `slow_test_protection` fixture — before compose down (with
-  `_ARK_DIAGNOSTICS_CAPTURED` marker to prevent double-capture)
-- Failure hook in `pytest_runtest_makereport` — on test failure (writes
-  `failure.log`)
+### `fail_with_container_logs(reason, *, dc, instance, ...)`
 
-### `fail_with_container_logs(reason, dc, instance, ...)`
-
-Raises `AssertionError` with container logs appended. Used in readiness
-polling to surface the container state at the moment of failure.
+Raises `AssertionError` with the last 200 compose log lines and the `cli.log` path.
+Used when a container exits before startup-log or RCON readiness.
 
 ## Failure diagnostics hook
 
-When a test call fails (`report.when == "call"` and `not report.passed`),
-the `pytest_runtest_makereport` hook in `tests/conftest.py`:
+When the call phase fails, `pytest_runtest_makereport` in `tests/conftest.py`:
 
-1. Reads `test_env` from the fixture request to locate the compose file
-2. Creates a `DockerClient` from the compose file
-3. Calls `capture_diagnostics()` into `failure.log`
-4. Logs a `[framework] captured failure diagnostics` entry
+1. Gets `test_env` from the test's fixtures (skipped if the test has none or its compose file is missing)
+2. Calls `capture_diagnostics()` with `failure.log` as the output path
+3. Logs `[framework] captured failure diagnostics to <path>`
 
-This captures container state **at the moment of failure**, before teardown
-has a chance to destroy it. For full per-service log content, check the
-``compose.<service>.log`` files in the same artifact directory.
+This records container state before teardown removes the containers. Because
+`capture_diagnostics()` ignores the file name, the snapshot is appended to `docker.log`,
+and `failure.log` is never created. On a failed test, `docker.log` therefore has two
+blocks: one from the failure hook, one from teardown.
 
 ## Active compose file
 
-The test's active compose file is created by `prepare_test_env()` and stored
-at the path in `COMPOSE_FILE`. It is the file the python-on-whales SDK uses
-for all compose operations. The file persists in the test's artifact directory
-as `pytest-compose-*.yaml` — no snapshot copies are needed since the SDK
-always reads from the same file path.
+`prepare_test_env()` writes `pytest-compose-<8 hex>.yaml` into the test-node directory
+and sets `COMPOSE_FILE` to it. Every SDK and `ark-cli` compose operation in the test uses
+this file, so it shows the final state. No snapshots of earlier states are kept. If it is
+missing, the test failed before `prepare_test_env()` finished.
 
 ## SDK operation logging
 
-Every python-on-whales SDK call in `helpers/compose_client.py` emits a
-`[sdk]` log entry via `log_framework`:
+python-on-whales wrappers in `helpers/compose_client.py` log an `[sdk]` line before the call:
 
 | Function | Log format |
 |---|---|
@@ -188,63 +163,32 @@ Every python-on-whales SDK call in `helpers/compose_client.py` emits a
 | `compose_run` | `compose run <service>: <cmd>` |
 | `compose_stop` | `compose stop <service> (timeout=<n>s)` |
 | `compose_kill` | `compose kill <service> (signal=<sig>)` |
+| `container_start` | `compose start <service>` |
 
-This provides a trace of every Docker operation the test framework performs,
-even if the operation fails silently (e.g., missing compose project).
-
-## No stdout pollution
-
-Watcher and discovery-poll progress is written **only** through `log_framework`
-— it goes to `framework.log` and optionally to stderr controlled by
-`ARK_TEST_DEBUG`. There are no bare `print()` calls in any watcher or framework
-helper.
+Other SDK calls (e.g. `compose up` in `start_container_instance`, `compose down` in
+cleanup) are not logged as `[sdk]`.
 
 ## Troubleshooting
 
-### "compose.\<service\>.log is missing or empty"
+### `compose.<service>.log` missing or empty
 
-Possible causes:
-- The test never created a compose file with services (no containers were started).
-  Check if the compose file exists in the artifact directory.
-- The `log_streamer` fixture did not run. This only happens for tests outside
-  the ``tests/container/integration/`` or ``tests/app/ark_cli/integration/`` trees
-  that do not inherit the container integration conftest.
-- The streamer subprocess failed to start. Check ``framework.log`` for
-  ``[compose] started log streamer`` entries. If missing, the YAML service
-  discovery may have returned an empty list (check the compose file format).
-- The container exited before the streamer could capture output. In this case,
-  check ``docker.log`` for container exit state, and the per-service file
-  will have whatever output was captured before exit.
+- No compose services defined: check the `pytest-compose-*.yaml` in the test-node directory.
+- `log_streamer` did not run: the test is outside `tests/container/integration/` and
+  `tests/app/ark_cli/integration/`.
+- No container when the watcher started and none appeared before teardown: look for
+  `[compose] started watcher for <service>` in `framework.log`. A container that lives
+  less than 15s between discovery polls can be missed.
+- The container exited early: `docker.log` has the exit state; the log holds what was
+  captured before exit.
 
-### "framework.log is empty"
+### `framework.log` empty or missing
 
-Possible causes:
-- The `configure_test_artifacts` autouse fixture did not run. This only happens
-  for tests outside the `tests/` directory tree or tests that import their own
-  conftest without inheriting from `tests/conftest.py`.
-- The logger failed to open the file. Check permissions on the artifact
-  directory.
-
-### "I see duplicate poll messages in pytest output"
-
-The `print()` calls in `tests/helpers/infra.py` and
-`tests/helpers/compose_client.py` have been removed — poll loop output now
-flows only through `log_framework`. If you still see poll messages in stdout,
-they are coming from `sys.stderr` when `ARK_TEST_DEBUG=1` (default for slow
-tests). Set `ARK_TEST_DEBUG=0` to suppress stderr output.
-
-### "The compose file snapshot is missing the start state"
-
-The compose file (`pytest-compose-*.yaml`) is the single source of truth —
-it is the file the SDK reads for all compose operations. If it is missing,
-the test crashed before `prepare_test_env()` completed. No additional snapshot
-copies are maintained.
+- `configure_test_artifacts` did not run: the test is not under `tests/`.
+- The file could not be opened: check permissions on the artifact directory.
 
 ## Related documentation
 
-- [Logging architecture (CLI side)](../explanation/logging-architecture.md) —
-  how the ark-cli binary emits output (not test-framework specific)
-- [Test architecture](test-architecture.md) — integration test layers, fixture
-  reference, artifact directory layout
-- [Conventions](conventions.md#logging-and-cli-output) — coding rules for
-  logging discipline
+- [Logging architecture (CLI side)](../explanation/logging-architecture.md): ark-cli output channels
+- [Test architecture](test-architecture.md): test layers, fixture reference
+- [Run tests](../how-to/run-tests.md): running suites, artifact env vars
+- [Conventions](conventions.md#logging-and-cli-output): logging rules

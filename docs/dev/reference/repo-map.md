@@ -112,6 +112,19 @@ Commands use `docker-compose.yaml` in the current directory; override with
 - `container/scripts/runtime/ini_settings.py` — `update_config`: writes the
   RCON and password settings from the environment into `GameUserSettings.ini`
   on every start
+- `container/scripts/runtime/ini_history.py` — git history of `Game.ini` and
+  `GameUserSettings.ini` (`Saved/Config/WindowsServer/.git`): each writer
+  commits under its own author (`ARK server`, `instance env`, `ark-cli set ini`,
+  `ark-cli edit ini`, `outside ark-cli`, `unknown origin`); `origins` turns
+  `git blame` into a label per line. Commits come from the entrypoint (files as
+  found, the image default, the env settings), the start script (the server's
+  writes, after it exits) and `ark-ini.py` (`set`, `track`)
+- `container/scripts/runtime/ark-ini.py` — `get`/`set` for `Game.ini` and
+  `GameUserSettings.ini`; the CLI's only way into them (`show ini`, `get ini`,
+  `set ini`, `show instance`). `get` with `--section`/`--key` lists a key's lines
+  with their origin. `set` refuses while the server runs, refuses env-managed
+  keys, and refuses repeated keys unless `--replace-all`, listing each line's
+  origin. `track --by edit|outside` records `edit ini`'s changes
 - `container/scripts/runtime/_logging.py` — canonical container logging
   (`emit_event`, `emit_warning`, `emit_error`)
 - `container/scripts/installer/generate-default-ini.py` — image build only:

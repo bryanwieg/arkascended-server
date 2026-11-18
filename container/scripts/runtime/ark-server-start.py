@@ -13,9 +13,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ini_history
 from _logging import emit_error, emit_event, emit_warning
 from runtime_utils import (
     CRASH_LOG,
+    GAME_USER_SETTINGS,
     PYTHON,
     SCRIPTS_DIR,
     SERVER_BINARIES_DIR,
@@ -374,6 +376,25 @@ def _print_crash_log(crash_log: Path, server_status: int) -> None:
         sys.stdout.write("\n")
 
 
+def record_server_ini_write(server_status: int) -> None:
+    """Commit the INI files as ARK's if they changed during the run (ini_history).
+
+    The entrypoint committed them just before the server started, and ark-cli refuses to write
+    them while it runs, so whatever changed since is the server's own write (normally at shutdown).
+    """
+    try:
+        changed = ini_history.commit(
+            GAME_USER_SETTINGS.parent,
+            ini_history.ARK,
+            f"written by the server during its run (exit code {server_status})",
+        )
+    except (ini_history.HistoryError, OSError) as exc:
+        emit_warning("server", f"could not record the server's INI changes: {exc}")
+        return
+    if changed:
+        emit_event("server", "Recorded the server's changes to its INI files in their history.")
+
+
 def main() -> int:
     """Entry point: configure, launch, and monitor the ARK server process; return an exit code."""
     try:
@@ -398,6 +419,7 @@ def main() -> int:
 
     server_status = _run_server_loop(server_proc, SERVER_LOG, ctrl, cfg["force_poll_interval"])
     report_oom_kill(oom_before)
+    record_server_ini_write(server_status)
     _print_crash_log(CRASH_LOG, server_status)
     exit_code = _report_exit_status(server_status, STOP_STATUS_FILE, SERVER_LOG)
     # Popen reports signal deaths as -N; use the shell convention 128+N instead of letting it wrap to 256-N.

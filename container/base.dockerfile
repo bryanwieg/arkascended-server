@@ -59,6 +59,7 @@ RUN set -eux; \
     locales \
     btop \
     zstd \
+    git \
     nano; \
     rm -rf /var/lib/apt/lists/*
 

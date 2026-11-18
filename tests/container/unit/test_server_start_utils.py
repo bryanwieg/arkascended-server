@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import types
 from pathlib import Path
 
 import pytest
@@ -241,3 +242,60 @@ def test_report_oom_kill_only_when_counter_rose(
     monkeypatch.setattr(start_mod, "read_oom_kill_count", lambda: after)
     start_mod.report_oom_kill(before)
     assert ("OOM killer" in capsys.readouterr().err) is reported
+
+
+# ---------------------------------------------------------------------------
+# main(): recording GameUserSettings.ini as ARK wrote it
+# ---------------------------------------------------------------------------
+
+
+def test_main_commits_the_servers_ini_changes(start_mod, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """After the server exits, main() commits the INI changes made during the run as ARK's."""
+    import ini_history
+
+    gus = tmp_path / "GameUserSettings.ini"
+    gus.write_text("[ServerSettings]\nA=1\n")
+    ini_history.commit(tmp_path, ini_history.ENV, "RCON and password settings from the environment")
+
+    def launch(*_a, **_k):
+        gus.write_text("[ServerSettings]\nA=2\n")  # the server's own write
+        return object()
+
+    class _Ctrl:
+        def __init__(self, *_a) -> None:
+            pass
+
+        def setup_signals(self) -> None:
+            pass
+
+    monkeypatch.setattr(start_mod, "GAME_USER_SETTINGS", gus)
+    monkeypatch.setattr(start_mod, "server_command", lambda *_a: ["server"])
+    monkeypatch.setattr(start_mod, "rotate_runtime_logs", lambda *_a: None)
+    monkeypatch.setattr(start_mod, "_clear_stale_stop_file", lambda *_a: None)
+    monkeypatch.setattr(start_mod, "read_oom_kill_count", lambda: 0)
+    monkeypatch.setattr(start_mod, "report_oom_kill", lambda *_a: None)
+    monkeypatch.setattr(start_mod, "_ShutdownController", _Ctrl)
+    monkeypatch.setattr(start_mod, "_run_server_loop", lambda *_a: 0)
+    monkeypatch.setattr(start_mod, "_print_crash_log", lambda *_a: None)
+    monkeypatch.setattr(start_mod, "_report_exit_status", lambda *_a: 0)
+    # Only the start script's subprocess: git (ini_history) still needs the real one.
+    monkeypatch.setattr(start_mod, "subprocess", types.SimpleNamespace(Popen=launch))
+
+    assert start_mod.main() == 0
+    assert ini_history._git(tmp_path, "log", "--format=%an: %s").splitlines() == [
+        "ARK server: written by the server during its run (exit code 0)",
+        "instance env: RCON and password settings from the environment",
+    ]
+    assert ini_history._git(tmp_path, "show", "HEAD:GameUserSettings.ini") == "[ServerSettings]\nA=2\n"
+
+
+def test_record_server_ini_write_failure_only_warns(
+    start_mod, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys
+) -> None:
+    gus = tmp_path / "GameUserSettings.ini"
+    gus.write_text("[ServerSettings]\nA=1\n")
+    monkeypatch.setattr(start_mod, "GAME_USER_SETTINGS", gus)
+    monkeypatch.setattr("_logging._mirror_to_pid1", lambda *_a, **_k: None)
+    monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))  # no git
+    start_mod.record_server_ini_write(0)
+    assert "[server] Warning: could not record the server's INI changes: git" in capsys.readouterr().err

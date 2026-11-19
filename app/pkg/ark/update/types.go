@@ -14,8 +14,8 @@ type PlanRow struct {
 	Instance       string
 	CurrentImage   string
 	CurrentVersion string
-	TargetImage    string
-	TargetVersion  string
+	TargetBuildID  string // Steam's current build
+	TargetVersion  string // known only once that build's image exists
 	Action         UpdateAction
 	Message        string
 }
@@ -24,7 +24,6 @@ type PlanRow struct {
 type LocalCheckResult struct {
 	Image           string
 	CurrentVersion  string
-	LatestVersion   string
 	CurrentBuildID  string
 	LatestBuildID   string
 	UpdateAvailable bool

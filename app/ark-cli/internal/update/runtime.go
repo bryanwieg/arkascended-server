@@ -38,7 +38,20 @@ func resolveUpdateTargetServices(project *types.Project, target string) ([]strin
 }
 
 // plannedUpdate switches an instance from one image to another.
-type plannedUpdate struct{ Instance, From, To string }
+type plannedUpdate struct {
+	Instance, From, To string
+	FromVersion        string // ARK version of From; empty when its label is missing
+	ToVersion, BuildID string // filled in once the image is built
+}
+
+// summary is "<instance>: <current version> -> <new version> (build <id>)".
+func (u plannedUpdate) summary() string {
+	from := u.FromVersion
+	if from == "" {
+		from = u.From
+	}
+	return fmt.Sprintf("%s: %s -> %s (build %s)", u.Instance, from, runtime.FallbackDash(u.ToVersion), u.BuildID)
+}
 
 // planAndApplyImageUpdates checks each service against Steam and, unless
 // req.CheckOnly, builds the new image once for every service that needs it.
@@ -63,7 +76,7 @@ func planAndApplyImageUpdates(
 		}
 		rows = append(rows, row)
 		if !req.CheckOnly && row.Action == update.ActionUpdate {
-			pending = append(pending, plannedUpdate{Instance: serviceName, From: svc.Image})
+			pending = append(pending, plannedUpdate{Instance: serviceName, From: svc.Image, FromVersion: row.CurrentVersion})
 		}
 	}
 	if len(pending) == 0 {
@@ -78,9 +91,16 @@ func planAndApplyImageUpdates(
 		}
 		return nil, nil, err
 	}
+	// The ARK version is only known from the built image's labels.
+	for i := range rows {
+		if rows[i].Action == update.ActionUpdate {
+			rows[i].TargetVersion = built.Version
+		}
+	}
 	updates := make([]plannedUpdate, len(pending))
 	for i, u := range pending {
-		updates[i] = plannedUpdate{Instance: u.Instance, From: u.From, To: built.Image}
+		u.To, u.ToVersion, u.BuildID = built.Image, built.Version, built.BuildID
+		updates[i] = u
 	}
 	sort.Slice(updates, func(i, j int) bool { return updates[i].Instance < updates[j].Instance })
 	return rows, updates, nil
@@ -166,8 +186,8 @@ func printImageUpdateTable(rows []update.PlanRow) {
 			current = runtime.FallbackDash(row.CurrentImage)
 		}
 		target := runtime.FallbackDash(row.TargetVersion)
-		if target == "-" {
-			target = runtime.FallbackDash(row.TargetImage)
+		if target == "-" && row.TargetBuildID != "" {
+			target = "build " + row.TargetBuildID // --check: the version is unknown until the image is built
 		}
 		core.Infof("%s | %s | %s | %s | %s\n", row.Instance, current, target, row.Action, runtime.FallbackDash(row.Message))
 	}

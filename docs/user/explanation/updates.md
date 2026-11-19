@@ -33,8 +33,12 @@ with Steam's current public build, and its `io.ark.recipe` label with the
 recipe embedded in this `ark-cli`. Either difference is an update. Images built
 before recipe labels existed count as a recipe change once.
 
-1. `--check` only prints the comparison table.
-2. Without `--rollout` (same as `--restart`), it builds the new image and
+1. `--check` only prints the comparison table. Its `target` column shows
+   Steam's build (`build <id>`): the ARK version is only known from the built
+   image's `io.ark.server.version` label.
+2. Without `--rollout` (same as `--restart`), it builds the new image, prints
+   the table with the new version and one line per instance,
+   `<instance>: <current version> -> <new version> (build <id>)`, and
    leaves compose unchanged. It prints
    `Built ark-server:<id>. Switch with: ark-cli update instance --instance <name> --rollout`.
 3. With `--rollout`, for each instance in name order: stop (the stop saves the

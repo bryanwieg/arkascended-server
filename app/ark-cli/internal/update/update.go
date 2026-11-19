@@ -85,6 +85,9 @@ func runUpdateCommand(req UpdateCommandRequest) error {
 		return err
 	}
 	printImageUpdateTable(rows)
+	for _, u := range updates {
+		core.Infof("%s\n", u.summary())
+	}
 
 	if req.CheckOnly {
 		return nil

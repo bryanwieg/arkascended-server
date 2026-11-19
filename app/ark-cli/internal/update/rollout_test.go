@@ -41,7 +41,10 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 			ImageExistsFn: func(context.Context, string) (bool, error) { return true, nil },
 			ImageLabelsFn: func(_ context.Context, image string) (map[string]string, error) {
 				buildID, _, _ := strings.Cut(strings.TrimPrefix(image, "ark-server:"), "-")
-				return map[string]string{"io.ark.server.build_id": buildID, "io.ark.recipe": arkcontainer.RecipeID()}, nil
+				versions := map[string]string{"100": "98.6", "200": "98.9"}
+				return map[string]string{
+					"io.ark.server.build_id": buildID, "io.ark.server.version": versions[buildID], "io.ark.recipe": arkcontainer.RecipeID(),
+				}, nil
 			},
 		}
 		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
@@ -84,6 +87,19 @@ func TestRunUpdateLocalWithoutRolloutOnlyBuilds(t *testing.T) {
 	}
 	if !strings.Contains(compose, "image: ark-server:100") || len(calls) != 0 {
 		t.Fatalf("compose must stay on ark-server:100 with no restarts, got calls %v:\n%s", calls, compose)
+	}
+}
+
+func TestRunUpdateReportsVersionsAfterBuild(t *testing.T) {
+	out := captureStdout(t, func() {
+		if _, _, _, err := runLocalUpdate(t, nil, false); err != nil {
+			t.Fatal(err)
+		}
+	})
+	for _, want := range []string{"asa1 | 98.6 | 98.9 | update |", "asa1: 98.6 -> 98.9 (build 200)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output:\n%s", want, out)
+		}
 	}
 }
 

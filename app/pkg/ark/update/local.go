@@ -53,8 +53,7 @@ func PlanLocalUpdate(instance, image string, check LocalCheckResult) PlanRow {
 		Instance:       instance,
 		CurrentImage:   image,
 		CurrentVersion: check.CurrentVersion,
-		TargetImage:    image,
-		TargetVersion:  check.LatestVersion,
+		TargetBuildID:  check.LatestBuildID,
 		Action:         ActionSkip,
 		Message:        check.Message,
 	}

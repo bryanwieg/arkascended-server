@@ -171,11 +171,9 @@ func TestRunUpdateCheckLocalImageReportsUpdateViaSteamAPI(t *testing.T) {
 				t.Fatalf("runUpdate: %v", err)
 			}
 		})
-		if !strings.Contains(out, "asa1 | 81.1 |") {
-			t.Fatalf("expected an asa1 row in output:\n%s", out)
-		}
-		if !strings.Contains(out, "update") {
-			t.Fatalf("expected update action in output:\n%s", out)
+		// The target is Steam's build: its ARK version is unknown until the image is built.
+		if !strings.Contains(out, "asa1 | 81.1 | build 200 | update |") {
+			t.Fatalf("expected an asa1 update row targeting build 200:\n%s", out)
 		}
 	})
 }

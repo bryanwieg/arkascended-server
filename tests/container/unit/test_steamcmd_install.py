@@ -31,9 +31,10 @@ run = runs.pop(0)
 state.write_text(json.dumps(runs))
 depots = Path(os.environ["HOME"]) / ".local/share/Steam/depotcache"
 seen = sorted(p.name for p in depots.iterdir()) if depots.is_dir() else []
-with open(os.environ["FAKE_STEAMCMD_CALLS"], "a") as calls:
-    calls.write(json.dumps({"args": sys.argv[1:], "depots": seen}) + "\n")
 install_dir = Path(sys.argv[sys.argv.index("+force_install_dir") + 1])
+manifest = (install_dir / "steamapps/appmanifest_2430930.acf").is_file()
+with open(os.environ["FAKE_STEAMCMD_CALLS"], "a") as calls:
+    calls.write(json.dumps({"args": sys.argv[1:], "depots": seen, "manifest": manifest}) + "\n")
 if run.get("depot"):
     depots.mkdir(parents=True, exist_ok=True)
     (depots / run["depot"]).write_text("manifest")
@@ -91,12 +92,47 @@ def test_build_id_mismatch_fails_with_reason(tmp_path: Path) -> None:
     assert (tmp_path / "failure").read_text().strip() == reason
 
 
+def installed(tmp_path: Path, build_id: str) -> Path:
+    """Lay down an installed build's app manifest; return its path."""
+    manifest = tmp_path / "server" / MANIFEST
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(f'"AppState"\n{{\n\t"buildid"\t\t"{build_id}"\n}}\n')
+    return manifest
+
+
 def test_state_failure_names_the_state_in_one_line(tmp_path: Path) -> None:
-    result, _ = run_install(tmp_path, [{"exit": 8, "output": STATE_0X6}])
+    """A fresh install (no app manifest) has nothing to fall back from."""
+    result, calls = run_install(tmp_path, [{"exit": 8, "output": STATE_0X6}])
     assert result.returncode == 1
+    assert len(calls) == 1
     assert (tmp_path / "failure").read_text() == "SteamCMD download failed: state is 0x6\n"
     # SteamCMD's output is shown once (tee), not repeated on stderr.
     assert STATE_0X6 not in result.stderr
+
+
+def test_state_0x6_falls_back_to_validate_without_the_app_manifest(tmp_path: Path) -> None:
+    manifest = installed(tmp_path, "100")
+    runs = [{"exit": 8, "output": STATE_0X6}, {"build_id": "200"}]
+    result, calls = run_install(tmp_path, runs, ARK_STEAM_BUILD_ID="200")
+    assert result.returncode == 0, result.stderr
+    assert [c["manifest"] for c in calls] == [True, False]
+    assert all("validate" in c["args"] for c in calls)
+    assert "Warning: SteamCMD could not update from the installed build (state 0x6" in result.stderr
+    assert '"200"' in manifest.read_text()
+    assert not manifest.with_name(manifest.name + ".before-fallback").exists()
+
+
+def test_state_0x6_fallback_failing_restores_the_app_manifest(tmp_path: Path) -> None:
+    manifest = installed(tmp_path, "100")
+    before = manifest.read_text()
+    runs = [{"exit": 8, "output": STATE_0X6}, {"exit": 8, "output": STATE_0X6}]
+    result, calls = run_install(tmp_path, runs)
+    assert result.returncode == 1
+    assert len(calls) == 2  # the fallback runs once
+    assert manifest.read_text() == before
+    assert not manifest.with_name(manifest.name + ".before-fallback").exists()
+    reason = "SteamCMD download failed: state is 0x6 (also after the validate fallback)\n"
+    assert (tmp_path / "failure").read_text() == reason
 
 
 def test_unknown_failure_reports_the_exit_code(tmp_path: Path) -> None:

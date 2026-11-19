@@ -80,7 +80,7 @@ Not listed? Open the game port (UDP) in the firewall, then run
 ark-cli stop instance --instance my-server
 ```
 
-Saves the world, then exits. Default grace period 15 minutes (`--timeout`).
+Saves the world, then exits. Default grace period 20 minutes (`--timeout`).
 `--kill` stops immediately without saving.
 
 ## Next

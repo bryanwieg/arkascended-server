@@ -10,7 +10,6 @@ import (
 const (
 	DefaultStartReadyWaitTimeout  = 5 * time.Minute
 	defaultStartReadyWaitInterval = 2 * time.Second
-	DefaultStopTimeoutSeconds     = 900
 )
 
 type startCommandRequest = runtime.StartCommandRequest

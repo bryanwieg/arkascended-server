@@ -43,8 +43,8 @@ before recipe labels existed count as a recipe change once.
    `Built ark-server:<id>. Switch with: ark-cli update instance --instance <name> --rollout`.
 3. With `--rollout`, for each instance in name order: stop (the stop saves the
    world), create a `pre-update` backup, switch compose to the new tag, then
-   start and wait until ready. With `SHUTDOWN_WARNING_MINUTES` set, players
-   online get a countdown naming the update (`updating to 98.9`); see
+   start and wait until ready. Players online get a countdown
+   (`SHUTDOWN_WARNING_MINUTES`, default 5) naming the update (`updating to 98.9`); see
    [Configuration](../reference/configuration.md). Each step prints one line
    (`asa1: stopping …`, `asa1: backup saved to …`, `asa1: ready`), without `-v`.
 

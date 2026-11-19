@@ -155,8 +155,8 @@ func TestRunStopUsesComposeStop(t *testing.T) {
 	if len(gotServices) != 1 || gotServices[0] != "a" {
 		t.Fatalf("expected Stop called for service 'a', got %v", gotServices)
 	}
-	if gotTimeout == nil || *gotTimeout != 900*time.Second {
-		t.Fatalf("expected default timeout 900s, got %v", gotTimeout)
+	if gotTimeout == nil || *gotTimeout != 1200*time.Second {
+		t.Fatalf("expected default timeout 1200s, got %v", gotTimeout)
 	}
 }
 

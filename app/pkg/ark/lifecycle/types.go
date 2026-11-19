@@ -12,7 +12,7 @@ const (
 	DefaultStartWaitInterval = 2 * time.Second
 
 	// DefaultStopTimeout is the default graceful shutdown timeout.
-	DefaultStopTimeout = 15 * time.Minute
+	DefaultStopTimeout = 20 * time.Minute
 )
 
 // StartRequest describes a start operation.

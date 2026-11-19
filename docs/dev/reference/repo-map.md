@@ -97,7 +97,7 @@ Commands use `docker-compose.yaml` in the current directory; override with
 - `container/scripts/runtime/ark-server-start.py` — server process manager;
   starts via GE-Proton, tails logs, handles SIGTERM
 - `container/scripts/runtime/ark-server-stop.py` — graceful shutdown via RCON:
-  countdown (if `SHUTDOWN_WARNING_MINUTES` > 0 and players are online) → saveworld with retries → DoExit
+  countdown (`SHUTDOWN_WARNING_MINUTES`, default 5, while players are online) → saveworld with retries → DoExit
 - `container/scripts/runtime/ark-stop-reason.py` — records why the next stop happens
   (`update instance` runs it before stopping) for the countdown's warnings
 - `container/scripts/runtime/ark-backup.py` — backup entry point (tar/tar.gz/tar.zst);

@@ -347,7 +347,7 @@ def _load_server_config() -> dict:
     return {
         # The stop script sleeps through the player warning before saving, so the warning must not eat its budget.
         "graceful_stop_script_timeout": env_int("GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS", 600)
-        + env_int("SHUTDOWN_WARNING_MINUTES", 0, minimum=0) * 60,
+        + env_int("SHUTDOWN_WARNING_MINUTES", 5, minimum=0) * 60,
         "graceful_stop_wait": env_int("GRACEFUL_STOP_WAIT_SECONDS", 180),
         "force_term_wait": env_int("FORCE_TERM_WAIT_SECONDS", 20),
         "force_poll_interval": env_int("FORCE_STOP_POLL_SECONDS", 1),

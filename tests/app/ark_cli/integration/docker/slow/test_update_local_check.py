@@ -10,7 +10,7 @@ from helpers.infra import image_label, relabel_image
 if TYPE_CHECKING:
     from python_on_whales import DockerClient
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.real_server]
 
 
 def test_update_check_local_against_real_steam_api(

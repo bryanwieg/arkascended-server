@@ -3,6 +3,8 @@
 Started by the fake proton as `proton run ./ArkAscendedServer.exe <url> ... -servergamelog`, so
 its command line contains ArkAscendedServer.exe and the scripts treat it as the server process.
 
+- Keeps a world save, SavedArks/<map>/<map>.ark, as a real SQLite file (ARK's format), written
+  at startup and on every saveworld, so backup's archive and quick_check validation see a save.
 - Writes ShooterGame.log with the markers the CLI and scripts wait for (started, advertising,
   World Save Complete, Log file closed).
 - Serves RCON on 27020 with the ServerAdminPassword from GameUserSettings.ini, as ARK does:
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sqlite3
 import struct
 import sys
 import threading
@@ -39,6 +42,18 @@ def log(message: str) -> None:
     stamp = datetime.now(UTC).strftime("%Y.%m.%d-%H.%M.%S:%f")[:-3]
     with _log_lock, LOG.open("a", encoding="utf-8") as f:
         f.write(f"[{stamp}][  0]{message}\n")
+
+
+def save_world() -> None:
+    """Write the world save, as ARK does on saveworld and when a new map starts."""
+    url = next((a for a in sys.argv[1:] if "?listen" in a), "TheIsland_WP?listen")
+    map_name = url.split("?", 1)[0]
+    save = SAVED / "SavedArks" / map_name / f"{map_name}.ark"
+    save.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(save) as db:
+        db.execute("CREATE TABLE IF NOT EXISTS custom (key TEXT PRIMARY KEY, value TEXT)")
+        db.execute("INSERT OR REPLACE INTO custom VALUES ('saved_at', ?)", (datetime.now(UTC).isoformat(),))
+    db.close()
 
 
 def admin_password() -> str:
@@ -90,6 +105,7 @@ def read_packet(conn: socket.socket) -> tuple[int, int, str] | None:
 def run_command(command: str) -> str:
     name = command.split(" ", 1)[0].lower()
     if name == "saveworld":
+        save_world()
         log("World Save Complete")
         return "World Saved"
     if name == "listplayers":
@@ -124,6 +140,7 @@ def serve_rcon() -> None:
 def main() -> int:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     log(f"Fake ARK server, args: {' '.join(sys.argv[1:])}")
+    save_world()
     threading.Thread(target=serve_rcon, daemon=True).start()
     log("Server: 'FakeMap' has successfully started!")
     time.sleep(float(os.environ.get("FAKE_ARK_READY_DELAY", "1")))

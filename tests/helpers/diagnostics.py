@@ -12,9 +12,11 @@ from helpers.compose import (
     enable_no_battleye,
     enable_skip_ram_check,
     inject_test_suite_label,
+    use_lite_image,
 )
 from helpers.compose_client import compose_logs
 from helpers.framework_logger import log_framework
+from helpers.lite_image import LITE_IMAGE_PREFIX
 
 if TYPE_CHECKING:
     from python_on_whales import DockerClient
@@ -257,6 +259,8 @@ def run_with_compose_patch(
         disable_restart_policy(compose_path)
         enable_no_battleye(compose_path)
         enable_skip_ram_check(compose_path)
+        if env.get("ARK_TEST_IMAGE", "").startswith(LITE_IMAGE_PREFIX):
+            use_lite_image(compose_path, env["ARK_TEST_IMAGE"])
     return result
 
 

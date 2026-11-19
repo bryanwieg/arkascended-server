@@ -111,6 +111,15 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     elif retention > 0:
         prune_test_artifacts(root, retention=retention)
 
+    # Lite mode: tests that check the real ARK server can't run on the fake one.
+    from helpers.lite_image import lite_mode
+
+    if lite_mode():
+        skip_real = pytest.mark.skip(reason="needs the real ARK server (ARK_TEST_LITE is set)")
+        for item in items:
+            if item.get_closest_marker("real_server"):
+                item.add_marker(skip_real)
+
     # Apply extended timeout to all slow tests (involving a running ARK server).
     # This centralizes timeout management instead of requiring @pytest.mark.timeout()
     # on every slow test file.

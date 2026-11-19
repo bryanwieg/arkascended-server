@@ -184,6 +184,11 @@ def parse_args() -> argparse.Namespace:
         help="Python interpreter used for pytest. Defaults to TEST_BATCH_PYTHON or ./.venv/bin/python.",
     )
     parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Run container tests on the lite image (fake ARK server, no ARK download); skips real_server tests.",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="List the selected batches without running them.",
@@ -248,6 +253,8 @@ def main() -> int:
             "ARK_TEST_RUN_DIR": str(suite_dir),
             "ARK_TEST_BATCH_LABEL": batch.label,
         }
+        if args.lite:
+            batch_env["ARK_TEST_LITE"] = "1"
         status, duration = run_batch(
             index, total, batch, args.python_bin, ("-q",), extra_pytest_args, REPO_ROOT, batch_env
         )

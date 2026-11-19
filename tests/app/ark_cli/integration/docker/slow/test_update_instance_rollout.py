@@ -12,7 +12,7 @@ from helpers.infra import image_label
 if TYPE_CHECKING:
     from python_on_whales import DockerClient
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.real_server]
 
 
 def test_manage_update_instance_rollout(

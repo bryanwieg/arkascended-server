@@ -109,6 +109,17 @@ def enable_skip_ram_check(compose_path: Path) -> None:
     compose_path.write_text(updated_text, encoding="utf-8")
 
 
+def use_lite_image(compose_path: Path, image: str) -> None:
+    """Point services that `create instance` gave ark-server:latest at the lite image.
+
+    Only for lite tests (see helpers.lite_image): ark-cli always writes ark-server:latest, and
+    retagging the lite image as latest would overwrite a real ARK image on the host.
+    """
+    compose_text = compose_path.read_text(encoding="utf-8")
+    updated_text = re.sub(r"^(\s+image:\s+)ark-server:latest\s*$", rf"\g<1>{image}", compose_text, flags=re.MULTILINE)
+    compose_path.write_text(updated_text, encoding="utf-8")
+
+
 def disable_restart_policy(compose_path: Path) -> None:
     compose_text = compose_path.read_text(encoding="utf-8")
     log_framework("compose", "disabling restart policy in %s", compose_path)

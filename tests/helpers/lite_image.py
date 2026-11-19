@@ -4,6 +4,10 @@ Tests that don't need the real server mark themselves `@pytest.mark.lite`; the `
 fixtures then point ARK_TEST_IMAGE at this image, so the usual helpers (container_instance_config,
 started_container_instance, start_container_instance) run against it unchanged.
 
+Lite mode (ARK_TEST_LITE=1, `run-tests.py --lite`) runs every container test on this image, so
+the slow suites exercise the scripts and the CLI without an ARK download; tests marked
+`real_server` (they check ARK itself) are skipped in that mode.
+
 The image is tagged with a hash of its inputs, so it is built once and rebuilt only when the
 runtime scripts or tests/fixtures/lite_image change.
 """
@@ -18,6 +22,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+LITE_IMAGE_PREFIX = "ark-server:lite-"
 FIXTURE_DIR = REPO_ROOT / "tests/fixtures/lite_image"
 RUNTIME_DIR = REPO_ROOT / "container/scripts/runtime"
 
@@ -40,7 +45,7 @@ def lite_image_tag() -> str:
     digest = hashlib.sha256()
     for name, path in sorted(_context_files().items()):
         digest.update(name.encode() + b"\0" + path.read_bytes() + b"\0")
-    return f"ark-server:lite-{digest.hexdigest()[:12]}"
+    return f"{LITE_IMAGE_PREFIX}{digest.hexdigest()[:12]}"
 
 
 def ensure_lite_image() -> str:
@@ -63,6 +68,18 @@ def ensure_lite_image() -> str:
     return tag
 
 
+def lite_mode() -> bool:
+    """True when ARK_TEST_LITE asks for every container test to run on the lite image."""
+    return os.environ.get("ARK_TEST_LITE", "").strip().lower() in {"1", "true", "yes"}
+
+
+def uses_lite_image(item: pytest.Item) -> bool:
+    """Whether a test runs on the lite image: marked `lite`, or lite mode and not `real_server`."""
+    if item.get_closest_marker("lite"):
+        return True
+    return lite_mode() and not item.get_closest_marker("real_server")
+
+
 def image_for_test(request: pytest.FixtureRequest) -> str | None:
-    """The lite image for a test marked `lite`, else None (the configured ARK image)."""
-    return ensure_lite_image() if request.node.get_closest_marker("lite") else None
+    """The lite image for a test that uses it, else None (the configured ARK image)."""
+    return ensure_lite_image() if uses_lite_image(request.node) else None

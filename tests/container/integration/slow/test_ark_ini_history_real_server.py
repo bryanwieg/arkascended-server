@@ -10,7 +10,7 @@ from helpers.compose_client import compose_exec, compose_run, compose_stop
 if TYPE_CHECKING:
     from python_on_whales import DockerClient
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.real_server]
 
 _CONFIG = "/home/ark-user/ark-server/ShooterGame/Saved/Config/WindowsServer"
 

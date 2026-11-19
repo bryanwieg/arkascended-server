@@ -3,10 +3,10 @@
 # Built by tests/helpers/lite_image.py from a staged context; see docs/dev/reference/test-architecture.md.
 FROM python:3.14-slim
 
-# As in the real image: git (the INI history).
+# As in the real image: zstd (backup and restore run tar --zstd), git (the INI history).
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends git; \
+    apt-get install -y --no-install-recommends zstd git; \
     rm -rf /var/lib/apt/lists/*; \
     groupadd -g 3000 ark-user; \
     useradd -l -m -d /home/ark-user -s /bin/bash -u 3000 -g 3000 ark-user; \

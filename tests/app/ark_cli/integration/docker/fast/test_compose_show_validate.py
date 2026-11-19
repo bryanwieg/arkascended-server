@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.lite]
 
 
 def test_show_compose_after_create(

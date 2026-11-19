@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from helpers.compose import asa_port_from_compose
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.lite]
 
 
 def _assert_new_scheme_consistent(compose_path: Path, expected_port: str) -> None:

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from python_on_whales import DockerClient
 from helpers.infra import wait_for as framework_wait_for
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.lite]
 
 
 def test_per_service_log_streaming(

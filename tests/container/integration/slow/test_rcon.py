@@ -8,7 +8,7 @@ from python_on_whales.exceptions import DockerException
 if TYPE_CHECKING:
     from python_on_whales import DockerClient
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.real_server]
 
 ARK_RCON = ["/usr/bin/python3.14", "/home/ark-user/scripts/runtime/ark-rcon.py"]
 

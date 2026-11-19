@@ -20,9 +20,9 @@ How to run tests: [Run tests](../how-to/run-tests.md). Log files and diagnostics
 | Domain service (Go) | `app/pkg/ark/*_test.go`, `app/pkg/ark/*/*_test.go` | Domain services against interface mocks; no runtime |
 | Backend conformance (Go) | `app/pkg/ark/conformance/` (suite), `app/pkg/ark/sdkbackend_test/` (runner) | Same suite against Docker and rootless Podman; `integration` build tag |
 
-Markers (`pytest.ini`): `unit`, `container`, `podman`, `fast`, `slow`, `sdk_backend`, `lite`.
-Only `unit`, `container`, `podman` and `lite` are applied; fast/slow behavior follows the
-directory.
+Markers (`pytest.ini`): `unit`, `container`, `podman`, `fast`, `slow`, `sdk_backend`, `lite`,
+`real_server`. Only `unit`, `container`, `podman`, `lite` and `real_server` are applied;
+fast/slow behavior follows the directory.
 
 ### Fast vs slow tests
 
@@ -61,6 +61,28 @@ twice). So start, readiness, graceful stop and `--restart` flows take seconds. *
 image is too big to build per PR; behaviour that depends on the real server (what ARK actually
 writes, saves, mods) still needs a `slow` test, e.g. `test_ark_ini_history_real_server.py`
 checks the fake's shutdown-write assumption against ARK.
+
+**Lite mode** runs the whole container and CLI integration suite this way, fast and slow, with
+no test duplicated: `ARK_TEST_LITE=1` (or `python run-tests.py --lite --suite slow`) points every
+container test at the lite image, except tests marked `real_server`, which are skipped. Mark a
+test `real_server` when what it checks is ARK itself, not our scripts or CLI: ARK's RCON replies
+(`test_rcon`), what ARK writes (`test_ark_ini_history_real_server`), building or updating the ARK
+image (`test_build_container_image`, `test_update_*`), Podman running ARK. Everything else must
+pass in both modes; if a test needs more of the server than the fake gives, extend
+`fake_ark_server.py` rather than marking it. Default mode (no `ARK_TEST_LITE`) is unchanged:
+`slow` tests run on the real image.
+
+Rules:
+
+- **Fast tests are `lite`** unless they check ARK itself (`fast/test_update_local_check.py`
+  reads the real image's build labels, so it is `real_server`). That way a fast run never needs
+  the ARK image, including tests that start no container at all.
+- **`create instance` in a lite test** still writes `ark-server:latest`; `run_cmd` points the new
+  service at the lite image afterwards (`helpers.compose.use_lite_image`). Never tag the lite
+  image as `ark-server:latest`: that replaces a real ARK image on the host.
+- **Don't assume a slow start.** The lite image starts in about a second, which exposes waits
+  that only held because ARK is slow (e.g. stopping as soon as the container is "running",
+  before the server manager has its signal handler).
 
 PR CI runs `pytest -m lite tests/container/integration tests/app/ark_cli/integration/docker`
 (`image.yml`). Name `docker/`, not the whole `integration/` tree: `podman/conftest.py` switches
@@ -213,6 +235,7 @@ Packages and the commands they register (`app/ark-cli/internal/cmd/registry_entr
 |---|---|
 | `ARK_START_WAIT_TIMEOUT` | CLI start readiness timeout (e.g. `15m`) on loaded hosts |
 | `ARK_TEST_IMAGE` | Image for integration tests (default `ark-server:latest`); built if missing |
+| `ARK_TEST_LITE` | `1`: [lite mode](#lite-image-no-ark-server), every container test on the lite image; `real_server` tests skip |
 | `ARK_CONTAINER_RUNTIME` | `docker` (default) or `podman`; the `docker/` and `podman/` conftests force their own value |
 | `ARK_TEST_STARTUP_LOG_TIMEOUT` | Seconds to wait for the server startup log line (default `300`) |
 | `ARK_TEST_RCON_TIMEOUT` | Seconds to wait for RCON after startup (default `300`) |

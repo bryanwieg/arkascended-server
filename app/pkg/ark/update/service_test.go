@@ -328,6 +328,41 @@ func TestBuildLocalImageStage1Failure(t *testing.T) {
 	}
 }
 
+// TestBuildLocalImageReportsDownloadFailureReason: a failed download reports download.sh's
+// one-line reason, and a reason left by an earlier run is never reported.
+func TestBuildLocalImageReportsDownloadFailureReason(t *testing.T) {
+	for _, tc := range []struct {
+		name, writes, want string
+	}{
+		{"reason written", "SteamCMD download failed: state is 0x6\n", "server files build failed: SteamCMD download failed: state is 0x6"},
+		{"no reason", "", "server files build failed: exit code 8"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stateDir := t.TempDir()
+			failure := filepath.Join(stateDir, "build", "work", "failure")
+			if err := os.MkdirAll(filepath.Dir(failure), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(failure, []byte("stale reason from an earlier run"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			s := newBuildRig().service()
+			s.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) {
+				if tc.writes != "" {
+					if err := os.WriteFile(failure, []byte(tc.writes), 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return ark.ExecResult{ExitCode: 8}, nil
+			}
+			_, err := s.BuildLocalImage(context.Background(), stateDir)
+			if err == nil || !strings.HasSuffix(err.Error(), tc.want) {
+				t.Fatalf("got %v, want ...%q", err, tc.want)
+			}
+		})
+	}
+}
+
 // --- PlanLocalUpdate tests ---
 
 func TestPlanLocalUpdateAvailable(t *testing.T) {

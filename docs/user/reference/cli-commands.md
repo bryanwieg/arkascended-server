@@ -181,10 +181,12 @@ shows the new ARK version and each instance gets a line
 | `--compose-file` | | |
 
 Rollout, per instance in name order: stop (save), `pre-update` backup, switch
-compose tag, start, wait for ready. On failure: switch compose back, restore the
-pre-update backup, start the old image, print
+compose tag, start, wait for ready; each step prints a line. On failure: switch
+compose back, restore the pre-update backup, start the old image, print
 `Update of <name> to <new> failed; rolled back to <old>: <reason>`, skip the
-remaining instances, exit 1. A failed build changes nothing.
+remaining instances, exit 1. A failed build changes nothing: its error names the
+cause (e.g. `SteamCMD download failed: state is 0x6`) and ends with
+`no instances were changed`.
 
 ### remove instance
 

@@ -104,12 +104,38 @@ func TestRunUpdateReportsVersionsAfterBuild(t *testing.T) {
 	}
 }
 
+// assertInOrder fails unless each want appears in out after the previous one.
+func assertInOrder(t *testing.T, out string, want ...string) {
+	t.Helper()
+	rest := out
+	for _, w := range want {
+		i := strings.Index(rest, w)
+		if i < 0 {
+			t.Fatalf("missing %q (in this order) in output:\n%s", w, out)
+		}
+		rest = rest[i+len(w):]
+	}
+}
+
 func TestRunUpdateLocalRolloutSwitchesImage(t *testing.T) {
 	restored := fakeBackups(t)
-	compose, calls, attempt, err := runLocalUpdate(t, []string{"--rollout"}, false)
+	var compose string
+	var calls []string
+	var attempt *update.UpdateAttempt
+	var err error
+	out := captureStdout(t, func() { compose, calls, attempt, err = runLocalUpdate(t, []string{"--rollout"}, false) })
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertInOrder(t, out,
+		"Image "+newImage+" (ARK 98.9) already exists",
+		"Updating asa1: 98.6 -> 98.9 (build 200)",
+		"asa1: stopping (the stop saves the world)",
+		"asa1: backup saved to /backups/pre-update.tar.gz",
+		"asa1: switching compose to "+newImage,
+		"asa1: starting and waiting until ready",
+		"asa1: ready",
+		"asa1: updated to 98.9")
 	if attempt == nil || attempt.Result != update.ResultSucceeded {
 		t.Fatalf("recorded %+v, want succeeded", attempt)
 	}
@@ -123,10 +149,21 @@ func TestRunUpdateLocalRolloutSwitchesImage(t *testing.T) {
 
 func TestRunUpdateLocalRolloutRollsBack(t *testing.T) {
 	restored := fakeBackups(t)
-	compose, calls, attempt, err := runLocalUpdate(t, []string{"--rollout"}, true)
+	var compose string
+	var calls []string
+	var attempt *update.UpdateAttempt
+	var err error
+	out := captureStdout(t, func() { compose, calls, attempt, err = runLocalUpdate(t, []string{"--rollout"}, true) })
 	if err == nil || !strings.Contains(err.Error(), "rolled back") {
 		t.Fatalf("expected a rolled-back error, got %v", err)
 	}
+	assertInOrder(t, out,
+		"asa1: switching compose to "+newImage,
+		"asa1: starting and waiting until ready",
+		"asa1: switching compose to ark-server:100",
+		"asa1: rolling back: restoring /backups/pre-update.tar.gz",
+		"asa1: starting and waiting until ready",
+		"asa1: ready")
 	if !strings.Contains(compose, "image: ark-server:100") {
 		t.Fatalf("compose not switched back:\n%s", compose)
 	}
@@ -184,9 +221,12 @@ func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
 			return nil
 		}
 	}, func() {
-		runErr = RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--rollout"})
+		out := captureStdout(t, func() {
+			runErr = RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--rollout"})
+		})
+		assertInOrder(t, out, "Steam has ARK build 200; asa1, asa2 need(s) a new image.")
 	})
-	if runErr == nil || !strings.Contains(runErr.Error(), "server files build failed") {
+	if runErr == nil || !strings.HasSuffix(runErr.Error(), "server files build failed: exit code 8; no instances were changed") {
 		t.Fatalf("expected the build error, got %v", runErr)
 	}
 	if len(calls) != 0 {

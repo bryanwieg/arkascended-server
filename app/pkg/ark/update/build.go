@@ -100,14 +100,20 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 	if runtime == "" {
 		runtime = "docker"
 	}
+	workDir := filepath.Join(stateDir, "build", "work")
 	cmd := []string{"env",
 		"ARK_STEAM_BUILD_ID=" + buildID,
 		"CONTAINER_RUNTIME=" + runtime,
-		"WORK_DIR=" + filepath.Join(stateDir, "build", "work"),
+		"WORK_DIR=" + workDir,
 		"bash", filepath.Join(contextDir, "files", "build.sh"), FilesImageRepo}
+	_ = os.Remove(filepath.Join(workDir, "failure")) // a reason left by an earlier run
 	run, err := s.RunCommand(cmd, ark.CommandOptions{})
 	if err == nil && run.ExitCode != 0 {
 		err = fmt.Errorf("exit code %d", run.ExitCode)
+		// download.sh's one-line reason, e.g. "SteamCMD download failed: state is 0x6".
+		if reason, readErr := os.ReadFile(filepath.Join(workDir, "failure")); readErr == nil && len(strings.TrimSpace(string(reason))) > 0 {
+			err = errors.New(strings.TrimSpace(string(reason)))
+		}
 	}
 	if err != nil {
 		return BuildResult{}, fmt.Errorf("Error: server files build failed: %w", err)

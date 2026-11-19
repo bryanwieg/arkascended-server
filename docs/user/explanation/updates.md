@@ -43,9 +43,13 @@ before recipe labels existed count as a recipe change once.
    `Built ark-server:<id>. Switch with: ark-cli update instance --instance <name> --rollout`.
 3. With `--rollout`, for each instance in name order: stop (the stop saves the
    world), create a `pre-update` backup, switch compose to the new tag, then
-   start and wait until ready.
+   start and wait until ready. Each step prints one line
+   (`asa1: stopping …`, `asa1: backup saved to …`, `asa1: ready`), without `-v`.
 
-A failed build changes nothing.
+The image is built before any instance is touched, so a failed build changes
+nothing. Its error names the cause in one line and ends with
+`no instances were changed`, e.g.
+`Error: server files build failed: SteamCMD download failed: state is 0x6; no instances were changed`.
 
 ## Automatic rollback
 

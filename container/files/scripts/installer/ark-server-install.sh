@@ -8,6 +8,14 @@ set -euo pipefail
 # Installing over a previous install lets steamcmd download only changed files.
 install_dir="${ARK_INSTALL_DIR:-/home/ark-user/ark-server}"
 
+# fail prints a one-line reason and, when ARK_FAILURE_FILE is set, writes it there
+# for ark-cli, which reports it instead of SteamCMD's raw output.
+fail() {
+  echo "$1" >&2
+  [[ -n "${ARK_FAILURE_FILE:-}" ]] && printf '%s\n' "$1" > "$ARK_FAILURE_FILE"
+  exit 1
+}
+
 max_attempts=10
 sleep_seconds=5
 retry_error="ERROR! Failed to install app '2430930' (Missing configuration)"
@@ -31,22 +39,20 @@ for ((attempt=1; attempt<=max_attempts; attempt++)); do
     if [[ "$expected" =~ ^[0-9]+$ ]]; then
       actual="$(awk -F'"' '/"buildid"/ {print $4; exit}' "$install_dir/steamapps/appmanifest_2430930.acf")"
       if [[ "$actual" != "$expected" ]]; then
-        echo "Downloaded ARK build $actual, but the build was keyed to $expected; rebuild to pick up the new key." >&2
-        exit 1
+        fail "Downloaded ARK build $actual, but the build was keyed to $expected; rebuild to pick up the new key."
       fi
     fi
     exit 0
   fi
 
   if ! grep -Fq "$retry_error" <<< "$output"; then
-    echo "steamcmd install failed with a non-retryable error." >&2
-    echo "$output" >&2
-    exit 1
+    # SteamCMD's output is already on screen (tee); name the cause in one line.
+    state="$(grep -o 'state is 0x[0-9a-fA-F]*' <<< "$output" | tail -n1 || true)"
+    fail "SteamCMD download failed: ${state:-exit code $status}"
   fi
   if [[ "$attempt" -lt "$max_attempts" ]]; then
     sleep "$sleep_seconds"
   fi
 done
 
-echo "steamcmd install failed after ${max_attempts} attempts." >&2
-exit 1
+fail "SteamCMD download failed: (Missing configuration) after ${max_attempts} attempts"

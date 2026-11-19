@@ -17,6 +17,9 @@ out="$work/out"
 # SteamCMD's client files land in $HOME/.local/share/Steam. steamcmd.dockerfile
 # sets HOME to the runtime image's home, so recorded paths match it.
 mkdir -p "$cache"
+# ark-cli reads the install script's one-line failure reason from here.
+export ARK_FAILURE_FILE="$work/failure"
+rm -f "$ARK_FAILURE_FILE"
 ARK_INSTALL_DIR="$cache" bash "$scripts/ark-server-install.sh"
 
 rm -rf "$out"

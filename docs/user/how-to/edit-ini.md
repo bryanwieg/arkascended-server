@@ -18,17 +18,31 @@ ark-cli edit ini --instance my-server --file game               # Game.ini
 - `Game.ini` is created on first edit; ARK never creates it.
 - Changes apply on the next start.
 
-## Running server
+## Read or change one key
 
-`edit ini` refuses while the instance runs, because the server can overwrite
-the file. Override with `--force`; add `--restart` to restart after the
-editor exits:
+`get ini` shows a single key (every line for it, and whether ARK wrote it);
+`set ini` changes it without an editor and reports the old value:
 
 ```sh
-ark-cli edit ini --instance my-server --file gameusersettings --force --restart
+ark-cli get ini --instance my-server --file gus --section ServerSettings --key MaxPlayers
+ark-cli set ini --instance my-server --file gus --section ServerSettings --key MaxPlayers --value 20
 ```
 
-Without `--restart`, run `ark-cli restart instance --instance my-server`.
+If the key appears more than once, `set ini` stops and lists the lines, marking
+which ones ARK wrote (`get ini` shows the same list without changing anything). Some keys are lists (one engram or item per line), so check
+before rerunning with `--replace-all`, which keeps one line and saves the old
+file as `GameUserSettings.ini.bak`. Details:
+[set ini](../reference/cli-commands.md#set-ini).
+
+## Running server
+
+`edit ini` and `set ini` refuse while the instance runs: ARK rewrites its INI
+files when it stops, which would undo a change made while it ran. `--restart`
+stops the instance (saving the world), makes the change and starts it again:
+
+```sh
+ark-cli edit ini --instance my-server --file gameusersettings --restart
+```
 
 ## Keys managed from the environment
 

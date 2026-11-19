@@ -535,3 +535,45 @@ func TestRunShowVolumePathsOutputsMountPaths(t *testing.T) {
 		}
 	}
 }
+
+// The INI sections come from ark-ini.py get: its output when it works, its error when it doesn't
+// (here: an image built before ark-ini.py existed).
+func TestRunShowInstancePrintsIniContentOrError(t *testing.T) {
+	setEnv(t, "ARK_BACKUP_DIR", filepath.Join(t.TempDir(), "backups"))
+	composePath := filepath.Join(t.TempDir(), "compose.yaml")
+	if err := os.WriteFile(composePath, []byte("services:\n  asa1: {}\n"), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	out := captureStdout(t, func() {
+		withPatchedAppDeps(t, func(d *core.AppDeps) {
+			d.ComposeService = &arktest.MockCompose{
+				LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
+					return fakeProject(types.Services{"asa1": {Name: "asa1", Image: "ark-server:latest"}}), nil
+				},
+				RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
+					return map[string]struct{}{"asa1": {}}, nil
+				},
+				ExecFn: func(_ context.Context, _, _ string, command []string, _ ark.ExecOptions) (ark.ExecResult, error) {
+					if strings.Join(command, " ") == "/usr/bin/python3.14 /home/ark-user/scripts/runtime/ark-ini.py get --file game" {
+						return ark.ExecResult{ExitCode: 2, Stderr: "/usr/bin/python3.14: can't open file '/home/ark-user/scripts/runtime/ark-ini.py': [Errno 2] No such file or directory\n"}, nil
+					}
+					return ark.ExecResult{Stdout: "[ServerSettings]\nMaxPlayers=20\n"}, nil
+				},
+			}
+			d.Engine = &arktest.MockEngine{}
+			d.HostDeps.FetchText = func(_ string) (string, error) { return "", errors.New("mock") }
+		}, func() {
+			if err := RunShowInstance(core.CurrentAppDeps(), []string{"--instance", "asa1", "--compose-file", composePath}); err != nil {
+				t.Fatalf("RunShowInstance: %v", err)
+			}
+		})
+	})
+	for _, want := range []string{
+		"=== Game.ini ===\nError: asa1 runs an image built before ark-cli managed its INI files; rebuild it with: ark-cli update instance --instance asa1",
+		"=== GameUserSettings.ini ===\n[ServerSettings]\nMaxPlayers=20",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output:\n%s", want, out)
+		}
+	}
+}

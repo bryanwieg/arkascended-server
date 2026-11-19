@@ -293,25 +293,27 @@ flowchart TD
     P --> Q[WriteRunState success/failed]
 ```
 
-## INI Edit/Show Call Graph
+## INI Edit/Set/Get/Show Call Graph
 
 `app/ark-cli/internal/ini/`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli edit/show ini] --> B[Resolve INI file spec + compose service]
+    A[ark-cli edit/set/get/show ini] --> B[Resolve INI file spec + compose service]
     B --> C[ServiceRunningStatus]
     C --> D{running?}
 
-    D -->|"yes, edit, no --force"| X[refuse]
-    D -->|"yes, edit, --force"| E[ExecInteractive: editor, default nano]
-    D -->|"yes, show"| F[ExecInteractive: cat INI]
-    D -->|"no, edit"| G[RunOneOffInteractive: editor in removed container]
-    D -->|"no, show"| H[RunOneOffInteractive: cat INI]
-
-    E --> I{--restart?}
-    I -->|"yes"| J[DoRestartStopInstance, DoRestartStartInstance with ready wait]
-    I -->|"no"| K[Print restart-required message]
+    D -->|"yes, show/get"| F[Exec: ark-ini.py get, whole file or one key as JSON]
+    D -->|"no, show/get"| H[RunOneOff: ark-ini.py get in removed container]
+    D -->|"yes, edit/set, no --restart"| X[refuse]
+    D -->|"yes, edit/set, --restart"| J[DoRestartStopInstance with default grace]
+    J --> G
+    D -->|"no, edit/set"| G{command}
+    G -->|"edit"| E[RunOneOffInteractive: editor, default nano]
+    G -->|"set"| S[RunOneOff: ark-ini.py set, JSON reply]
+    E --> K{was running?}
+    S --> K
+    K -->|"yes, even if the change failed"| L[DoRestartStartInstance with ready wait]
 ```
 
 ## Prune Backups Call Graph

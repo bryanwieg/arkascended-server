@@ -8,7 +8,7 @@ import pytest
 from helpers.compose_client import get_docker_client
 from helpers.infra import wait_for
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.lite]
 
 _LIMIT_BYTES = 256 * 1024 * 1024
 # Stand-in for proton: its child fills memory past the limit, like ArkAscendedServer.exe under proton.
@@ -17,27 +17,25 @@ python3.14 -c "x = b'x' * (1 << 30)"
 """
 _RUN = (
     "cat /sys/fs/cgroup/memory.max 2>/dev/null | sed 's/^/memory.max=/'; "
-    "mkdir -p /home/ark-user/ark-server/ShooterGame/Binaries/Win64 && exec python3.14 /scripts/ark-server-start.py"
+    "exec python3.14 /home/ark-user/scripts/runtime/ark-server-start.py"
 )
 
 
 def test_server_start_reports_oom_kill(
     test_env: dict[str, str],
-    repo_root: Path,
     test_artifact_dir: Path,
 ) -> None:
     """The server manager says the OOM killer killed the server when its child runs out of memory.
 
     Scenario:
-        The real ark-server-start.py runs with PROTON_PATH pointing at a fake proton whose child
-        allocates 1 GB in a container limited to 256 MB with no swap. Any image with python3.14
-        and tail works, so CI sets ARK_TEST_IMAGE=python:3.14-slim instead of the ARK image.
+        The real ark-server-start.py runs on the lite image with PROTON_PATH pointing at a fake
+        proton whose child allocates 1 GB in a container limited to 256 MB with no swap.
 
     Expected:
         - The container's cgroup memory limit was applied (else skip, or fail in CI).
         - The logs contain the [server-oom] error.
     """
-    image = test_env.get("ARK_TEST_IMAGE", "ark-server:latest")
+    image = test_env["ARK_TEST_IMAGE"]  # the lite image (lite marker)
     proton_dir = test_artifact_dir / "fake-proton"
     proton_dir.mkdir()
     (proton_dir / "proton").write_text(_FAKE_PROTON)
@@ -51,10 +49,7 @@ def test_server_start_reports_oom_kill(
         envs={"PROTON_PATH": "/fake-proton"},
         memory=_LIMIT_BYTES,
         memory_swap=_LIMIT_BYTES,
-        volumes=[
-            (str(repo_root / "container/scripts/runtime"), "/scripts", "ro"),
-            (str(proton_dir), "/fake-proton", "ro"),
-        ],
+        volumes=[(str(proton_dir), "/fake-proton", "ro")],
         labels={"io.ark.test-suite": "true"},
         detach=True,
     )

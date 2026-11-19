@@ -674,9 +674,15 @@ def container_start(
 
 
 def container_ensure_image_tag(dc: DockerClient, name: str, tag: str = "ark-server:latest") -> None:
-    """Tag an image so the compose file resolves it, if not already tagged."""
-    if name != tag:
-        dc.images.tag(name, tag)
+    """Tag an image so the compose file resolves it, if not already tagged.
+
+    The lite image is never tagged: create instance's compose file is pointed at it instead
+    (helpers.compose.use_lite_image), so a real ark-server:latest stays untouched.
+    """
+    from helpers.lite_image import LITE_IMAGE_PREFIX
+
+    if name != tag and not name.startswith(LITE_IMAGE_PREFIX):
+        dc.image.tag(name, tag)
 
 
 def container_env(dc: DockerClient, service: str, var_name: str) -> str:

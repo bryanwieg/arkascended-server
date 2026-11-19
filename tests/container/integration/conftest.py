@@ -25,11 +25,17 @@ from helpers.infra import (
 from helpers.infra import (
     wait_for as _wait_for,
 )
+from helpers.lite_image import LITE_IMAGE_PREFIX
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_container_image() -> None:
-    """Build the container image if missing for this runtime."""
+def _ensure_container_image(request: pytest.FixtureRequest) -> None:
+    """Build the container image if missing for this runtime, unless every selected test runs on the lite image."""
+    from helpers.lite_image import lite_mode, uses_lite_image
+
+    # Lite mode skips the tests that would need it.
+    if lite_mode() or all(uses_lite_image(item) for item in request.session.items):
+        return
     image = os.environ.get("ARK_TEST_IMAGE", "ark-server:latest")
     if not image_exists(image):
         build_server_image(image)
@@ -103,10 +109,12 @@ def disable_restart_policy_fixture() -> Callable[[Path], None]:
 
 @pytest.fixture
 def test_env(
+    request: pytest.FixtureRequest,
     repo_root: Path,
     test_artifact_dir: Path,
 ) -> Generator[dict[str, str]]:
     from helpers.compose_client import get_docker_client
+    from helpers.lite_image import image_for_test
 
     dc = get_docker_client()
     env, compose_file = prepare_test_env(
@@ -114,6 +122,7 @@ def test_env(
         compose_dir=test_artifact_dir,
         backup_dir=repo_root / "backups",
         compose_prefix="pytest-compose-",
+        image=image_for_test(request),
     )
     yield env
     cleanup_test_env(dc, env, compose_file)
@@ -183,7 +192,9 @@ def started_instance_cli(
     )
 
     image = test_env.get("ARK_TEST_IMAGE", "ark-server:latest")
-    if image != "ark-server:latest":
+    # The lite image is patched into the compose file after create instance instead
+    # (helpers.compose.use_lite_image): tagging it latest would replace a real ARK image.
+    if image != "ark-server:latest" and not image.startswith(LITE_IMAGE_PREFIX):
         compose_client.image.tag(image, "ark-server:latest")
 
     return start_container_instance(

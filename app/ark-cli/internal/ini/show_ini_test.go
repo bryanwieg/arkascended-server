@@ -1,10 +1,10 @@
 package ini
 
-// Tests: show-ini command: stopped vs running modes, compose-file flag, shell script content
+// Tests: show-ini command: stopped vs running modes, compose-file flag, script errors
 
 import (
 	"context"
-	"strings"
+	"reflect"
 	"testing"
 
 	"ark-cli/internal/core"
@@ -27,58 +27,48 @@ func showIniMockCompose(running bool) *arktest.MockCompose {
 	}
 }
 
-func TestRunShowIniStoppedUsesComposeRun(t *testing.T) {
+func TestRunShowIniStoppedRunsScriptInOneOffAndPrintsIt(t *testing.T) {
 	setEnv(t, "COMPOSE_FILE", "compose.yaml")
 	var gotService string
 	var gotCommand []string
 	var gotOpts ark.RunOptions
-	withPatchedAppDeps(t, func(d *core.AppDeps) {
-		d.ComposeService = &arktest.MockCompose{
-			LoadProjectFn:     showIniMockCompose(false).LoadProjectFn,
-			RunningServicesFn: showIniMockCompose(false).RunningServicesFn,
-			RunOneOffInteractiveFn: func(_ context.Context, _, service string, command []string, opts ark.RunOptions) error {
-				gotService = service
-				gotCommand = command
-				gotOpts = opts
-				return nil
-			},
-		}
-	}, func() {
-		if err := RunShowIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "game"}); err != nil {
-			t.Fatalf("runShowIni: %v", err)
-		}
+	out := captureStdout(t, func() {
+		withPatchedAppDeps(t, func(d *core.AppDeps) {
+			d.ComposeService = &arktest.MockCompose{
+				LoadProjectFn:     showIniMockCompose(false).LoadProjectFn,
+				RunningServicesFn: showIniMockCompose(false).RunningServicesFn,
+				RunOneOffFn: func(_ context.Context, _, service string, command []string, opts ark.RunOptions) (ark.ExecResult, error) {
+					gotService, gotCommand, gotOpts = service, command, opts
+					return ark.ExecResult{Stdout: "[S]\nK=v"}, nil
+				},
+			}
+		}, func() {
+			if err := RunShowIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "game"}); err != nil {
+				t.Fatalf("runShowIni: %v", err)
+			}
+		})
 	})
-
-	if gotService != "asa1" {
-		t.Fatalf("unexpected service: %s", gotService)
+	if gotService != "asa1" || !gotOpts.Remove || !gotOpts.NoDeps || !gotOpts.DisableTTY || gotOpts.Entrypoint != "/usr/bin/python3.14" {
+		t.Fatalf("unexpected service/options: %s %+v", gotService, gotOpts)
 	}
-	if !gotOpts.Remove || !gotOpts.NoDeps || gotOpts.Entrypoint != "/bin/sh" {
-		t.Fatalf("unexpected options: %+v", gotOpts)
+	if want := []string{iniScriptPath, "get", "--file", "game"}; !reflect.DeepEqual(gotCommand, want) {
+		t.Fatalf("command = %#v, want %#v", gotCommand, want)
 	}
-	if len(gotCommand) < 2 || gotCommand[0] != "-lc" {
-		t.Fatalf("unexpected command: %#v", gotCommand)
-	}
-	script := gotCommand[1]
-	if !strings.Contains(script, "Game.ini") {
-		t.Fatalf("expected Game.ini in script, got:\n%s", script)
-	}
-	if !strings.Contains(script, "cat ") {
-		t.Fatalf("expected cat in script, got:\n%s", script)
+	if out != "[S]\nK=v" {
+		t.Fatalf("output = %q", out)
 	}
 }
 
-func TestRunShowIniRunningUsesComposeExec(t *testing.T) {
+func TestRunShowIniRunningExecsScript(t *testing.T) {
 	setEnv(t, "COMPOSE_FILE", "compose.yaml")
-	var gotService string
 	var gotCommand []string
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn:     showIniMockCompose(true).LoadProjectFn,
 			RunningServicesFn: showIniMockCompose(true).RunningServicesFn,
-			ExecInteractiveFn: func(_ context.Context, _, service string, command []string) error {
-				gotService = service
+			ExecFn: func(_ context.Context, _, _ string, command []string, _ ark.ExecOptions) (ark.ExecResult, error) {
 				gotCommand = command
-				return nil
+				return ark.ExecResult{}, nil
 			},
 		}
 	}, func() {
@@ -86,16 +76,27 @@ func TestRunShowIniRunningUsesComposeExec(t *testing.T) {
 			t.Fatalf("runShowIni: %v", err)
 		}
 	})
+	if want := []string{"/usr/bin/python3.14", iniScriptPath, "get", "--file", "gameusersettings"}; !reflect.DeepEqual(gotCommand, want) {
+		t.Fatalf("command = %#v, want %#v", gotCommand, want)
+	}
+}
 
-	if gotService != "asa1" {
-		t.Fatalf("unexpected service: %s", gotService)
-	}
-	if len(gotCommand) < 3 || gotCommand[0] != "/bin/sh" || gotCommand[1] != "-lc" {
-		t.Fatalf("unexpected command: %#v", gotCommand)
-	}
-	script := gotCommand[2]
-	if !strings.Contains(script, "GameUserSettings.ini") {
-		t.Fatalf("expected GameUserSettings.ini in script, got:\n%s", script)
+func TestRunShowIniReturnsScriptError(t *testing.T) {
+	setEnv(t, "COMPOSE_FILE", "compose.yaml")
+	var err error
+	withPatchedAppDeps(t, func(d *core.AppDeps) {
+		d.ComposeService = &arktest.MockCompose{
+			LoadProjectFn:     showIniMockCompose(false).LoadProjectFn,
+			RunningServicesFn: showIniMockCompose(false).RunningServicesFn,
+			RunOneOffFn: func(context.Context, string, string, []string, ark.RunOptions) (ark.ExecResult, error) {
+				return ark.ExecResult{ExitCode: 1, Stderr: "Error: Game.ini doesn't exist yet.\n"}, nil
+			},
+		}
+	}, func() {
+		err = RunShowIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "game"})
+	})
+	if err == nil || err.Error() != "Error: Game.ini doesn't exist yet." {
+		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -105,9 +106,9 @@ func TestRunShowIniUsesComposeFileFlag(t *testing.T) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn:     showIniMockCompose(false).LoadProjectFn,
 			RunningServicesFn: showIniMockCompose(false).RunningServicesFn,
-			RunOneOffInteractiveFn: func(_ context.Context, composeFile, _ string, _ []string, _ ark.RunOptions) error {
+			RunOneOffFn: func(_ context.Context, composeFile, _ string, _ []string, _ ark.RunOptions) (ark.ExecResult, error) {
 				gotComposeFile = composeFile
-				return nil
+				return ark.ExecResult{}, nil
 			},
 		}
 	}, func() {
@@ -120,16 +121,30 @@ func TestRunShowIniUsesComposeFileFlag(t *testing.T) {
 	}
 }
 
-func TestIniCatShellScriptIncludesNotFoundHint(t *testing.T) {
-	gus := IniCatShellScript(IniFileSpec{Key: "gameusersettings", Filename: "GameUserSettings.ini"})
-	if !strings.Contains(gus, "Start the instance once") || strings.Contains(gus, "edit ini") {
-		t.Fatalf("GameUserSettings.ini hint should say to start the instance, got:\n%s", gus)
-	}
-	script := IniCatShellScript(IniFileSpec{Key: "game", Filename: "Game.ini"})
-	if !strings.Contains(script, "edit ini") {
-		t.Fatalf("expected 'edit ini' hint in not-found message, got:\n%s", script)
-	}
-	if !strings.Contains(script, "cat ") {
-		t.Fatalf("expected cat in script, got:\n%s", script)
+// Script failures reach the user as one "Error:" message: the script's own, a wrapped one for any
+// other stderr, or how to rebuild an image that predates ark-ini.py.
+func TestRunShowIniScriptFailureMessages(t *testing.T) {
+	for _, tc := range []struct{ stderr, want string }{
+		{"Error: Game.ini doesn't exist yet.\n", "Error: Game.ini doesn't exist yet."},
+		{"Traceback: boom\n", "Error: ark-ini.py exited 1 in asa1: Traceback: boom"},
+		{"/usr/bin/python3.14: can't open file '/home/ark-user/scripts/runtime/ark-ini.py': [Errno 2] No such file or directory",
+			"Error: asa1 runs an image built before ark-cli managed its INI files; rebuild it with: ark-cli update instance --instance asa1"},
+	} {
+		setEnv(t, "COMPOSE_FILE", "compose.yaml")
+		var err error
+		withPatchedAppDeps(t, func(d *core.AppDeps) {
+			d.ComposeService = &arktest.MockCompose{
+				LoadProjectFn:     showIniMockCompose(false).LoadProjectFn,
+				RunningServicesFn: showIniMockCompose(false).RunningServicesFn,
+				RunOneOffFn: func(context.Context, string, string, []string, ark.RunOptions) (ark.ExecResult, error) {
+					return ark.ExecResult{ExitCode: 1, Stderr: tc.stderr}, nil
+				},
+			}
+		}, func() {
+			err = RunShowIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "game"})
+		})
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("stderr %q: err = %v, want %q", tc.stderr, err, tc.want)
+		}
 	}
 }

@@ -26,11 +26,13 @@ the batches a suite selects.
 ./run-tests.py --suite container-fast
 ./run-tests.py --suite cli --list
 ./run-tests.py --suite cli-fast -- --maxfail=1 -v   # pytest args after --, applied to every batch
+./run-tests.py --lite --suite slow                  # slow suites on the fake ARK server, minutes not hours
 ```
 
 | Option | Effect |
 |---|---|
 | `--python PATH` | Interpreter for pytest. Default `TEST_BATCH_PYTHON`, else `./.venv/bin/python`. Relative paths resolve against the repo root, so pass an absolute path for a system Python (`--python "$(command -v python3)"`). |
+| `--lite` | Run every container test on the lite image (fake ARK server, no ARK download); `real_server` tests skip. [Lite image](../reference/test-architecture.md#lite-image-no-ark-server) |
 | `--list` | Print selected batches, run nothing |
 | `-- ARGS` | Extra pytest args. Without `--`, flags such as `-v` are rejected. |
 
@@ -92,6 +94,7 @@ Full list: [Test architecture: environment variables](../reference/test-architec
 |---|---|
 | `ARK_START_WAIT_TIMEOUT=15m` | Longer start readiness timeout on slow or loaded hosts |
 | `ARK_TEST_IMAGE` | Image for integration tests (default `ark-server:latest`) |
+| `ARK_TEST_LITE=1` | Lite mode, as `run-tests.py --lite` |
 | `ARK_CONTAINER_RUNTIME` | `docker` (default) or `podman` |
 | `ARK_TEST_ARTIFACTS_DIR` | Artifact directory (default `.tests`) |
 | `ARK_TEST_ARTIFACTS_RETENTION` | Number of recent run directories to keep (default `7`) |
@@ -151,5 +154,5 @@ Removes generated files only; no tracked files, no Docker resources.
 
 ## CI
 
-CI runs the Go tests, `pytest -m unit tests/container/unit`, the OOM-report test and `--suite smoke`.
+CI runs the Go tests, `pytest -m unit tests/container/unit`, the `lite` tests and `--suite smoke`.
 Run the other Docker-backed suites locally. Workflows: [CI and releases](../reference/ci.md).

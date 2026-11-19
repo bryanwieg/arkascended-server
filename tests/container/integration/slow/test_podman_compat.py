@@ -25,7 +25,7 @@ from helpers.diagnostics import log_command
 from helpers.diagnostics import run_cmd as run_cmd_impl
 from helpers.infra import wait_for
 
-pytestmark = [pytest.mark.container, pytest.mark.podman]
+pytestmark = [pytest.mark.container, pytest.mark.podman, pytest.mark.real_server]
 
 _SERVER_LOG_PATH = "/home/ark-user/ark-server/ShooterGame/Saved/Logs/ShooterGame.log"
 

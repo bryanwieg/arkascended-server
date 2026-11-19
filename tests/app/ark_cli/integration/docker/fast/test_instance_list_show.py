@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.lite]
 
 _PW = ["--server-password", "ServerPass123", "--admin-password", "AdminPass123"]
 

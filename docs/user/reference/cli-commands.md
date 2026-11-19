@@ -261,8 +261,10 @@ Flags: `--instance` (required), `--compose-file`.
 ### edit ini
 
 Open an INI file in an editor inside the container (running container, or a
-one-off container if stopped), so volume ownership stays correct. Refuses a
-running instance unless `--force`. `--file gameusersettings` refuses until the
+one-off container), so volume ownership stays correct. Refuses a running
+instance unless `--restart`, which stops it (saving the world), opens the editor
+and starts it again; ARK rewrites its INI files when it stops, so editing
+while it runs could be undone. `--file gameusersettings` refuses until the
 file exists (created on the instance's first start); `Game.ini` is created by
 editing it.
 
@@ -271,9 +273,97 @@ editing it.
 | `--instance` | required | |
 | `--file` | required | `game` (Game.ini), `gameusersettings` or `gus` (GameUserSettings.ini). |
 | `--editor` | `nano` | Editor command in the container. The image ships only `nano`. |
-| `--force` | `false` | Allow editing while running. |
-| `--restart` | `false` | With `--force` on a running instance: restart after saving. |
+| `--restart` | `false` | On a running instance: stop, edit, start. |
 | `--compose-file` | | |
+
+### get ini
+
+Print one key as a table: one row per line for the key (more than one when it
+repeats), with who wrote each line and when, from the
+[INI history](#ini-history). Read-only, so it works whether the instance is
+running or not. An unset key exits non-zero.
+
+```sh
+ark-cli get ini --instance asa1 --file gus --section ServerSettings --key MaxPlayers
+# LINE  KEY         VALUE  ORIGIN
+# 6     MaxPlayers  20     written by ARK 2026-11-19 00:01:26 UTC
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game`, `gameusersettings` or `gus`. |
+| `--section` | required | Section name, with or without brackets. Matched case-insensitively. |
+| `--key` | required | Key name. Matched case-insensitively. |
+| `--json` | `false` | `{file, section, key, lines: [{line, value, origin}], history}`; exits 0 even when `lines` is empty. |
+| `--compose-file` | | |
+
+### set ini
+
+Set one key without an editor, adding the key (and its section) if missing.
+Comments, order and line endings are kept, and the file is replaced in one
+step. The checks run inside the container (`ark-ini.py`), so they apply however
+the command is called:
+
+- A running instance is refused unless `--restart`: ARK rewrites its INI files
+  when it stops, so a change made while it runs can be lost. `--restart` stops
+  the instance (saving the world), applies the change and starts it again; it
+  starts it again even if the change was refused.
+- `RCONEnabled`, `RCONPort`, `ServerAdminPassword` and `ServerPassword` in
+  `[ServerSettings]` are refused: they are set from the instance's environment
+  on every start. Use `reconfigure instance` instead.
+- A key that appears more than once in the section is refused, with each line
+  listed with its origin from the [INI history](#ini-history): some ARK keys
+  (engram and item overrides in `Game.ini`, for example) are lists with one line
+  per entry. Use `edit ini` to change one line, or `--replace-all` to replace
+  them all with one; the previous file is kept as `<file>.bak`.
+- `GameUserSettings.ini` must exist (it is created on the first start);
+  `Game.ini` is created if missing.
+
+```sh
+ark-cli set ini --instance asa1 --file gus --section ServerSettings --key MaxPlayers --value 20
+# GameUserSettings.ini [ServerSettings] MaxPlayers: "70" -> "20"
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game`, `gameusersettings` or `gus`. |
+| `--section` | required | Section name, with or without brackets, e.g. `ServerSettings` or `/Script/ShooterGame.ShooterGameMode`. Matched case-insensitively. |
+| `--key` | required | Key name. Matched case-insensitively. |
+| `--value` | required | New value; `--value ""` sets it empty. |
+| `--replace-all` | `false` | Replace every line for a repeated key with one line. |
+| `--restart` | `false` | On a running instance: stop, apply, start. |
+| `--compose-file` | | |
+
+### INI history
+
+Each instance keeps a git history of `Game.ini` and `GameUserSettings.ini`, in
+`ShooterGame/Saved/Config/WindowsServer/.git` on its save volume, so backups
+carry it and a restore brings back the matching history. Every writer commits
+under its own author, which `get ini` and `set ini` show per line (`git blame`):
+
+| Origin | Author | When it is committed |
+|---|---|---|
+| `written by ARK <when>` | `ARK server` | the image default (ARK generated it at image build), installed on the first start; the server's own writes, after it exits |
+| `set from instance env <when>` | `instance env` | the RCON and password settings, applied on every start |
+| `set with ark-cli <when>` | `ark-cli set ini` | `set ini` |
+| `edited with ark-cli <when>` | `ark-cli edit ini` | `edit ini`, when the editor exits |
+| `changed outside ark-cli <when>` | `outside ark-cli` | changes nobody recorded (a hand edit on the volume, a restored file), found at the next start or before `set`/`edit` |
+| `changed outside ark-cli (not yet recorded)` | | such a change, before it is found |
+| `origin unknown (present <when>)` | `unknown origin` | the files as first seen, on a volume from before the history existed |
+
+`<when>` is the commit time in UTC. To read the full history on the host, run
+git against that directory in the volume, e.g.
+`git -C <saved volume path>/Config/WindowsServer log -p` (`show volume-paths`
+prints the path).
+
+The history lives in the image's scripts, so an existing instance starts it on
+its first start with an image built by an ark-cli that has it. After upgrading
+ark-cli, rebuild with `ark-cli update instance --instance <name>` (it rebuilds
+when the image recipe changed) and restart; the lines already in the files then
+show `origin unknown (present <first start>)`. Until the rebuild, `get ini`,
+`set ini`, `show ini` and `show instance` say the image needs rebuilding.
 
 ### show ini
 

@@ -10,7 +10,7 @@ import pytest
 from helpers.build import build_server_image, image_exists
 from helpers.compose_client import get_docker_client
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.real_server]
 
 _DEFAULT_INI = "/home/ark-user/config-defaults/GameUserSettings.ini"
 

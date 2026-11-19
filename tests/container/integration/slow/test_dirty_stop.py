@@ -13,6 +13,7 @@ from helpers.compose_client import (
     compose_stop,
     container_exit_code,
     container_exited,
+    container_file_exists,
     container_id,
     container_running,
     copy_from_service,
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
     from python_on_whales import DockerClient
 
 pytestmark = [pytest.mark.container]
+
+_SERVER_LOG = "/home/ark-user/ark-server/ShooterGame/Saved/Logs/ShooterGame.log"
 
 
 def test_container_start_dirty_stop_workflow(
@@ -168,16 +171,15 @@ def test_docker_compose_stop_unresponsive_rcon_forces_kill_exit_code(
 
     compose_client.compose.up(services=[instance], detach=True, no_build=True)
 
-    # Wait until the container is in the "running" state before issuing the stop.
-    # This ensures ark-server-start.py (PID 1) has called ctrl.setup_signals() so
-    # the SIGTERM from `docker compose stop` is not silently ignored.  PID 1 on
-    # Linux drops all unhandled signals; without this wait, SIGTERM arrives before
-    # the handler is registered, the signal is discarded, and Docker SIGKILL's
-    # after the stop timeout — producing exit 137 instead of the expected shutdown.
+    # Wait for the server's log before issuing the stop, not just a "running" container:
+    # ark-server-start.py installs its SIGTERM handler (ctrl.setup_signals()) right after
+    # launching the server, and the server writes this log at once. A SIGTERM sent while the
+    # container is running but before the handler exists kills the manager outright, so the
+    # force-kill path under test never runs (a fast-starting image, like the lite one, hits it).
     wait_for(
-        "service to report running before stop",
-        60,
-        lambda: container_running(compose_client, instance),
+        "server process to start before stop",
+        120,
+        lambda: container_file_exists(compose_client, instance, _SERVER_LOG),
     )
 
     # Send SIGTERM to the runtime manager.  Because RCON_PORT=1 guarantees

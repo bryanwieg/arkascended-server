@@ -13,7 +13,7 @@ from helpers.infra import image_label
 if TYPE_CHECKING:
     from python_on_whales import DockerClient
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.real_server]
 
 
 def test_update_instance_rollout_rolls_back_broken_image(
@@ -29,7 +29,7 @@ def test_update_instance_rollout_rolls_back_broken_image(
 
     Scenario:
         An instance is created and started on the real image (pinned to
-        ark-server:<real>). A broken image, ark-server:<real+1>, is built from it
+        ark-server:<real>). A broken image, ark-server:<real+1>-<recipe>, is built from it
         with an entrypoint that exits at once. The fake Steam API reports
         <real+1>, so update instance finds that image already built and rolls
         the instance out to it.
@@ -62,7 +62,10 @@ def test_update_instance_rollout_rolls_back_broken_image(
     real = image_label(compose_client, "ark-server:latest", "io.ark.server.build_id")
     assert real.isdigit(), f"ark-server:latest needs a numeric build_id label, got {real!r}"
     fake = str(int(real) + 1)
-    broken = f"ark-server:{fake}"
+    # ark-cli looks for ark-server:<build ID>-<recipe ID> (update.LocalImageRef); without the
+    # recipe suffix it wouldn't find the broken image and would start a real download instead.
+    recipe = image_label(compose_client, "ark-server:latest", "io.ark.recipe")
+    broken = f"ark-server:{fake}-{recipe}" if recipe else f"ark-server:{fake}"
     build_dir = test_artifact_dir / "broken-image"
     build_dir.mkdir(parents=True, exist_ok=True)
     (build_dir / "Dockerfile").write_text(

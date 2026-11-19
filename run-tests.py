@@ -24,6 +24,12 @@ ALL_BATCHES = (
         ("tests/container/integration/fast/test_server_oom_report.py",),
     ),
     Batch(
+        "container-fast",
+        "scripts-ark-ini",
+        300,
+        ("tests/container/integration/fast/test_ark_ini_script.py",),
+    ),
+    Batch(
         "container-slow",
         "scripts-startup-and-rcon",
         900,
@@ -40,6 +46,12 @@ ALL_BATCHES = (
             "tests/container/integration/slow/test_ark_server_start_integrated_init.py",
             "tests/container/integration/slow/test_ark_server_stop_script.py",
         ),
+    ),
+    Batch(
+        "container-slow",
+        "scripts-ini-history-real-server",
+        1500,
+        ("tests/container/integration/slow/test_ark_ini_history_real_server.py",),
     ),
     Batch(
         "container-slow",
@@ -82,6 +94,12 @@ ALL_BATCHES = (
         "cli-update-local-check",
         120,
         ("tests/app/ark_cli/integration/docker/fast/test_update_local_check.py",),
+    ),
+    Batch(
+        "cli-fast",
+        "cli-ini-commands",
+        600,
+        ("tests/app/ark_cli/integration/docker/fast/test_ini_commands.py",),
     ),
     Batch(
         "cli-slow",
@@ -166,6 +184,11 @@ def parse_args() -> argparse.Namespace:
         help="Python interpreter used for pytest. Defaults to TEST_BATCH_PYTHON or ./.venv/bin/python.",
     )
     parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Run container tests on the lite image (fake ARK server, no ARK download); skips real_server tests.",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="List the selected batches without running them.",
@@ -230,6 +253,8 @@ def main() -> int:
             "ARK_TEST_RUN_DIR": str(suite_dir),
             "ARK_TEST_BATCH_LABEL": batch.label,
         }
+        if args.lite:
+            batch_env["ARK_TEST_LITE"] = "1"
         status, duration = run_batch(
             index, total, batch, args.python_bin, ("-q",), extra_pytest_args, REPO_ROOT, batch_env
         )

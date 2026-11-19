@@ -1,6 +1,6 @@
 package ini
 
-// Tests: edit-ini command: stopped vs running modes, force flag, editor override, compose-file flag
+// Tests: edit-ini command: stopped vs running modes, --restart order, editor override, compose-file flag
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 
 	"pkg/ark"
 	"pkg/ark/arktest"
+	"pkg/ark/runtime"
 )
 
 func editIniMockCompose(running bool) *arktest.MockCompose {
@@ -55,7 +56,7 @@ func TestRunEditIniStoppedUsesComposeRunAndPrintsSuccess(t *testing.T) {
 		})
 	})
 
-	if !strings.Contains(out, "Changes to Game.ini saved successfully.") {
+	if !strings.Contains(out, "Changes to Game.ini saved.") {
 		t.Fatalf("expected stopped success message, got:\n%s", out)
 	}
 	if gotService != "asa1" {
@@ -68,7 +69,12 @@ func TestRunEditIniStoppedUsesComposeRunAndPrintsSuccess(t *testing.T) {
 		t.Fatalf("unexpected command: %#v", gotCommand)
 	}
 	script := gotCommand[1]
-	if !strings.Contains(script, "exec 'nano' ") {
+	// The editor runs between recording outside changes and recording the edit.
+	outside, editor, edit := strings.Index(script, "track --by outside"), strings.Index(script, "\n'nano' "), strings.Index(script, "track --by edit")
+	if outside < 0 || editor < outside || edit < editor {
+		t.Fatalf("expected track outside, then nano, then track edit, got:\n%s", script)
+	}
+	if !strings.Contains(script, "\n'nano' ") {
 		t.Fatalf("expected nano in script, got:\n%s", script)
 	}
 	if !strings.Contains(script, "Game.ini") {
@@ -76,58 +82,49 @@ func TestRunEditIniStoppedUsesComposeRunAndPrintsSuccess(t *testing.T) {
 	}
 }
 
-func TestRunEditIniRunningRequiresForce(t *testing.T) {
+func TestRunEditIniRunningWithoutRestartRefuses(t *testing.T) {
 	setEnv(t, "COMPOSE_FILE", "compose.yaml")
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = editIniMockCompose(true)
 	}, func() {
 		err := RunEditIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "game"})
-		if err == nil {
-			t.Fatal("expected error")
-		}
-		if err.Error() != "Error: cannot edit config while service is running. Use --force to override." {
+		if err == nil || !strings.Contains(err.Error(), "Rerun with --restart") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }
 
-func TestRunEditIniRunningForceUsesComposeExecAndRestartMessage(t *testing.T) {
+// --restart on a running instance: stop, edit in a one-off container, start. Editing before the
+// stop would let ARK's shutdown write over the change.
+func TestRunEditIniRunningRestartStopsEditsThenStarts(t *testing.T) {
 	setEnv(t, "COMPOSE_FILE", "compose.yaml")
-	var gotService string
-	var gotCommand []string
+	var steps []string
 	out := captureStdout(t, func() {
 		withPatchedAppDeps(t, func(d *core.AppDeps) {
 			d.ComposeService = &arktest.MockCompose{
 				LoadProjectFn:     editIniMockCompose(true).LoadProjectFn,
 				RunningServicesFn: editIniMockCompose(true).RunningServicesFn,
-				ExecInteractiveFn: func(_ context.Context, _, service string, command []string) error {
-					gotService = service
-					gotCommand = command
+				RunOneOffInteractiveFn: func(_ context.Context, _, _ string, command []string, _ ark.RunOptions) error {
+					if !strings.Contains(command[1], "GameUserSettings.ini") {
+						t.Fatalf("unexpected script:\n%s", command[1])
+					}
+					steps = append(steps, "edit")
 					return nil
 				},
 			}
+			d.RestartStopInstance = func(runtime.StopCommandRequest) error { steps = append(steps, "stop"); return nil }
+			d.RestartStartInstance = func(runtime.StartCommandRequest) error { steps = append(steps, "start"); return nil }
 		}, func() {
-			if err := RunEditIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "gus", "--force"}); err != nil {
+			if err := RunEditIni(core.CurrentAppDeps(), []string{"--instance", "asa1", "--file", "gus", "--restart"}); err != nil {
 				t.Fatalf("runEditIni: %v", err)
 			}
 		})
 	})
-
-	if gotService != "asa1" {
-		t.Fatalf("unexpected service: %s", gotService)
-	}
-	if len(gotCommand) < 3 || gotCommand[0] != "/bin/sh" || gotCommand[1] != "-lc" {
-		t.Fatalf("unexpected command: %#v", gotCommand)
-	}
-	script := gotCommand[2]
-	if !strings.Contains(script, "GameUserSettings.ini") {
-		t.Fatalf("expected GameUserSettings.ini in script, got:\n%s", script)
+	if strings.Join(steps, ",") != "stop,edit,start" {
+		t.Fatalf("steps = %v", steps)
 	}
 	if !strings.Contains(out, "Changes to GameUserSettings.ini saved.") {
-		t.Fatalf("missing running-save message, got:\n%s", out)
-	}
-	if !strings.Contains(out, "You must restart the server for changes to take effect.") {
-		t.Fatalf("missing restart message, got:\n%s", out)
+		t.Fatalf("missing save message, got:\n%s", out)
 	}
 }
 
@@ -150,7 +147,7 @@ func TestRunEditIniUsesEditorOverride(t *testing.T) {
 	})
 
 	script := gotCommand[len(gotCommand)-1]
-	if !strings.Contains(script, "exec 'vi' ") {
+	if !strings.Contains(script, "\n'vi' ") {
 		t.Fatalf("expected editor override in script, got:\n%s", script)
 	}
 }

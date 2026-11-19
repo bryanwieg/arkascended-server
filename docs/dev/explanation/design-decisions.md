@@ -188,3 +188,26 @@ build-cache limits dropped the SteamCMD install), so delta updates silently
 became full 12 GB downloads, and raising the limits needs host config on every
 machine. The install is cached in `.ark-manage/build/work/cache`, outside
 BuildKit's control. Don't move SteamCMD back into the runtime build.
+
+## Why the INI files have a git history
+
+ARK reads some keys as lists (one line per engram or item), and duplicates also
+come from hand edits and restored backups. `set ini` must not collapse lines
+ARK wrote on purpose, so it needs to know who wrote each line, not just the
+file's current content. A per-instance git repository next to the files
+(`Saved/Config/WindowsServer/.git`) answers that per line with `git blame`, and
+gives a full log and diff for free.
+
+- **Authors, not heuristics.** Each writer commits under its own author name
+  (`ini_history.py`). The start script commits whatever changed during a run as
+  ARK's: the entrypoint committed just before the server started, and ark-cli
+  refuses to write while it runs. A first attempt kept one JSON snapshot of
+  ARK's last write and matched values against it; it couldn't tell repeated
+  identical values apart and lost everything older than the last write.
+- **In the save volume.** Backups archive the history with the files, and a
+  restore brings back the matching history, so origins stay true after a
+  restore.
+- **Container-side only.** Commits are made by the runtime scripts, never by
+  ark-cli on the host ([container script boundary](architecture.md#container-script-boundary)).
+- **Never blocks.** A git failure warns and the server starts anyway; the
+  history is informational.

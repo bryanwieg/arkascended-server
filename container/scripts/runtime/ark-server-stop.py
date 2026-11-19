@@ -20,6 +20,7 @@ from runtime_utils import (
     file_size_or_none,
     run_rcon,
     server_log_closed,
+    shutdown_warning_minutes,
 )
 
 # Warnings go out at the start of the countdown, then at each of these marks (seconds left).
@@ -81,7 +82,7 @@ def write_stop_status(path: Path, save_ok: bool, shutdown_ok: bool, stop_ok: boo
 def _load_stop_config() -> dict:
     """Read all stop-workflow settings from environment variables."""
     return {
-        "warning_minutes": env_int("SHUTDOWN_WARNING_MINUTES", 5, minimum=0),
+        "warning_minutes": shutdown_warning_minutes(),
         "save_max_retries": env_int("SAVE_MAX_RETRIES", 3),
         "save_retry_delay": env_int("SAVE_RETRY_DELAY_SECONDS", 3),
         "save_confirm_timeout": env_int("SAVE_CONFIRM_TIMEOUT_SECONDS", 60),

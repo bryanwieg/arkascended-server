@@ -78,7 +78,8 @@ container-entrypoint.sh
                  └─ start ARK server via GE-Proton
                  └─ tail ShooterGame.log → container log output
                  └─ on SIGTERM/SIGINT: run ark-server-stop.py
-                      └─ SHUTDOWN_WARNING_MINUTES>0: ServerChat warning via RCON, then wait
+                      └─ SHUTDOWN_WARNING_MINUTES>0 and players online: countdown warnings
+                         (ServerChat + Broadcast at 10/5/1 min, 30 s; reason from ark-stop-reason.py)
                       └─ saveworld (retried until confirmed in the log) → DoExit
                       └─ wait for exit; else SIGTERM, then SIGKILL the process group
                  └─ on server exit: report an OOM kill if the cgroup oom_kill counter rose

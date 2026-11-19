@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -114,3 +116,92 @@ def test_save_confirmed_by_marker_written_after_request(stop_mod, tmp_path: Path
     monkeypatch.setattr(stop_mod, "save_world", fake_save_world)
     assert stop_mod._save_with_retries(log, max_retries=3, retry_delay=0, confirm_timeout=5) is True
     assert calls == [1], "saveworld must not be re-sent once the save is confirmed"
+
+
+# ---------------------------------------------------------------------------
+# player warning countdown
+# ---------------------------------------------------------------------------
+
+
+def _record_countdown(stop_mod, monkeypatch: pytest.MonkeyPatch, list_players) -> tuple[list[str], list[int]]:
+    """Patch RCON and sleep; return the RCON commands sent and the sleeps taken."""
+    sent: list[str] = []
+    slept: list[int] = []
+    monkeypatch.setattr(stop_mod, "rcon_command", list_players)
+    monkeypatch.setattr(stop_mod, "run_rcon", lambda cmd, **_k: sent.append(cmd) or True)
+    monkeypatch.setattr(stop_mod.time, "sleep", slept.append)
+    return sent, slept
+
+
+@pytest.mark.parametrize(
+    ("minutes", "want"),
+    [(10, [600, 300, 60, 30]), (15, [900, 600, 300, 60, 30]), (3, [180, 60, 30]), (1, [60, 30])],
+)
+def test_countdown_marks(stop_mod, minutes: int, want: list[int]) -> None:
+    assert stop_mod.countdown_marks(minutes * 60) == want
+
+
+def test_countdown_warns_at_each_mark_naming_the_reason(stop_mod, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent, slept = _record_countdown(stop_mod, monkeypatch, lambda _cmd, **_k: "0. Alice, 0002abc")
+    stop_mod._send_warning_and_wait(10, "updating to 98.9")
+    chats = [c.removeprefix("ServerChat ") for c in sent if c.startswith("ServerChat ")]
+    assert chats == [
+        f"Server shutting down in {when} (updating to 98.9). The world is saved before exit."
+        for when in ("10 minutes", "5 minutes", "1 minute", "30 seconds")
+    ]
+    assert [c.removeprefix("Broadcast ") for c in sent if c.startswith("Broadcast ")] == chats
+    assert slept == [300, 240, 30, 30]  # the full 10 minutes
+
+
+def test_countdown_skipped_when_no_players(stop_mod, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent, slept = _record_countdown(stop_mod, monkeypatch, lambda _cmd, **_k: "No Players Connected")
+    stop_mod._send_warning_and_wait(10, "")
+    assert sent == []
+    assert slept == []
+
+
+def test_countdown_runs_when_players_cannot_be_listed(stop_mod, monkeypatch: pytest.MonkeyPatch) -> None:
+    def rcon_down(_cmd, **_k):
+        raise stop_mod.RconError("connection refused")
+
+    sent, slept = _record_countdown(stop_mod, monkeypatch, rcon_down)
+    stop_mod._send_warning_and_wait(1, "")
+    assert "ServerChat Server shutting down in 1 minute. The world is saved before exit." in sent
+    assert slept == [30, 30]
+
+
+def test_no_countdown_without_warning_minutes(stop_mod, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent, slept = _record_countdown(stop_mod, monkeypatch, lambda *_a, **_k: pytest.fail("must not list players"))
+    stop_mod._send_warning_and_wait(0, "updating to 98.9")
+    assert sent == []
+    assert slept == []
+
+
+def test_read_stop_reason_consumes_the_file(stop_mod, tmp_path: Path) -> None:
+    reason_file = tmp_path / "ark-stop-reason.txt"
+    reason_file.write_text("updating to 98.9\n", encoding="utf-8")
+    assert stop_mod.read_stop_reason(reason_file) == "updating to 98.9"
+    assert not reason_file.exists()
+    assert stop_mod.read_stop_reason(reason_file) == ""
+
+
+def test_read_stop_reason_ignores_a_stale_reason(stop_mod, tmp_path: Path) -> None:
+    reason_file = tmp_path / "ark-stop-reason.txt"
+    reason_file.write_text("updating to 98.6\n", encoding="utf-8")
+    old = time.time() - stop_mod.REASON_MAX_AGE_SECONDS - 60
+    os.utime(reason_file, (old, old))
+    assert stop_mod.read_stop_reason(reason_file) == ""
+    assert not reason_file.exists()
+
+
+def test_stop_reason_script_writes_the_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module_path = Path(__file__).resolve().parents[3] / "container/scripts/runtime/ark-stop-reason.py"
+    spec = importlib.util.spec_from_file_location("ark_stop_reason", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(mod, "STOP_REASON_FILE", tmp_path / "Logs/ark-stop-reason.txt")
+    assert mod.main(["updating", "to", "98.9"]) == 0
+    assert (tmp_path / "Logs/ark-stop-reason.txt").read_text(encoding="utf-8") == "updating to 98.9\n"
+    assert mod.main([]) == 2

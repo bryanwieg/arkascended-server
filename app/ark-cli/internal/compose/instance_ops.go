@@ -122,6 +122,18 @@ func rconExec(d *core.AppDeps, composeFile, service string, command ...string) (
 	return d.ComposeService.Exec(d.Context(), composeFile, service, argv, ark.ExecOptions{DisableTTY: true, Env: envVars})
 }
 
+// SetStopReason tells a running instance why its next stop happens ("updating to 98.9"), so the
+// stop's player countdown can name it. Images older than ark-stop-reason.py fail the exec; the
+// caller only warns, since the stop itself does not depend on it.
+func SetStopReason(d *core.AppDeps, composeFile, service, reason string) error {
+	argv := []string{"/usr/bin/python3.14", "/home/ark-user/scripts/runtime/ark-stop-reason.py", reason}
+	result, err := d.ComposeService.Exec(d.Context(), composeFile, service, argv, ark.ExecOptions{DisableTTY: true})
+	if err == nil && result.ExitCode != 0 {
+		err = fmt.Errorf("exit code %d: %s", result.ExitCode, strings.TrimSpace(result.Stderr))
+	}
+	return err
+}
+
 func RunLogs(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"logs",

@@ -219,6 +219,9 @@ func rolloutUpdatedInstances(composeFile string, updates []plannedUpdate) error 
 	stateDir := update.StateDir(composeFile)
 	for i, u := range updates {
 		core.Infof("Updating %s\n", u.summary())
+		if err := compose.SetStopReason(d, composeFile, u.Instance, "updating to "+runtime.FallbackDash(u.ToVersion)); err != nil {
+			core.Warnf("Warning: %s: could not pass the update reason to its player warnings: %v\n", u.Instance, err)
+		}
 		attempt, err := update.Rollout(d.Context(), update.RolloutRequest{
 			StateDir: stateDir, Instance: u.Instance, From: u.From, To: u.To,
 		}, steps)

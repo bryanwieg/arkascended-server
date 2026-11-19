@@ -27,6 +27,8 @@ LOGS_DIR = SAVED_DIR / "Logs"
 SERVER_LOG = LOGS_DIR / "ShooterGame.log"
 CRASH_LOG = LOGS_DIR / "crashcallstack.txt"
 STOP_STATUS_FILE = LOGS_DIR / "ark-stop-status.env"
+# Why the next stop happens ("updating to 98.9"), named in the player warnings; ark-stop-reason.py writes it.
+STOP_REASON_FILE = LOGS_DIR / "ark-stop-reason.txt"
 GAME_USER_SETTINGS = SAVED_DIR / "Config/WindowsServer/GameUserSettings.ini"
 # Complete default written by ARK, baked into the image at build time (installer/generate-default-ini.py).
 DEFAULT_GAME_USER_SETTINGS = Path("/home/ark-user/config-defaults/GameUserSettings.ini")

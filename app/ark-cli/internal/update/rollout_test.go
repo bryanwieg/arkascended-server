@@ -5,6 +5,7 @@ package update
 
 import (
 	"ark-cli/internal/core"
+	"ark-cli/internal/testutil"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,9 @@ import (
 
 // newImage is the image `update instance` builds for Steam build 200.
 var newImage = update.LocalImageRef("200")
+
+// stopReasonExit is the exit code of ark-stop-reason.py in runLocalUpdate (127: an image without it).
+var stopReasonExit = 0
 
 // runLocalUpdate runs `update instance` for one instance on ark-server:100 while
 // Steam reports build 200, whose image newImage already exists (no build).
@@ -47,6 +51,10 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 					"io.ark.server.build_id": buildID, "io.ark.server.version": versions[buildID], "io.ark.recipe": arkcontainer.RecipeID(),
 				}, nil
 			},
+		}
+		d.ComposeService.(*arktest.MockCompose).ExecFn = func(_ context.Context, _, _ string, argv []string, _ ark.ExecOptions) (ark.ExecResult, error) {
+			calls = append(calls, "exec "+filepath.Base(argv[1])+" "+strings.Join(argv[2:], " "))
+			return ark.ExecResult{ExitCode: stopReasonExit}, nil
 		}
 		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
 			if req.Timeout >= 0 || req.Kill {
@@ -142,8 +150,25 @@ func TestRunUpdateLocalRolloutSwitchesImage(t *testing.T) {
 	if !strings.Contains(compose, "image: "+newImage) {
 		t.Fatalf("compose not switched:\n%s", compose)
 	}
-	if strings.Join(calls, ",") != "stop,start "+newImage || len(*restored) != 0 {
+	if strings.Join(calls, ",") != "exec ark-stop-reason.py updating to 98.9,stop,start "+newImage || len(*restored) != 0 {
 		t.Fatalf("calls %v, restored %v", calls, *restored)
+	}
+}
+
+// TestRunUpdateLocalRolloutWithoutStopReasonScript: an instance on an image without
+// ark-stop-reason.py is still updated; the missing reason only warns.
+func TestRunUpdateLocalRolloutWithoutStopReasonScript(t *testing.T) {
+	fakeBackups(t)
+	stopReasonExit = 127
+	t.Cleanup(func() { stopReasonExit = 0 })
+	var attempt *update.UpdateAttempt
+	var err error
+	stderr := testutil.CaptureStderr(t, func() { _, _, attempt, err = runLocalUpdate(t, []string{"--rollout"}, false) })
+	if err != nil || attempt == nil || attempt.Result != update.ResultSucceeded {
+		t.Fatalf("got %+v, %v; want a successful update", attempt, err)
+	}
+	if !strings.Contains(stderr, "asa1: could not pass the update reason to its player warnings: exit code 127") {
+		t.Fatalf("missing warning in stderr:\n%s", stderr)
 	}
 }
 
@@ -167,7 +192,7 @@ func TestRunUpdateLocalRolloutRollsBack(t *testing.T) {
 	if !strings.Contains(compose, "image: ark-server:100") {
 		t.Fatalf("compose not switched back:\n%s", compose)
 	}
-	if strings.Join(calls, ",") != "stop,start "+newImage+",stop,start ark-server:100" {
+	if strings.Join(calls, ",") != "exec ark-stop-reason.py updating to 98.9,stop,start "+newImage+",stop,start ark-server:100" {
 		t.Fatalf("calls %v", calls)
 	}
 	if strings.Join(*restored, ",") != "/backups/pre-update.tar.gz" {

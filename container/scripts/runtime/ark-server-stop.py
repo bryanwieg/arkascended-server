@@ -10,8 +10,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _logging import emit_error, emit_event, emit_warning
 from ark_backup.save_markers import wait_for_save_complete
+from rcon_client import RconError, rcon_command
 from runtime_utils import (
     SERVER_LOG,
+    STOP_REASON_FILE,
     STOP_STATUS_FILE,
     ConfigError,
     env_int,
@@ -19,6 +21,12 @@ from runtime_utils import (
     run_rcon,
     server_log_closed,
 )
+
+# Warnings go out at the start of the countdown, then at each of these marks (seconds left).
+WARNING_MARKS = (600, 300, 60, 30)
+# A reason older than this was left by a stop that never happened; don't announce it.
+REASON_MAX_AGE_SECONDS = 15 * 60
+NO_PLAYERS_REPLY = "No Players Connected"
 
 
 def save_world() -> bool:
@@ -30,11 +38,22 @@ def save_world() -> bool:
 
 
 def send_chat(message: str) -> bool:
-    """Send a ServerChat RCON message to all players and return True if accepted."""
-    ok = run_rcon(f"ServerChat {message}")
-    if ok:
-        emit_event("stop", f"Chat message sent: {message}")
-    return ok
+    """Send message to all players as chat and as an on-screen broadcast; return True if either was accepted."""
+    chat_ok = run_rcon(f"ServerChat {message}")
+    broadcast_ok = run_rcon(f"Broadcast {message}")
+    if chat_ok or broadcast_ok:
+        emit_event("stop", f"Player warning sent: {message}")
+    return chat_ok or broadcast_ok
+
+
+def players_online() -> bool:
+    """True unless ListPlayers answers that nobody is connected; an RCON error counts as players online."""
+    try:
+        reply = rcon_command("ListPlayers")
+    except RconError as exc:
+        emit_warning("stop", f"cannot list players ({exc}); warning them anyway.")
+        return True
+    return NO_PLAYERS_REPLY not in reply
 
 
 def shutdown_server() -> bool:
@@ -71,13 +90,42 @@ def _load_stop_config() -> dict:
     }
 
 
-def _send_warning_and_wait(warning_minutes: int) -> None:
-    """Broadcast shutdown warning chat and sleep, or log immediate shutdown."""
-    if warning_minutes > 0:
-        send_chat(f"Server shutting down in {warning_minutes} minute(s). Saving world before exit.")
-        time.sleep(warning_minutes * 60)
-    else:
+def countdown_marks(total_seconds: int) -> list[int]:
+    """Seconds left at each warning: the full countdown, then every WARNING_MARKS step below it."""
+    return [total_seconds] + [mark for mark in WARNING_MARKS if mark < total_seconds]
+
+
+def _when(seconds: int) -> str:
+    if seconds % 60:
+        return f"{seconds} seconds"
+    minutes = seconds // 60
+    return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
+def read_stop_reason(path: Path = STOP_REASON_FILE) -> str:
+    """Return and remove the reason ark-cli left for this stop; empty if none or stale."""
+    try:
+        reason = path.read_text(encoding="utf-8").strip()
+        fresh = time.time() - path.stat().st_mtime <= REASON_MAX_AGE_SECONDS
+        path.unlink()
+    except OSError:
+        return ""
+    return reason if fresh else ""
+
+
+def _send_warning_and_wait(warning_minutes: int, reason: str) -> None:
+    """Count down with repeated player warnings while players are online; skip it on an empty server."""
+    if warning_minutes <= 0:
         emit_event("stop", "Immediate shutdown requested; skipping player warning delay.")
+        return
+    if not players_online():
+        emit_event("stop", "No players connected; skipping the shutdown countdown.")
+        return
+    why = f" ({reason})" if reason else ""
+    marks = countdown_marks(warning_minutes * 60)
+    for left, following in zip(marks, [*marks[1:], 0], strict=True):
+        send_chat(f"Server shutting down in {_when(left)}{why}. The world is saved before exit.")
+        time.sleep(left - following)
 
 
 def _save_with_retries(log_file: Path, max_retries: int, retry_delay: int, confirm_timeout: int) -> bool:
@@ -137,7 +185,7 @@ def main() -> int:
         emit_error("stop", str(exc))
         return 2
 
-    _send_warning_and_wait(cfg["warning_minutes"])
+    _send_warning_and_wait(cfg["warning_minutes"], read_stop_reason())
 
     if not _save_with_retries(
         SERVER_LOG, cfg["save_max_retries"], cfg["save_retry_delay"], cfg["save_confirm_timeout"]

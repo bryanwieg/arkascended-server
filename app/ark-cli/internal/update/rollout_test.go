@@ -5,6 +5,7 @@ package update
 
 import (
 	"ark-cli/internal/core"
+	"ark-cli/internal/testutil"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"pkg/ark"
 	"pkg/ark/arktest"
 	"pkg/ark/runtime"
 	update "pkg/ark/update"
@@ -24,6 +26,9 @@ import (
 
 // newImage is the image `update instance` builds for Steam build 200.
 var newImage = update.LocalImageRef("200")
+
+// stopReasonExit is the exit code of ark-stop-reason.py in runLocalUpdate (127: an image without it).
+var stopReasonExit = 0
 
 // runLocalUpdate runs `update instance` for one instance on ark-server:100 while
 // Steam reports build 200, whose image newImage already exists (no build).
@@ -41,8 +46,15 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 			ImageExistsFn: func(context.Context, string) (bool, error) { return true, nil },
 			ImageLabelsFn: func(_ context.Context, image string) (map[string]string, error) {
 				buildID, _, _ := strings.Cut(strings.TrimPrefix(image, "ark-server:"), "-")
-				return map[string]string{"io.ark.server.build_id": buildID, "io.ark.recipe": arkcontainer.RecipeID()}, nil
+				versions := map[string]string{"100": "98.6", "200": "98.9"}
+				return map[string]string{
+					"io.ark.server.build_id": buildID, "io.ark.server.version": versions[buildID], "io.ark.recipe": arkcontainer.RecipeID(),
+				}, nil
 			},
+		}
+		d.ComposeService.(*arktest.MockCompose).ExecFn = func(_ context.Context, _, _ string, argv []string, _ ark.ExecOptions) (ark.ExecResult, error) {
+			calls = append(calls, "exec "+filepath.Base(argv[1])+" "+strings.Join(argv[2:], " "))
+			return ark.ExecResult{ExitCode: stopReasonExit}, nil
 		}
 		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
 			if req.Timeout >= 0 || req.Kill {
@@ -87,33 +99,100 @@ func TestRunUpdateLocalWithoutRolloutOnlyBuilds(t *testing.T) {
 	}
 }
 
+func TestRunUpdateReportsVersionsAfterBuild(t *testing.T) {
+	out := captureStdout(t, func() {
+		if _, _, _, err := runLocalUpdate(t, nil, false); err != nil {
+			t.Fatal(err)
+		}
+	})
+	for _, want := range []string{"asa1 | 98.6 | 98.9 | update |", "asa1: 98.6 -> 98.9 (build 200)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in output:\n%s", want, out)
+		}
+	}
+}
+
+// assertInOrder fails unless each want appears in out after the previous one.
+func assertInOrder(t *testing.T, out string, want ...string) {
+	t.Helper()
+	rest := out
+	for _, w := range want {
+		i := strings.Index(rest, w)
+		if i < 0 {
+			t.Fatalf("missing %q (in this order) in output:\n%s", w, out)
+		}
+		rest = rest[i+len(w):]
+	}
+}
+
 func TestRunUpdateLocalRolloutSwitchesImage(t *testing.T) {
 	restored := fakeBackups(t)
-	compose, calls, attempt, err := runLocalUpdate(t, []string{"--rollout"}, false)
+	var compose string
+	var calls []string
+	var attempt *update.UpdateAttempt
+	var err error
+	out := captureStdout(t, func() { compose, calls, attempt, err = runLocalUpdate(t, []string{"--rollout"}, false) })
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertInOrder(t, out,
+		"Image "+newImage+" (ARK 98.9) already exists",
+		"Updating asa1: 98.6 -> 98.9 (build 200)",
+		"asa1: stopping (the stop saves the world)",
+		"asa1: backup saved to /backups/pre-update.tar.gz",
+		"asa1: switching compose to "+newImage,
+		"asa1: starting and waiting until ready",
+		"asa1: ready",
+		"asa1: updated to 98.9")
 	if attempt == nil || attempt.Result != update.ResultSucceeded {
 		t.Fatalf("recorded %+v, want succeeded", attempt)
 	}
 	if !strings.Contains(compose, "image: "+newImage) {
 		t.Fatalf("compose not switched:\n%s", compose)
 	}
-	if strings.Join(calls, ",") != "stop,start "+newImage || len(*restored) != 0 {
+	if strings.Join(calls, ",") != "exec ark-stop-reason.py updating to 98.9,stop,start "+newImage || len(*restored) != 0 {
 		t.Fatalf("calls %v, restored %v", calls, *restored)
+	}
+}
+
+// TestRunUpdateLocalRolloutWithoutStopReasonScript: an instance on an image without
+// ark-stop-reason.py is still updated; the missing reason only warns.
+func TestRunUpdateLocalRolloutWithoutStopReasonScript(t *testing.T) {
+	fakeBackups(t)
+	stopReasonExit = 127
+	t.Cleanup(func() { stopReasonExit = 0 })
+	var attempt *update.UpdateAttempt
+	var err error
+	stderr := testutil.CaptureStderr(t, func() { _, _, attempt, err = runLocalUpdate(t, []string{"--rollout"}, false) })
+	if err != nil || attempt == nil || attempt.Result != update.ResultSucceeded {
+		t.Fatalf("got %+v, %v; want a successful update", attempt, err)
+	}
+	if !strings.Contains(stderr, "asa1: could not pass the update reason to its player warnings: exit code 127") {
+		t.Fatalf("missing warning in stderr:\n%s", stderr)
 	}
 }
 
 func TestRunUpdateLocalRolloutRollsBack(t *testing.T) {
 	restored := fakeBackups(t)
-	compose, calls, attempt, err := runLocalUpdate(t, []string{"--rollout"}, true)
+	var compose string
+	var calls []string
+	var attempt *update.UpdateAttempt
+	var err error
+	out := captureStdout(t, func() { compose, calls, attempt, err = runLocalUpdate(t, []string{"--rollout"}, true) })
 	if err == nil || !strings.Contains(err.Error(), "rolled back") {
 		t.Fatalf("expected a rolled-back error, got %v", err)
 	}
+	assertInOrder(t, out,
+		"asa1: switching compose to "+newImage,
+		"asa1: starting and waiting until ready",
+		"asa1: switching compose to ark-server:100",
+		"asa1: rolling back: restoring /backups/pre-update.tar.gz",
+		"asa1: starting and waiting until ready",
+		"asa1: ready")
 	if !strings.Contains(compose, "image: ark-server:100") {
 		t.Fatalf("compose not switched back:\n%s", compose)
 	}
-	if strings.Join(calls, ",") != "stop,start "+newImage+",stop,start ark-server:100" {
+	if strings.Join(calls, ",") != "exec ark-stop-reason.py updating to 98.9,stop,start "+newImage+",stop,start ark-server:100" {
 		t.Fatalf("calls %v", calls)
 	}
 	if strings.Join(*restored, ",") != "/backups/pre-update.tar.gz" {
@@ -140,5 +219,58 @@ func TestRunUpdateLocalRolloutAlertsWebhookOnRollback(t *testing.T) {
 	}
 	if len(bodies) != 1 || !strings.Contains(bodies[0], "ARK update of asa1 rolled_back: ark-server:100 -> "+newImage) {
 		t.Fatalf("webhook bodies %q, want one rolled_back alert", bodies)
+	}
+}
+
+// TestRunUpdateBuildFailureTouchesNoInstance pins the order: the image is built before
+// any instance is stopped, so a failed build (SteamCMD 0x6, ...) leaves every instance running.
+func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:100\n  asa2:\n    image: ark-server:100\n"
+	writeUpdateComposeFixture(t, composePath, seed)
+	fakeBackups(t)
+	var calls []string
+	var runErr error
+	withLocalSteamCheck(t, "98.6", "100", "200", func(d *core.AppDeps) {
+		d.Engine.(*arktest.MockEngine).PullImageFn = func(context.Context, string) error { return nil }
+		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
+		d.Runtime.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) {
+			return ark.ExecResult{ExitCode: 8}, nil // SteamCMD's exit on state 0x6
+		}
+		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
+			calls = append(calls, "stop "+req.Instance)
+			return nil
+		}
+		d.RestartStartInstance = func(req runtime.StartCommandRequest) error {
+			calls = append(calls, "start "+req.Instance)
+			return nil
+		}
+	}, func() {
+		out := captureStdout(t, func() {
+			runErr = RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--rollout"})
+		})
+		assertInOrder(t, out, "Steam has ARK build 200; asa1, asa2 need(s) a new image.")
+	})
+	if runErr == nil || !strings.HasSuffix(runErr.Error(), "server files build failed: exit code 8; no instances were changed") {
+		t.Fatalf("expected the build error, got %v", runErr)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("a failed build must not stop or start instances, got %v", calls)
+	}
+	after, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != seed {
+		t.Fatalf("compose changed after a failed build:\n%s", after)
+	}
+	for _, instance := range []string{"asa1", "asa2"} {
+		st, err := update.LoadState(update.StateDir(composePath), instance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.LastAttempt == nil || st.LastAttempt.Result != update.ResultBuildFailed {
+			t.Fatalf("%s recorded %+v, want build_failed", instance, st.LastAttempt)
+		}
 	}
 }

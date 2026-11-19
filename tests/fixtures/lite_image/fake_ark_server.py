@@ -8,7 +8,8 @@ its command line contains ArkAscendedServer.exe and the scripts treat it as the 
 - Writes ShooterGame.log with the markers the CLI and scripts wait for (started, advertising,
   World Save Complete, Log file closed).
 - Serves RCON on 27020 with the ServerAdminPassword from GameUserSettings.ini, as ARK does:
-  saveworld, DoExit, ListPlayers; anything else gets ARK's generic reply.
+  saveworld, DoExit, ListPlayers; anything else gets ARK's generic reply. ListPlayers answers
+  with the lines of Saved/fake-ark-players.txt (e.g. "0. Alice, 0002abc") when that file exists.
 - On DoExit, rewrites GameUserSettings.ini as ARK does on shutdown: here it bumps
   [ServerSettings] FakeArkShutdowns. FAKE_ARK_INI_DUPLICATE=<key> also makes it write that key
   twice, like an ARK build that duplicates a key.
@@ -31,6 +32,7 @@ from pathlib import Path
 SAVED = Path("/home/ark-user/ark-server/ShooterGame/Saved")
 LOG = SAVED / "Logs/ShooterGame.log"
 GUS = SAVED / "Config/WindowsServer/GameUserSettings.ini"
+PLAYERS = SAVED / "fake-ark-players.txt"
 RCON_PORT = 27020
 GENERIC_REPLY = "Server received, But no response!! "
 
@@ -109,7 +111,7 @@ def run_command(command: str) -> str:
         log("World Save Complete")
         return "World Saved"
     if name == "listplayers":
-        return "No Players Connected"
+        return PLAYERS.read_text() if PLAYERS.is_file() else "No Players Connected"
     if name == "doexit":
         _exit.set()
         return "Exiting... "

@@ -38,7 +38,20 @@ func resolveUpdateTargetServices(project *types.Project, target string) ([]strin
 }
 
 // plannedUpdate switches an instance from one image to another.
-type plannedUpdate struct{ Instance, From, To string }
+type plannedUpdate struct {
+	Instance, From, To string
+	FromVersion        string // ARK version of From; empty when its label is missing
+	ToVersion, BuildID string // filled in once the image is built
+}
+
+// summary is "<instance>: <current version> -> <new version> (build <id>)".
+func (u plannedUpdate) summary() string {
+	from := u.FromVersion
+	if from == "" {
+		from = u.From
+	}
+	return fmt.Sprintf("%s: %s -> %s (build %s)", u.Instance, from, runtime.FallbackDash(u.ToVersion), u.BuildID)
+}
 
 // planAndApplyImageUpdates checks each service against Steam and, unless
 // req.CheckOnly, builds the new image once for every service that needs it.
@@ -63,24 +76,44 @@ func planAndApplyImageUpdates(
 		}
 		rows = append(rows, row)
 		if !req.CheckOnly && row.Action == update.ActionUpdate {
-			pending = append(pending, plannedUpdate{Instance: serviceName, From: svc.Image})
+			pending = append(pending, plannedUpdate{
+				Instance: serviceName, From: svc.Image, FromVersion: row.CurrentVersion, BuildID: row.TargetBuildID,
+			})
 		}
 	}
 	if len(pending) == 0 {
 		return rows, nil, nil
 	}
 
+	names := make([]string, len(pending))
+	for i, u := range pending {
+		names[i] = u.Instance
+	}
+	core.Infof("Steam has ARK build %s; %s need(s) a new image. Building it (a download takes 15-25 minutes).\n",
+		pending[0].BuildID, strings.Join(names, ", "))
 	stateDir := update.StateDir(composeFile)
 	built, err := d.UpdateService.BuildLocalImage(ctx, stateDir)
 	if err != nil {
 		for _, u := range pending {
 			recordBuildFailure(stateDir, u, err)
 		}
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w; no instances were changed", err)
+	}
+	if built.Built {
+		core.Infof("Built %s (ARK %s).\n", built.Image, built.Version)
+	} else {
+		core.Infof("Image %s (ARK %s) already exists; using it.\n", built.Image, built.Version)
+	}
+	// The ARK version is only known from the built image's labels.
+	for i := range rows {
+		if rows[i].Action == update.ActionUpdate {
+			rows[i].TargetVersion = built.Version
+		}
 	}
 	updates := make([]plannedUpdate, len(pending))
 	for i, u := range pending {
-		updates[i] = plannedUpdate{Instance: u.Instance, From: u.From, To: built.Image}
+		u.To, u.ToVersion, u.BuildID = built.Image, built.Version, built.BuildID
+		updates[i] = u
 	}
 	sort.Slice(updates, func(i, j int) bool { return updates[i].Instance < updates[j].Instance })
 	return rows, updates, nil
@@ -166,8 +199,8 @@ func printImageUpdateTable(rows []update.PlanRow) {
 			current = runtime.FallbackDash(row.CurrentImage)
 		}
 		target := runtime.FallbackDash(row.TargetVersion)
-		if target == "-" {
-			target = runtime.FallbackDash(row.TargetImage)
+		if target == "-" && row.TargetBuildID != "" {
+			target = "build " + row.TargetBuildID // --check: the version is unknown until the image is built
 		}
 		core.Infof("%s | %s | %s | %s | %s\n", row.Instance, current, target, row.Action, runtime.FallbackDash(row.Message))
 	}
@@ -182,10 +215,13 @@ func rolloutUpdatedInstances(composeFile string, updates []plannedUpdate) error 
 		return nil
 	}
 	d := core.CurrentAppDeps()
-	steps := newRolloutSteps(d, composeFile)
+	steps := loggedSteps(newRolloutSteps(d, composeFile))
 	stateDir := update.StateDir(composeFile)
 	for i, u := range updates {
-		core.Infof("Rolling update: %s (%s -> %s)\n", u.Instance, u.From, u.To)
+		core.Infof("Updating %s\n", u.summary())
+		if err := compose.SetStopReason(d, composeFile, u.Instance, "updating to "+runtime.FallbackDash(u.ToVersion)); err != nil {
+			core.Warnf("Warning: %s: could not pass the update reason to its player warnings: %v\n", u.Instance, err)
+		}
 		attempt, err := update.Rollout(d.Context(), update.RolloutRequest{
 			StateDir: stateDir, Instance: u.Instance, From: u.From, To: u.To,
 		}, steps)
@@ -206,10 +242,46 @@ func rolloutUpdatedInstances(composeFile string, updates []plannedUpdate) error 
 		if err != nil {
 			return err
 		}
-		core.Infof("Updated %s: %s -> %s\n", u.Instance, u.From, u.To)
+		core.Infof("%s: updated to %s (%s).\n", u.Instance, runtime.FallbackDash(u.ToVersion), u.To)
 	}
 	core.Infof("Rolling update complete for %d instance(s).\n", len(updates))
 	return nil
+}
+
+// loggedSteps prints each rollout step in plain language, including the steps of a rollback.
+func loggedSteps(s update.RolloutSteps) update.RolloutSteps {
+	stop, backup, setImage, start, restore := s.Stop, s.Backup, s.SetImage, s.StartAndWait, s.Restore
+	s.Stop = func(ctx context.Context, instance string) error {
+		core.Infof("%s: stopping (the stop saves the world)\n", instance)
+		return stop(ctx, instance)
+	}
+	s.Backup = func(ctx context.Context, instance string) (string, error) {
+		core.Infof("%s: creating the pre-update backup\n", instance)
+		archive, err := backup(ctx, instance)
+		if err == nil {
+			core.Infof("%s: backup saved to %s\n", instance, archive)
+		}
+		return archive, err
+	}
+	s.SetImage = func(ctx context.Context, instance, image string) error {
+		core.Infof("%s: switching compose to %s\n", instance, image)
+		return setImage(ctx, instance, image)
+	}
+	s.StartAndWait = func(ctx context.Context, instance string) error {
+		core.Infof("%s: starting and waiting until ready\n", instance)
+		err := start(ctx, instance)
+		if err != nil {
+			core.Warnf("Warning: %s did not become ready: %v\n", instance, err)
+		} else {
+			core.Infof("%s: ready\n", instance)
+		}
+		return err
+	}
+	s.Restore = func(ctx context.Context, instance, archive string) error {
+		core.Infof("%s: rolling back: restoring %s\n", instance, archive)
+		return restore(ctx, instance, archive)
+	}
+	return s
 }
 
 // newRolloutSteps returns the real rollout operations; tests replace it.

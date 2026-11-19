@@ -22,8 +22,8 @@ ark-cli ──Docker/Podman API──▶ container ──▶ ARK server (GE-Prot
 it is advertising for join (default 5 minutes).
 
 `stop instance` stops the container with a 15-minute grace period. The
-container's stop script runs on SIGTERM: optional player warning
-(`SHUTDOWN_WARNING_MINUTES`, default 0), save the world over RCON, exit, and
+container's stop script runs on SIGTERM: an optional player countdown while
+players are online (`SHUTDOWN_WARNING_MINUTES`, default 0), save the world over RCON, exit, and
 force-kill only if the server does not exit in time. `--kill` skips the save.
 Flags: [CLI reference](../reference/cli-commands.md).
 

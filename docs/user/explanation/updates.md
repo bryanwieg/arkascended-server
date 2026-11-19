@@ -17,8 +17,8 @@ new image even when ARK hasn't updated.
   pins compose to `ark-server:<build-id>-<recipe-id>`. If that image already
   exists, no build happens.
 - SteamCMD runs in a throwaway container. Its install is cached in
-  `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), so later
-  updates download only changed files.
+  `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), with
+  SteamCMD's depot manifests, so later updates download only changed files.
 - Before a build, free space in `.ark-manage` must be at least
   `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB. A lock stops two builds from
   running at once.
@@ -33,15 +33,25 @@ with Steam's current public build, and its `io.ark.recipe` label with the
 recipe embedded in this `ark-cli`. Either difference is an update. Images built
 before recipe labels existed count as a recipe change once.
 
-1. `--check` only prints the comparison table.
-2. Without `--rollout` (same as `--restart`), it builds the new image and
+1. `--check` only prints the comparison table. Its `target` column shows
+   Steam's build (`build <id>`): the ARK version is only known from the built
+   image's `io.ark.server.version` label.
+2. Without `--rollout` (same as `--restart`), it builds the new image, prints
+   the table with the new version and one line per instance,
+   `<instance>: <current version> -> <new version> (build <id>)`, and
    leaves compose unchanged. It prints
    `Built ark-server:<id>. Switch with: ark-cli update instance --instance <name> --rollout`.
 3. With `--rollout`, for each instance in name order: stop (the stop saves the
    world), create a `pre-update` backup, switch compose to the new tag, then
-   start and wait until ready.
+   start and wait until ready. With `SHUTDOWN_WARNING_MINUTES` set, players
+   online get a countdown naming the update (`updating to 98.9`); see
+   [Configuration](../reference/configuration.md). Each step prints one line
+   (`asa1: stopping …`, `asa1: backup saved to …`, `asa1: ready`), without `-v`.
 
-A failed build changes nothing.
+The image is built before any instance is touched, so a failed build changes
+nothing. Its error names the cause in one line and ends with
+`no instances were changed`, e.g.
+`Error: server files build failed: SteamCMD download failed: state is 0x6; no instances were changed`.
 
 ## Automatic rollback
 

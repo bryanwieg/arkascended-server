@@ -11,6 +11,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -67,6 +68,7 @@ func TestRunStartRunsComposeUpForTargets(t *testing.T) {
 			var upServices []string
 			var upPullPolicy string
 			waited := []string{}
+			var waitedMu sync.Mutex // start waits for instances concurrently
 			withComposeLifecycleDeps(t, tc.services, func(d *core.AppDeps) {
 				loadProject := d.ComposeService.(*arktest.MockCompose).LoadProjectFn
 				d.ComposeService = &arktest.MockCompose{
@@ -86,6 +88,8 @@ func TestRunStartRunsComposeUpForTargets(t *testing.T) {
 				}
 				d.HealthChecker = &mockHealthChecker{
 					waitReadyFn: func(_ context.Context, _, service string, _ health.WaitOptions) error {
+						waitedMu.Lock()
+						defer waitedMu.Unlock()
 						waited = append(waited, service)
 						return nil
 					},

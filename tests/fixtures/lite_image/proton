@@ -1,0 +1,4 @@
+#!/bin/sh
+# Fake proton for the lite test image: `proton run ./ArkAscendedServer.exe <args>` starts the fake
+# server with those args, so ArkAscendedServer.exe stays in its command line.
+exec python3.14 /home/ark-user/fake-proton/fake_ark_server.py "$@"

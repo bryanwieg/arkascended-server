@@ -168,7 +168,8 @@ See [image-build.md](image-build.md).
   container runtime (e.g. port checks)
 - `tests/app/ark_web/integration/fast/` — `ark-web` HTTP endpoint tests
 - `tests/helpers/` — shared test helpers (image build, compose client,
-  artifacts, fakes, web client); `tests/fixtures/` — test data
+  artifacts, fakes, web client, lite image); `tests/fixtures/` — test data,
+  including `lite_image/` (fake ARK server image for `lite` tests)
 - `tests/conftest.py` — root pytest fixtures
 - `tests/test_baseline_framework.py` — canonical test structure reference
 - `tests/test_canary.py` — smoke test for test infrastructure

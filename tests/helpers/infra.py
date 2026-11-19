@@ -38,7 +38,7 @@ def wait_for(
     raise AssertionError(f"Timed out waiting for {description}.")
 
 
-def _ensure_image_exists(dc: DockerClient) -> str:
+def _ensure_image_exists(dc: DockerClient, image: str | None = None) -> str:
     """Check docker binary, daemon, compose, and image exist.
 
     Skips with pytest.skip if any check fails. Returns the image name.
@@ -54,7 +54,7 @@ def _ensure_image_exists(dc: DockerClient) -> str:
     except Exception:  # noqa: BLE001
         pytest.skip(f"{binary} compose is not available for integration tests.")
 
-    image = os.environ.get("ARK_TEST_IMAGE", "ark-server:latest")
+    image = image or os.environ.get("ARK_TEST_IMAGE", "ark-server:latest")
     try:
         dc.images(image)
     except Exception:  # noqa: BLE001
@@ -133,9 +133,13 @@ def prepare_test_env(
     compose_dir: Path,
     backup_dir: Path,
     compose_prefix: str,
+    image: str | None = None,
 ) -> tuple[dict[str, str], Path]:
-    """Build a test_env dict with universal config paths and runtime prereqs."""
-    image = _ensure_image_exists(dc)
+    """Build a test_env dict with universal config paths and runtime prereqs.
+
+    image overrides ARK_TEST_IMAGE (the lite image for `lite` tests, see helpers.lite_image).
+    """
+    image = _ensure_image_exists(dc, image)
     compose_dir.mkdir(parents=True, exist_ok=True)
 
     compose_filename = f"{compose_prefix}{uuid.uuid4().hex[:8]}.yaml"
@@ -192,6 +196,7 @@ def cleanup_test_env(dc: DockerClient, env: dict[str, str], compose_file: Path) 
 
 def build_container_instance_config(
     test_env: dict[str, str],
+    extra_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
     instance = f"pytest-ark-{uuid.uuid4().hex[:8]}"
     admin_password = "AdminPass123"
@@ -204,6 +209,7 @@ def build_container_instance_config(
         image=image,
         admin_password=admin_password,
         server_password=server_password,
+        extra_env=extra_env,
     )
     return {
         "instance": instance,

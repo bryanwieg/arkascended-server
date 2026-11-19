@@ -433,6 +433,7 @@ def run_cmd() -> Callable[..., subprocess.CompletedProcess[str]]:
 
 @pytest.fixture
 def test_env(
+    request: pytest.FixtureRequest,
     repo_root: Path,
     test_artifact_dir: Path,
 ) -> Generator[dict[str, str]]:
@@ -444,6 +445,7 @@ def test_env(
     """
     from helpers.compose_client import get_docker_client
     from helpers.infra import cleanup_test_env, prepare_test_env
+    from helpers.lite_image import image_for_test
 
     dc = get_docker_client()
     env, compose_file = prepare_test_env(
@@ -451,6 +453,7 @@ def test_env(
         compose_dir=test_artifact_dir,
         backup_dir=repo_root / "backups",
         compose_prefix="pytest-compose-",
+        image=image_for_test(request),
     )
     yield env
     cleanup_test_env(dc, env, compose_file)

@@ -28,8 +28,10 @@ from helpers.infra import (
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _ensure_container_image() -> None:
-    """Build the container image if missing for this runtime."""
+def _ensure_container_image(request: pytest.FixtureRequest) -> None:
+    """Build the container image if missing for this runtime, unless every selected test is `lite`."""
+    if all(item.get_closest_marker("lite") for item in request.session.items):
+        return
     image = os.environ.get("ARK_TEST_IMAGE", "ark-server:latest")
     if not image_exists(image):
         build_server_image(image)
@@ -103,10 +105,12 @@ def disable_restart_policy_fixture() -> Callable[[Path], None]:
 
 @pytest.fixture
 def test_env(
+    request: pytest.FixtureRequest,
     repo_root: Path,
     test_artifact_dir: Path,
 ) -> Generator[dict[str, str]]:
     from helpers.compose_client import get_docker_client
+    from helpers.lite_image import image_for_test
 
     dc = get_docker_client()
     env, compose_file = prepare_test_env(
@@ -114,6 +118,7 @@ def test_env(
         compose_dir=test_artifact_dir,
         backup_dir=repo_root / "backups",
         compose_prefix="pytest-compose-",
+        image=image_for_test(request),
     )
     yield env
     cleanup_test_env(dc, env, compose_file)

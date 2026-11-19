@@ -1,6 +1,7 @@
 # Container pipeline:
-# - every change under container/: Python unit tests for the container scripts, plus the
-#   OOM-report test (a real OOM kill in a python:3.14-slim container, no ARK image)
+# - every change under container/: Python unit tests for the container scripts, plus the lite
+#   tests (`-m lite`): container and CLI tests on the lite image (real runtime scripts, a fake ARK
+#   server, no ARK files; tests/helpers/lite_image.py), including a real OOM kill
 # - daily, manual, and pushes to main under container/: build the image from Steam's current
 #   ARK build and run the smoke tests (healthy start and clean stop). No ARK image is published:
 #   ark-cli builds the image on each host. The daily run is an early warning that a new ARK
@@ -13,7 +14,13 @@ on:
     paths:
       - "container/**"
       - "tests/container/unit/**"
-      - "tests/container/integration/fast/test_server_oom_report.py"
+      - "tests/container/integration/**"
+      - "tests/app/ark_cli/integration/**"
+      - "tests/fixtures/lite_image/**"
+      - "tests/helpers/**"
+      - "tests/conftest.py"
+      - "app/ark-cli/**"
+      - "app/pkg/**"
       - "requirements-dev.txt"
       - ".github/build-image.sh"
       - ".github/workflows/image.yml"
@@ -22,7 +29,13 @@ on:
     paths:
       - "container/**"
       - "tests/container/unit/**"
-      - "tests/container/integration/fast/test_server_oom_report.py"
+      - "tests/container/integration/**"
+      - "tests/app/ark_cli/integration/**"
+      - "tests/fixtures/lite_image/**"
+      - "tests/helpers/**"
+      - "tests/conftest.py"
+      - "app/ark-cli/**"
+      - "app/pkg/**"
       - "requirements-dev.txt"
       - ".github/build-image.sh"
       - ".github/workflows/image.yml"
@@ -46,12 +59,17 @@ jobs:
           python-version: "3.14"
       - run: pip install -r requirements-dev.txt
       - run: pytest -m unit tests/container/unit
-      # A real kernel OOM kill under a cgroup memory limit. The test needs only python3.14, so
-      # pointing ARK_TEST_IMAGE at a pulled python image keeps the session from building the ARK image.
-      - run: docker pull -q python:3.14-slim
-      - run: pytest -rs tests/container/integration/fast/test_server_oom_report.py
-        env:
-          ARK_TEST_IMAGE: python:3.14-slim
+      # The CLI lite tests build ark-cli.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: |
+            go.work.sum
+            app/**/go.sum
+      # Lite tests run on a small image built from the runtime scripts and a fake ARK server, so
+      # the session never builds the ARK image. Includes a real kernel OOM kill under a cgroup limit.
+      # docker/ only: podman/conftest.py switches the whole session to Podman when imported.
+      - run: pytest -rs -m lite tests/container/integration tests/app/ark_cli/integration/docker
 
   smoke:
     needs: unit

@@ -217,6 +217,30 @@ func TestComposeService(t *testing.T, svc ark.ComposeService) {
 		}
 	})
 
+	t.Run("StopNilTimeoutUsesStopGracePeriod", func(t *testing.T) {
+		// sleep as PID 1 ignores SIGTERM, so stop waits the full grace before SIGKILL.
+		composeFile := filepath.Join(t.TempDir(), "docker-compose.yaml")
+		content := testComposeContent + "    stop_grace_period: 2s\n"
+		if err := os.WriteFile(composeFile, []byte(content), 0o644); err != nil {
+			t.Fatalf("write compose file: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = svc.Down(context.Background(), composeFile)
+		})
+
+		if err := svc.Up(ctx, composeFile, []string{"test-svc"}, ark.UpOptions{}); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+		start := time.Now()
+		if err := svc.Stop(ctx, composeFile, []string{"test-svc"}, nil); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		// The engine default is 10s; well under that means stop_grace_period applied.
+		if elapsed := time.Since(start); elapsed < 1500*time.Millisecond || elapsed > 7*time.Second {
+			t.Fatalf("stop took %v, want about 2s (stop_grace_period)", elapsed)
+		}
+	})
+
 	t.Run("RunOneOff", func(t *testing.T) {
 		composeFile := writeTestComposeFile(t)
 		t.Cleanup(func() {

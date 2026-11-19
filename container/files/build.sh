@@ -11,6 +11,9 @@
 #                         "--security-opt seccomp=unconfined" where Docker's default
 #                         seccomp profile blocks SteamCMD (GitHub-hosted runners)
 #   CONTAINER_RUNTIME     docker (default) or podman
+#   ARK_DEPOTCACHE_SEED_IMAGE  image to take SteamCMD's depot manifests from when work/cache
+#                         has none yet (caches from before they were kept); default
+#                         ark-server:latest, skipped when it doesn't exist
 #   WORK_DIR              work folder; default ./work. work/cache keeps the SteamCMD
 #                         install (about 12 GB) so later builds download only changed
 #                         files; work/out is rebuilt each run and removed afterwards
@@ -41,7 +44,19 @@ elif docker info --format '{{.SecurityOptions}}' | grep -q rootless; then
 fi
 
 "$rt" build -q -f "$root/steamcmd.dockerfile" -t arkascended-steamcmd "$root/scripts" >/dev/null
-mkdir -p "$work"
+mkdir -p "$work/cache"
+# A cache from before depotcache was kept: seed it from the last image, which has the
+# installed build's manifest. Without it SteamCMD can only update with the 0x6 fallback.
+seed="${ARK_DEPOTCACHE_SEED_IMAGE:-ark-server:latest}"
+if [[ ! -d "$work/cache/depotcache" ]] && "$rt" image inspect "$seed" >/dev/null 2>&1; then
+  seed_id="$("$rt" create "$seed")"
+  if "$rt" cp "$seed_id:/home/ark-user/.local/share/Steam/depotcache" "$work/cache/depotcache"; then
+    echo "Seeded the SteamCMD depot cache from $seed."
+  else
+    echo "Warning: could not copy the depot cache from $seed; this update may need the full validate." >&2
+  fi
+  "$rt" rm "$seed_id" >/dev/null
+fi
 trap 'rm -rf "$work/out"' EXIT
 # shellcheck disable=SC2086 # STEAMCMD_DOCKER_OPTS holds separate options
 "$rt" run --rm ${STEAMCMD_DOCKER_OPTS:-} "${user[@]}" \

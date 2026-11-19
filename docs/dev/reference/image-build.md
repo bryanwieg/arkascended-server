@@ -100,6 +100,12 @@ throwaway container with work folder `<compose dir>/.ark-manage/build/work`:
 
 - `work/cache`: persistent SteamCMD install (~12 GB); later updates download only
   changed files.
+- `work/cache/depotcache`: SteamCMD's depot manifests, copied into the throwaway
+  container's Steam home before the download and back after. An update needs the
+  installed build's manifest; Steam refuses superseded manifests to anonymous
+  logins, which ends in `state is 0x6`. A cache without it is seeded once from
+  `ARK_DEPOTCACHE_SEED_IMAGE` (default `ark-server:latest`), whose Steam client
+  files include it.
 - `work/out`: hardlinks into the cache (`cp -al`, no extra disk), split into
   `layers/0..4` by `ark-split-layers.sh`; deleted after each build.
 - Result: `ark-server-files:<build-id>`, the runtime build's `ARK_FILES_IMAGE`.

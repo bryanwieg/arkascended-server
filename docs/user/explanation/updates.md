@@ -17,8 +17,8 @@ new image even when ARK hasn't updated.
   pins compose to `ark-server:<build-id>-<recipe-id>`. If that image already
   exists, no build happens.
 - SteamCMD runs in a throwaway container. Its install is cached in
-  `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), so later
-  updates download only changed files.
+  `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), with
+  SteamCMD's depot manifests, so later updates download only changed files.
 - Before a build, free space in `.ark-manage` must be at least
   `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB. A lock stops two builds from
   running at once.

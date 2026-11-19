@@ -12,6 +12,7 @@ container/integration/slow:
   - test_rcon
   - test_ark_server_start_integrated_init
   - test_ark_server_stop_script
+  - test_ark_ini_history_real_server
   - test_ark_backup_script
   - test_ark_restore_script
   - test_ark_start_backup_stop_workflow

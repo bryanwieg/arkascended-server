@@ -676,7 +676,7 @@ def container_start(
 def container_ensure_image_tag(dc: DockerClient, name: str, tag: str = "ark-server:latest") -> None:
     """Tag an image so the compose file resolves it, if not already tagged."""
     if name != tag:
-        dc.images.tag(name, tag)
+        dc.image.tag(name, tag)
 
 
 def container_env(dc: DockerClient, service: str, var_name: str) -> str:

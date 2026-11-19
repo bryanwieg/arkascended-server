@@ -1,7 +1,8 @@
-"""set ini / show ini against a running instance on the lite image (fake ARK server)."""
+"""set ini / get ini / show ini against a running instance on the lite image (fake ARK server)."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -24,12 +25,14 @@ def test_set_ini_restart_applies_change_and_explains_ark_duplicates(
 
     Scenario:
         A lite instance whose fake server writes DupKey twice on every shutdown is started.
-        set ini runs without --restart, then with it (MaxPlayers 70 -> 20); show ini prints the
-        file; set ini --restart on DupKey hits the two lines the server wrote at that stop.
+        set ini runs without --restart, then with it (MaxPlayers 70 -> 20); show ini and get ini
+        read it back (get also lists the server's two DupKey lines); set ini --restart on DupKey
+        hits the two lines the server wrote at that stop.
 
     Expected:
         - Without --restart: refused, pointing at --restart.
-        - With --restart: "70" -> "20" reported, instance running again, show ini has MaxPlayers=20.
+        - With --restart: "70" -> "20" reported, instance running again, show ini has MaxPlayers=20,
+          get ini prints 20 and lists both DupKey lines as written by ARK.
         - DupKey: refused, both lines labelled "written by ARK", instance running again.
     """
     cfg = build_container_instance_config(test_env, extra_env={"FAKE_ARK_INI_DUPLICATE": "DupKey"})
@@ -48,6 +51,11 @@ def test_set_ini_restart_applies_change_and_explains_ark_duplicates(
     assert 'MaxPlayers: "70" -> "20"' in cli(*set_max, "--restart").stdout
     assert container_running(compose_client, instance)
     assert "MaxPlayers=20" in cli("show", "ini").stdout
+    get = ("get", "ini", "--section", "ServerSettings", "--json", "--key")
+    assert [line["value"] for line in json.loads(cli(*get, "MaxPlayers").stdout)["lines"]] == ["20"]
+    dup_lines = json.loads(cli(*get, "DupKey").stdout)["lines"]
+    assert all(line["origin"].startswith("written by ARK 20") for line in dup_lines), dup_lines
+    assert len(dup_lines) == 2, dup_lines
 
     dup = cli("set", "ini", "--section", "ServerSettings", "--key", "DupKey", "--value", "x", "--restart", check=False)
     assert dup.returncode != 0

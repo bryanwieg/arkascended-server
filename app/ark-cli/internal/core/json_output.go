@@ -123,3 +123,19 @@ type InstancePlayersJSON struct {
 	Players  []PlayerJSON `json:"players"`
 	Error    string       `json:"error,omitempty"`
 }
+
+// IniKeyLineJSON is one line of an INI key in `get ini --json`.
+type IniKeyLineJSON struct {
+	Line   int    `json:"line"`
+	Value  string `json:"value"`
+	Origin string `json:"origin"`
+}
+
+// IniKeyJSON is `get ini --json` output (ark-ini.py get's reply): every line for the key.
+type IniKeyJSON struct {
+	File    string           `json:"file"`
+	Section string           `json:"section"`
+	Key     string           `json:"key"`
+	Lines   []IniKeyLineJSON `json:"lines"`
+	History string           `json:"history"`
+}

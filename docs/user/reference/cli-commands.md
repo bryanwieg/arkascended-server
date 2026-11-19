@@ -276,6 +276,28 @@ editing it.
 | `--restart` | `false` | On a running instance: stop, edit, start. |
 | `--compose-file` | | |
 
+### get ini
+
+Print one key as a table: one row per line for the key (more than one when it
+repeats), with who wrote each line and when, from the
+[INI history](#ini-history). Read-only, so it works whether the instance is
+running or not. An unset key exits non-zero.
+
+```sh
+ark-cli get ini --instance asa1 --file gus --section ServerSettings --key MaxPlayers
+# LINE  KEY         VALUE  ORIGIN
+# 6     MaxPlayers  20     written by ARK 2026-11-19 00:01:26 UTC
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game`, `gameusersettings` or `gus`. |
+| `--section` | required | Section name, with or without brackets. Matched case-insensitively. |
+| `--key` | required | Key name. Matched case-insensitively. |
+| `--json` | `false` | `{file, section, key, lines: [{line, value, origin}], history}`; exits 0 even when `lines` is empty. |
+| `--compose-file` | | |
+
 ### set ini
 
 Set one key without an editor, adding the key (and its section) if missing.
@@ -319,7 +341,7 @@ ark-cli set ini --instance asa1 --file gus --section ServerSettings --key MaxPla
 Each instance keeps a git history of `Game.ini` and `GameUserSettings.ini`, in
 `ShooterGame/Saved/Config/WindowsServer/.git` on its save volume, so backups
 carry it and a restore brings back the matching history. Every writer commits
-under its own author, which `set ini` shows per line (`git blame`):
+under its own author, which `get ini` and `set ini` show per line (`git blame`):
 
 | Origin | Author | When it is committed |
 |---|---|---|

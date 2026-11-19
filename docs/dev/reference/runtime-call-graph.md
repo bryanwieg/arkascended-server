@@ -293,18 +293,18 @@ flowchart TD
     P --> Q[WriteRunState success/failed]
 ```
 
-## INI Edit/Set/Show Call Graph
+## INI Edit/Set/Get/Show Call Graph
 
 `app/ark-cli/internal/ini/`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli edit/set/show ini] --> B[Resolve INI file spec + compose service]
+    A[ark-cli edit/set/get/show ini] --> B[Resolve INI file spec + compose service]
     B --> C[ServiceRunningStatus]
     C --> D{running?}
 
-    D -->|"yes, show"| F[Exec: ark-ini.py get]
-    D -->|"no, show"| H[RunOneOff: ark-ini.py get in removed container]
+    D -->|"yes, show/get"| F[Exec: ark-ini.py get, whole file or one key as JSON]
+    D -->|"no, show/get"| H[RunOneOff: ark-ini.py get in removed container]
     D -->|"yes, edit/set, no --restart"| X[refuse]
     D -->|"yes, edit/set, --restart"| J[DoRestartStopInstance with default grace]
     J --> G

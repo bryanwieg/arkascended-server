@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"pkg/ark"
 	"pkg/ark/arktest"
 	"pkg/ark/runtime"
 	update "pkg/ark/update"
@@ -156,5 +157,55 @@ func TestRunUpdateLocalRolloutAlertsWebhookOnRollback(t *testing.T) {
 	}
 	if len(bodies) != 1 || !strings.Contains(bodies[0], "ARK update of asa1 rolled_back: ark-server:100 -> "+newImage) {
 		t.Fatalf("webhook bodies %q, want one rolled_back alert", bodies)
+	}
+}
+
+// TestRunUpdateBuildFailureTouchesNoInstance pins the order: the image is built before
+// any instance is stopped, so a failed build (SteamCMD 0x6, ...) leaves every instance running.
+func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:100\n  asa2:\n    image: ark-server:100\n"
+	writeUpdateComposeFixture(t, composePath, seed)
+	fakeBackups(t)
+	var calls []string
+	var runErr error
+	withLocalSteamCheck(t, "98.6", "100", "200", func(d *core.AppDeps) {
+		d.Engine.(*arktest.MockEngine).PullImageFn = func(context.Context, string) error { return nil }
+		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
+		d.Runtime.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) {
+			return ark.ExecResult{ExitCode: 8}, nil // SteamCMD's exit on state 0x6
+		}
+		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
+			calls = append(calls, "stop "+req.Instance)
+			return nil
+		}
+		d.RestartStartInstance = func(req runtime.StartCommandRequest) error {
+			calls = append(calls, "start "+req.Instance)
+			return nil
+		}
+	}, func() {
+		runErr = RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--rollout"})
+	})
+	if runErr == nil || !strings.Contains(runErr.Error(), "server files build failed") {
+		t.Fatalf("expected the build error, got %v", runErr)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("a failed build must not stop or start instances, got %v", calls)
+	}
+	after, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != seed {
+		t.Fatalf("compose changed after a failed build:\n%s", after)
+	}
+	for _, instance := range []string{"asa1", "asa2"} {
+		st, err := update.LoadState(update.StateDir(composePath), instance)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.LastAttempt == nil || st.LastAttempt.Result != update.ResultBuildFailed {
+			t.Fatalf("%s recorded %+v, want build_failed", instance, st.LastAttempt)
+		}
 	}
 }

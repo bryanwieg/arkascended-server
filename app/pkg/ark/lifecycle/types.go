@@ -10,9 +10,6 @@ const (
 	// DefaultStartWaitInterval is the default polling interval for readiness
 	// checks during start.
 	DefaultStartWaitInterval = 2 * time.Second
-
-	// DefaultStopTimeout is the default graceful shutdown timeout.
-	DefaultStopTimeout = 15 * time.Minute
 )
 
 // StartRequest describes a start operation.
@@ -33,7 +30,7 @@ type StartResult struct {
 type StopRequest struct {
 	ComposeFile string
 	Services    []string
-	Timeout     time.Duration // graceful shutdown timeout (0 = default)
+	Timeout     time.Duration // graceful shutdown timeout (<0 = compose stop_grace_period)
 	Kill        bool          // if true, send SIGKILL immediately
 }
 

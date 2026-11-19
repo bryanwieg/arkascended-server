@@ -210,7 +210,7 @@ def test_stop_script_timeout_includes_shutdown_warning(start_mod, monkeypatch: p
     monkeypatch.setenv("SHUTDOWN_WARNING_MINUTES", "10")
     assert start_mod._load_server_config()["graceful_stop_script_timeout"] == 1200
     monkeypatch.delenv("SHUTDOWN_WARNING_MINUTES")
-    assert start_mod._load_server_config()["graceful_stop_script_timeout"] == 600
+    assert start_mod._load_server_config()["graceful_stop_script_timeout"] == 900  # default 5 minutes
 
 
 # ---------------------------------------------------------------------------

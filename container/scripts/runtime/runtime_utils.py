@@ -179,3 +179,8 @@ def server_log_closed(log_file: Path = SERVER_LOG) -> bool:
     """Return True if ARK's 'Log file closed' line is among the last 50 lines of the server log."""
     tail = read_log_tail(log_file, 64 * 1024)
     return tail is not None and any(LOG_CLOSED_MARKER in line for line in tail.splitlines()[-50:])
+
+
+def shutdown_warning_minutes() -> int:
+    """Minutes the stop script warns online players before saving; the start script budgets for it too."""
+    return env_int("SHUTDOWN_WARNING_MINUTES", 5, minimum=0)

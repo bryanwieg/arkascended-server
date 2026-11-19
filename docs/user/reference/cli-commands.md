@@ -129,7 +129,7 @@ Graceful stop: the container saves the world over RCON, then exits.
 | Flag | Default | Description |
 |---|---|---|
 | `--instance` | required | Instance or `all`. |
-| `--timeout` | `15m` | Grace period before SIGKILL (Go duration, `>= 0`). |
+| `--timeout` | compose `stop_grace_period` | Grace period before SIGKILL (Go duration, `>= 0`). |
 | `--kill` | `false` | SIGKILL immediately, no save. Mutually exclusive with `--timeout`. |
 | `--compose-file` | | |
 
@@ -141,7 +141,7 @@ does not apply).
 | Flag | Default | Description |
 |---|---|---|
 | `--instance` | required | Instance or `all`. |
-| `--timeout` | `15m` | Stop grace period, as in `stop instance`. |
+| `--timeout` | compose `stop_grace_period` | Stop grace period, as in `stop instance`. |
 | `--compose-file` | | |
 
 ### save instance

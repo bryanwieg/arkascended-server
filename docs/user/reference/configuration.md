@@ -69,7 +69,7 @@ SIGTERM and SIGKILL to the server process group if it is still running.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SHUTDOWN_WARNING_MINUTES` | `0` | Countdown before saving, only while players are online (RCON `ListPlayers`; if RCON can't answer, players are assumed). Warnings go out as `ServerChat` and `Broadcast` at the start and at 10 min, 5 min, 1 min and 30 s left, naming the reason when `ark-cli` gave one (`updating to 98.9`). `0` (allowed): no warning. |
+| `SHUTDOWN_WARNING_MINUTES` | `5` | Countdown before saving, only while players are online (RCON `ListPlayers`; if RCON can't answer, players are assumed). Warnings go out as `ServerChat` and `Broadcast` at the start and at 10 min, 5 min, 1 min and 30 s left, naming the reason when `ark-cli` gave one (`updating to 98.9`). With nobody online the stop saves at once. `0`: no warning. |
 | `SAVE_MAX_RETRIES` | `3` | `saveworld` confirmation attempts. |
 | `SAVE_RETRY_DELAY_SECONDS` | `3` | Delay between attempts. |
 | `SAVE_CONFIRM_TIMEOUT_SECONDS` | `60` | Per-attempt wait for a `World Save Complete` line written after the request. Earlier markers never count. Raise for large worlds. |
@@ -80,7 +80,7 @@ SIGTERM and SIGKILL to the server process group if it is still running.
 | `FORCE_TERM_WAIT_SECONDS` | `20` | Wait after SIGTERM before SIGKILL. |
 | `FORCE_STOP_POLL_SECONDS` | `1` | Poll interval for the two waits above and the server monitor loop. |
 
-Keep compose `stop_grace_period` (default `15m`) at least
+Keep compose `stop_grace_period` (default `20m`) at least
 `SHUTDOWN_WARNING_MINUTES*60 + GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS +
 GRACEFUL_STOP_WAIT_SECONDS + FORCE_TERM_WAIT_SECONDS` plus overhead, or the
 runtime kills the container mid-save.

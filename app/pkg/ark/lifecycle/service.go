@@ -71,11 +71,12 @@ func (s *Service) Stop(ctx context.Context, req StopRequest) error {
 		return s.compose.Kill(ctx, req.ComposeFile, req.Services, "SIGKILL")
 	}
 
-	timeout := req.Timeout
-	if timeout < 0 {
-		timeout = DefaultStopTimeout
+	// A negative timeout leaves it to the compose stop_grace_period, so CLI and plain compose agree.
+	var timeout *time.Duration
+	if req.Timeout >= 0 {
+		timeout = &req.Timeout
 	}
-	return s.compose.Stop(ctx, req.ComposeFile, req.Services, &timeout)
+	return s.compose.Stop(ctx, req.ComposeFile, req.Services, timeout)
 }
 
 // Down stops (if running) and removes a service, or tears down the entire

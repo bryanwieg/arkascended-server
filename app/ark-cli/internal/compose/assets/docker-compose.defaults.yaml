@@ -6,7 +6,7 @@ services:
     init: true
     # stop_grace_period must be >= (SHUTDOWN_WARNING_MINUTES * 60) + GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS
     #   + GRACEFUL_STOP_WAIT_SECONDS + FORCE_TERM_WAIT_SECONDS + overhead
-    stop_grace_period: 15m
+    stop_grace_period: 20m
     stop_signal: SIGTERM
     environment:
       - TZ={{TZ}}

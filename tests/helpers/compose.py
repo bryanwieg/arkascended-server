@@ -207,6 +207,7 @@ def write_single_service_compose(
         f"      - ASA_PORT={asa_port}",
         "      - NoBattlEye=true",
         "      - ARK_SKIP_RAM_CHECK=1",
+        "      - SHUTDOWN_WARNING_MINUTES=0",  # tests that need the countdown set it per exec
     ]
     for key, value in (extra_env or {}).items():
         env_lines.append(f"      - {key}={value}")
@@ -223,7 +224,7 @@ def write_single_service_compose(
         [
             '    restart: "no"',
             "    init: true",
-            "    stop_grace_period: 15m",
+            "    stop_grace_period: 20m",
             "    stop_signal: SIGTERM",
             "    environment:",
             *env_lines,

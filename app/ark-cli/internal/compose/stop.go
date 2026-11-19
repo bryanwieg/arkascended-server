@@ -16,7 +16,7 @@ func RunStop(d *core.AppDeps, args []string) error {
 		[]string{"stop instance --instance <instance|all> [options]"},
 		"Gracefully stop one or more compose services.",
 	)
-	timeoutFlag := fs.String("timeout", "", "Time to allow for graceful shutdown before SIGKILL (e.g. 20m, 1200s). Default: 20m.")
+	timeoutFlag := fs.String("timeout", "", "Time to allow for graceful shutdown before SIGKILL (e.g. 20m, 1200s). Default: the compose stop_grace_period.")
 	kill := fs.Bool("kill", false, "Kill the service immediately (bypasses graceful shutdown).")
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	instanceFlag := fs.String("instance", "", "Target instance name or 'all'.")
@@ -87,12 +87,10 @@ func runStopServices(composeFile string, services []string, timeout time.Duratio
 
 	if kill {
 		core.Infof("Kill requested; bypassing graceful shutdown.\n")
+	} else if timeout < 0 {
+		core.Infof("Graceful stop requested (timeout: compose stop_grace_period).\n")
 	} else {
-		t := timeout
-		if t < 0 {
-			t = lifecycle.DefaultStopTimeout
-		}
-		core.Infof("Graceful stop requested (timeout: %ds).\n", int(t.Seconds()))
+		core.Infof("Graceful stop requested (timeout: %ds).\n", int(timeout.Seconds()))
 	}
 
 	failures, err := stopServicesWithProgress(services, func(service string) (bool, error) {

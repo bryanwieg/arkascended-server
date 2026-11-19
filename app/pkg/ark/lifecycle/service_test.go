@@ -199,8 +199,8 @@ func TestStopDefaultTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gotTimeout == nil || *gotTimeout != DefaultStopTimeout {
-		t.Fatalf("expected default timeout %v, got: %v", DefaultStopTimeout, gotTimeout)
+	if gotTimeout != nil {
+		t.Fatalf("expected nil timeout (compose stop_grace_period), got: %v", *gotTimeout)
 	}
 }
 

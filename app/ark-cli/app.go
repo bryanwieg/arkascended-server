@@ -69,7 +69,11 @@ func (c *CLI) Run(args []string) error {
 			}
 			verboseLogf("[runtime] Docker host: %s\n", dockerHost)
 		}
-		if rt == runtime.RuntimePodman {
+		engineFromEnv := runtime.EngineFromEnv()
+		if rt == runtime.RuntimePodman && engineFromEnv {
+			verboseLogf("[runtime] SDK backend using DOCKER_HOST: %s\n", os.Getenv("DOCKER_HOST"))
+		}
+		if rt == runtime.RuntimePodman && !engineFromEnv {
 			socketURI, rootfulDetected := host.HasPodmanService()
 			if rootfulDetected {
 				runErr = fmt.Errorf("Error: rootful podman socket detected at /run/podman/podman.sock, but only rootless podman is supported. Install and run podman as a non-root user (see https://podman.io/getting-started/installation#linux)")
@@ -111,10 +115,13 @@ func (c *CLI) Run(args []string) error {
 		d := core.CurrentAppDeps()
 		core.FillDefaults(d)
 
-		// Validate compose provider availability.
-		if rtErr := d.RuntimeHelper.ValidateComposeProvider(); rtErr != nil {
-			runErr = rtErr
-			return
+		// Validate compose provider availability; a runtime named by the
+		// environment has no CLI binary to ask (the compose SDK is built in).
+		if !engineFromEnv {
+			if rtErr := d.RuntimeHelper.ValidateComposeProvider(); rtErr != nil {
+				runErr = rtErr
+				return
+			}
 		}
 
 		if len(remaining) < 1 {

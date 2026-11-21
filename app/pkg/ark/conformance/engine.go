@@ -211,6 +211,17 @@ func TestContainerEngine(t *testing.T, engine ark.ContainerEngine) {
 		}
 	})
 
+	t.Run("Rootless", func(t *testing.T) {
+		rootless, err := engine.Rootless(ctx)
+		if err != nil {
+			t.Fatalf("Rootless: %v", err)
+		}
+		// ARK_TEST_EXPECT_ROOTLESS (1/0) pins the expected answer for the engine under test.
+		if want, ok := os.LookupEnv("ARK_TEST_EXPECT_ROOTLESS"); ok && rootless != (want == "1") {
+			t.Fatalf("Rootless = %v, ARK_TEST_EXPECT_ROOTLESS=%s", rootless, want)
+		}
+	})
+
 	t.Run("RemoveVolume/not_found_returns_ErrNotFound", func(t *testing.T) {
 		err := engine.RemoveVolume(ctx, "ark-conformance-nonexistent-volume")
 		if !errors.Is(err, ark.ErrNotFound) {

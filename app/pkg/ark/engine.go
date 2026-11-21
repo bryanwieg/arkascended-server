@@ -61,6 +61,12 @@ type ContainerEngine interface {
 	// PruneDangling removes untagged images and build cache that nothing uses.
 	PruneDangling(ctx context.Context) error
 
+	// Engine operations
+
+	// Rootless reports whether the engine runs without root on the host (Docker rootless mode or rootless
+	// Podman): its /info SecurityOptions contain "name=rootless".
+	Rootless(ctx context.Context) (bool, error)
+
 	// Volume operations
 
 	// VolumeMountpoint returns the host path where the named volume is

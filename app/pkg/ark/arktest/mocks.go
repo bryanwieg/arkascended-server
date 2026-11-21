@@ -27,6 +27,7 @@ type MockEngine struct {
 	RemoveImageFn       func(ctx context.Context, ref string) error
 	ImagesInUseFn       func(ctx context.Context) (map[string]bool, error)
 	PruneDanglingFn     func(ctx context.Context) error
+	RootlessFn          func(ctx context.Context) (bool, error)
 	VolumeMountpointFn  func(ctx context.Context, volume string) (string, bool)
 	RemoveVolumeFn      func(ctx context.Context, volume string) error
 	CopyFromContainerFn func(ctx context.Context, container, srcPath, dstPath string) error
@@ -115,6 +116,13 @@ func (m *MockEngine) PruneDangling(ctx context.Context) error {
 		return m.PruneDanglingFn(ctx)
 	}
 	return nil
+}
+
+func (m *MockEngine) Rootless(ctx context.Context) (bool, error) {
+	if m.RootlessFn != nil {
+		return m.RootlessFn(ctx)
+	}
+	return false, nil
 }
 
 func (m *MockEngine) VolumeMountpoint(ctx context.Context, volume string) (string, bool) {

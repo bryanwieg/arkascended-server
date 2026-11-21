@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -353,6 +354,14 @@ func (e *SDKEngine) PruneDangling(ctx context.Context) error {
 	}
 	_, err := e.cli.BuildCachePrune(ctx, dockerclient.BuildCachePruneOptions{})
 	return err
+}
+
+func (e *SDKEngine) Rootless(ctx context.Context) (bool, error) {
+	info, err := e.cli.Info(ctx, dockerclient.InfoOptions{})
+	if err != nil {
+		return false, fmt.Errorf("failed to query daemon info: %w", err)
+	}
+	return slices.Contains(info.Info.SecurityOptions, "name=rootless"), nil
 }
 
 func (e *SDKEngine) RemoveVolume(ctx context.Context, volume string) error {

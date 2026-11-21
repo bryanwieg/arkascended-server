@@ -258,6 +258,9 @@ func runReconfigureCommand(req reconfigureCommandRequest) error {
 	if !ok {
 		return fmt.Errorf("Error: service not found in compose file: %s", req.instance)
 	}
+	if err := composeProject.EnsureService(req.instance); err != nil {
+		return err // the scheduler service is not an instance
+	}
 
 	if err := guardReconfigureMapName(svc, req); err != nil {
 		return err

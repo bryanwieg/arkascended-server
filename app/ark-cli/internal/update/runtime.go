@@ -21,7 +21,7 @@ import (
 )
 
 func resolveUpdateTargetServices(project *ark.ComposeProject, target string) ([]string, error) {
-	if len(project.Project.Services) == 0 {
+	if len(project.ServiceNames()) == 0 {
 		return nil, errors.New("Error: services section not found in compose file.")
 	}
 	if target == "all" {

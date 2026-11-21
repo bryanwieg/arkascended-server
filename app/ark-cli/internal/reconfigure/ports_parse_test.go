@@ -320,3 +320,29 @@ func TestRunReconfigureNewSchemeConflictDetectedViaLabel(t *testing.T) {
 		t.Fatalf("expected conflicting role in error, got: %v", err)
 	}
 }
+
+func TestRunReconfigureRejectsSchedulerService(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	seed := "" +
+		"name: test\n" +
+		"services:\n" +
+		"  ark-scheduler:\n" +
+		"    image: ark-scheduler:abc\n" +
+		"    labels:\n" +
+		"      ark.role: scheduler\n"
+	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	withPatchedAppDeps(t, nil, func() {
+		err := RunReconfigure(core.CurrentAppDeps(), []string{
+			"--compose-file", composePath, "--instance", "ark-scheduler", "--asa-port", "28015",
+		})
+		if err == nil || !strings.Contains(err.Error(), "is the scheduler service") {
+			t.Fatalf("err = %v, want the scheduler rejection", err)
+		}
+	})
+	after, err := os.ReadFile(composePath)
+	if err != nil || string(after) != seed {
+		t.Fatalf("compose file changed: %v\n%s", err, after)
+	}
+}

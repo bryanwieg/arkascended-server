@@ -291,9 +291,10 @@ schedules:
 `
 	writeScheduleFixture(t, initial)
 
+	var gotArgs []string
 	out := captureStdout(t, func() {
 		withPatchedAppDeps(t, func(d *core.AppDeps) {
-			d.RunBackupFromSchedule = func(_ string, _ []string) error { return nil }
+			d.RunBackupFromSchedule = func(_ string, args []string) error { gotArgs = args; return nil }
 			d.ScheduleService.Now = func() time.Time { return time.Unix(1707000000, 0).UTC() }
 		}, func() {
 			if err := RunRunSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err != nil {
@@ -301,8 +302,13 @@ schedules:
 			}
 		})
 	})
-	if !strings.Contains(out, "Ran schedule nightly") {
-		t.Fatalf("unexpected output: %s", out)
+	for _, want := range []string{"2024-02-03T22:40:00Z START nightly", "2024-02-03T22:40:00Z SUCCESS nightly", "Ran schedule nightly"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q\n%s", want, out)
+		}
+	}
+	if n := len(gotArgs); n < 2 || gotArgs[n-2] != "--lock-timeout" || gotArgs[n-1] != "30m" {
+		t.Fatalf("backup args must end with --lock-timeout 30m: %#v", gotArgs)
 	}
 
 	logBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.LogPath("nightly"))
@@ -486,15 +492,20 @@ schedules:
     enabled: true
     cron: "0 3 * * *"
 `)
-	withPatchedAppDeps(t, func(d *core.AppDeps) {
-		d.RunBackupFromSchedule = func(_ string, _ []string) error {
-			return errors.New("disk full")
-		}
-	}, func() {
-		if err := RunRunSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err == nil {
-			t.Fatal("expected error from failed backup")
-		}
+	out := captureStdout(t, func() {
+		withPatchedAppDeps(t, func(d *core.AppDeps) {
+			d.RunBackupFromSchedule = func(_ string, _ []string) error {
+				return errors.New("disk full")
+			}
+		}, func() {
+			if err := RunRunSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err == nil {
+				t.Fatal("expected error from failed backup")
+			}
+		})
 	})
+	if !strings.Contains(out, " FAIL nightly: disk full") || strings.Contains(out, "Ran schedule") {
+		t.Fatalf("unexpected output: %s", out)
+	}
 
 	stateBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.StatePath("nightly"))
 	if err != nil {

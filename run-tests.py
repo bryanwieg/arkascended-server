@@ -111,6 +111,12 @@ ALL_BATCHES = (
         ),
     ),
     Batch(
+        "cli-fast",
+        "cli-scheduler",
+        600,
+        ("tests/app/ark_cli/integration/docker/fast/test_scheduler_enable_docker.py",),
+    ),
+    Batch(
         "cli-slow",
         "cli-manage-start-stop",
         1200,

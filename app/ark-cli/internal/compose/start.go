@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"pkg/ark"
 	"pkg/ark/backup"
 	"pkg/ark/health"
 	"pkg/ark/host"
@@ -31,14 +32,36 @@ func RunStart(d *core.AppDeps, args []string) error {
 	if instance == "" {
 		return errors.New("Error: --instance is required.")
 	}
-	return withTargetLocks(d, *composeFileFlag, instance, startNoServicesErr, func() error {
+	if err := withTargetLocks(d, *composeFileFlag, instance, startNoServicesErr, func() error {
 		return RunStartRequest(d, startCommandRequest{
 			Instance:        instance,
 			ComposeFileFlag: *composeFileFlag,
 			NoWait:          *noWait,
 			WaitTimeout:     *waitTimeout,
 		})
-	})
+	}); err != nil {
+		return err
+	}
+	if instance == "all" {
+		startSchedulerIfEnabled(d, *composeFileFlag)
+	}
+	return nil
+}
+
+// startSchedulerIfEnabled ups the scheduler service when the project has one: `teardown instances` removes
+// its container too. The instances already started, so a failure only warns.
+func startSchedulerIfEnabled(d *core.AppDeps, composeFileFlag string) {
+	composeFile := ResolveComposeFile(composeFileFlag)
+	project, err := d.RuntimeHelper.LoadComposeProject(composeFile)
+	if err == nil && !project.HasScheduler() {
+		return
+	}
+	if err == nil {
+		err = d.ComposeService.Up(d.Context(), composeFile, []string{ark.SchedulerService}, ark.UpOptions{Detach: true})
+	}
+	if err != nil {
+		core.Warnf("Warning: the scheduler did not start: %v. Run 'ark-cli enable scheduler'.\n", err)
+	}
 }
 
 const startNoServicesErr = "Error: compose config has no services to start."

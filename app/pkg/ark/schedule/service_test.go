@@ -99,54 +99,6 @@ func TestSaveScheduleFileSetsVersionDefault(t *testing.T) {
 	}
 }
 
-// --- Store: crontab ---
-
-func TestWriteManagedScheduleCrontab(t *testing.T) {
-	s := testService(t)
-	file := ScheduleFile{
-		Schedules: []BackupSchedule{
-			{Name: "nightly", Type: "backup", Instance: "asa1", Enabled: true, Cron: "0 3 * * *", Format: "tar.gz"},
-			{Name: "disabled", Type: "backup", Instance: "asa2", Enabled: false, Cron: "0 4 * * *"},
-		},
-	}
-	if err := s.WriteManagedScheduleCrontab(file); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(s.ManagedCrontabPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(data)
-	if !strings.Contains(content, "# ark-cli managed schedules") {
-		t.Fatal("missing header")
-	}
-	if !strings.Contains(content, "nightly") {
-		t.Fatal("missing nightly schedule")
-	}
-	if strings.Contains(content, "disabled") {
-		t.Fatal("disabled schedule should not appear in crontab")
-	}
-}
-
-func TestSaveScheduleAndCrontab(t *testing.T) {
-	s := testService(t)
-	file := ScheduleFile{
-		Schedules: []BackupSchedule{
-			{Name: "hourly", Type: "backup", Instance: "asa1", Enabled: true, Cron: "0 * * * *"},
-		},
-	}
-	if err := s.SaveScheduleAndCrontab(file); err != nil {
-		t.Fatal(err)
-	}
-	// Both files should exist
-	if _, err := os.Stat(s.ConfigPath); err != nil {
-		t.Fatalf("config file missing: %v", err)
-	}
-	if _, err := os.Stat(s.ManagedCrontabPath); err != nil {
-		t.Fatalf("crontab file missing: %v", err)
-	}
-}
-
 // --- Store: find/load by name ---
 
 func TestFindScheduleByName(t *testing.T) {
@@ -285,9 +237,6 @@ func TestPathDerivation(t *testing.T) {
 	if s.ConfigPath != repo+"/.ark-manage/schedules.yaml" {
 		t.Fatalf("config path: %s", s.ConfigPath)
 	}
-	if s.ManagedCrontabPath != repo+"/.ark-manage/generated/schedules.crontab" {
-		t.Fatalf("crontab path: %s", s.ManagedCrontabPath)
-	}
 	if s.LogPath("x") != repo+"/.ark-manage/logs/schedules/x.log" {
 		t.Fatalf("log path: %s", s.LogPath("x"))
 	}
@@ -360,35 +309,10 @@ func TestBackupFlagArgsEmpty(t *testing.T) {
 	}
 }
 
-func TestBackupCommandParts(t *testing.T) {
-	repo := t.TempDir()
-	s := New(repo, discardLogger())
-	sched := BackupSchedule{Instance: "asa1", Format: "tar.gz"}
-	preview, cmd := s.BackupCommandParts(sched)
-	if preview[0] != "ark-cli" || preview[2] != "backup" || preview[3] != "--instance" || preview[4] != "asa1" {
-		t.Fatalf("preview: %v", preview)
-	}
-	if cmd[0] != "ark-cli" || cmd[2] != "backup" {
-		t.Fatalf("cmd: %v", cmd)
-	}
-}
-
-func TestShellQuote(t *testing.T) {
-	if got := ShellQuote("hello"); got != "'hello'" {
-		t.Fatalf("got %q", got)
-	}
-	if got := ShellQuote(""); got != "''" {
-		t.Fatalf("got %q", got)
-	}
-	if got := ShellQuote("it's"); !strings.Contains(got, `'"'"'`) {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestShellJoin(t *testing.T) {
-	got := ShellJoin([]string{"a", "b c"})
-	if got != "'a' 'b c'" {
-		t.Fatalf("got %q", got)
+func TestBackupCommandPreview(t *testing.T) {
+	got := strings.Join(BackupCommandPreview(BackupSchedule{Instance: "asa1", Format: "tar.gz"}), " ")
+	if got != "ark-cli create backup --instance asa1 --format tar.gz" {
+		t.Fatalf("preview: %q", got)
 	}
 }
 

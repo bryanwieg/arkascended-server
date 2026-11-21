@@ -48,7 +48,6 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "disable", Object: "remote-rcon", Route: "disable_remote_rcon", Handler: reconfigure.RunDisableRemoteRCON, TopLevelHelp: []string{"disable remote-rcon --instance <inst>       Publish RCON on 127.0.0.1 only (default)"}},
 	{Verb: "enable", Object: "scheduler", Route: "enable_scheduler", Handler: scheduler.RunEnableScheduler, TopLevelHelp: []string{"enable scheduler                            Build and start the scheduler service (backups, health)"}},
 	{Verb: "disable", Object: "scheduler", Route: "disable_scheduler", Handler: scheduler.RunDisableScheduler, TopLevelHelp: []string{"disable scheduler                           Stop and remove the scheduler service"}},
-	{Verb: "apply", Object: "schedules", Route: "apply_schedules", Handler: schedule.RunApplySchedules, TopLevelHelp: []string{"apply schedules                             Install the generated managed crontab"}},
 	{Verb: "start", Object: "instance", Route: "start", Handler: compose.RunStart, TopLevelHelp: []string{"start instance --instance <inst|all>        Start compose service(s)"}},
 	{Verb: "stop", Object: "instance", Route: "stop", Handler: compose.RunStop, TopLevelHelp: []string{"stop instance --instance <inst|all>         Graceful stop via ark-server-stop.py"}},
 	{Verb: "restart", Object: "instance", Route: "restart", Handler: compose.RunRestart, TopLevelHelp: []string{"restart instance --instance <inst|all>      Restart instance(s) (stop then start)"}},

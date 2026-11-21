@@ -102,6 +102,15 @@ ALL_BATCHES = (
         ("tests/app/ark_cli/integration/docker/fast/test_ini_commands.py",),
     ),
     Batch(
+        "cli-fast",
+        "cli-schedule",
+        300,
+        (
+            "tests/app/ark_cli/integration/docker/fast/test_schedule_validate_apply.py",
+            "tests/app/ark_cli/integration/native/test_schedule_list_show.py",
+        ),
+    ),
+    Batch(
         "cli-slow",
         "cli-manage-start-stop",
         1200,
@@ -139,6 +148,12 @@ ALL_BATCHES = (
         "cli-update-instance-rollback",
         1200,
         ("tests/app/ark_cli/integration/docker/slow/test_update_instance_rollback.py",),
+    ),
+    Batch(
+        "cli-slow",
+        "cli-schedule-slow",
+        1800,
+        ("tests/app/ark_cli/integration/docker/slow/test_manage_schedule_backup.py",),
     ),
 )
 

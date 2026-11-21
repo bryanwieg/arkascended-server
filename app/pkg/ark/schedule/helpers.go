@@ -59,30 +59,7 @@ func BackupFlagArgs(s BackupSchedule) []string {
 	return args
 }
 
-// BackupCommandParts returns the human-readable preview and the full CLI
-// command for executing a backup schedule entry.
-func (s *Service) BackupCommandParts(sched BackupSchedule) (preview []string, cmd []string) {
-	preview = []string{"ark-cli", "create", "backup", "--instance", sched.Instance}
-	cmd = append(s.CLICommand, "create", "backup", "--instance", sched.Instance)
-	flagArgs := BackupFlagArgs(sched)
-	preview = append(preview, flagArgs...)
-	cmd = append(cmd, flagArgs...)
-	return preview, cmd
-}
-
-// ShellQuote returns a single-quoted shell-safe string.
-func ShellQuote(value string) string {
-	if value == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
-}
-
-// ShellJoin joins arguments with shell quoting.
-func ShellJoin(args []string) string {
-	quoted := make([]string, 0, len(args))
-	for _, a := range args {
-		quoted = append(quoted, ShellQuote(a))
-	}
-	return strings.Join(quoted, " ")
+// BackupCommandPreview returns the ark-cli command a backup schedule entry runs.
+func BackupCommandPreview(s BackupSchedule) []string {
+	return append([]string{"ark-cli", "create", "backup", "--instance", s.Instance}, BackupFlagArgs(s)...)
 }

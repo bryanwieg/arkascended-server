@@ -73,4 +73,3 @@ def test_validate_schedule_valid(
         capture_output=True,
     )
     assert result.returncode == 0, f"validate schedule failed: {result.stderr}"
-

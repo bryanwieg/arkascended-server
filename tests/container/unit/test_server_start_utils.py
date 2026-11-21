@@ -244,7 +244,8 @@ def test_default_stop_budget_fits_compose_grace_period(start_mod, monkeypatch: p
 
     stop_path = repo / "container/scripts/runtime/ark-server-stop.py"
     spec = importlib.util.spec_from_file_location("ark_server_stop", stop_path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     stop_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(stop_mod)
     stop = stop_mod._load_stop_config()

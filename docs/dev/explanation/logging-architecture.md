@@ -151,11 +151,25 @@ Deliberate raw stdio:
 - `container-entrypoint.sh` (bash): one `Entrypoint: …` line on stderr
   before Python starts.
 
+## Scheduler service log
+
+`ark-cli run scheduler` runs as the `ark-scheduler` container, so its
+user-facing lines are the container log (`docker compose logs ark-scheduler`);
+it has no TTY, so no spinner. Its loops live in `pkg/ark`
+(`schedule.Runner`, `health.Monitor`) and take an injected `Logf` that the
+handler wires to `core.Infof`: each line is meant for the operator reading the
+log (`START`/`SUCCESS`/`FAIL` per run, `Restarting <instance>: ...`). The
+monitor logs its `Health: ...` line only when the set of failing checks
+changes, so a steady state does not add a line a minute. The health report
+itself goes to a file and `GET /health`, not to the log.
+
 ## JSON output contract
 
 Each command with a structured result has a struct in
 `app/ark-cli/internal/core/json_output.go`. The handler computes once,
 then prints text or marshals the struct, so the two forms cannot drift.
+`check scheduler --json` prints `health.Report` (alias `SchedulerHealthJSON`),
+the same document as `health.json` and `GET /health`.
 
 Field names are part of the schema. Tests (`*_json_test.go` in
 `app/ark-cli`, `internal/show`, `internal/schedule`) decode the output

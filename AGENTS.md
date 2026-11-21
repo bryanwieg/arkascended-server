@@ -155,7 +155,7 @@ Key injectable fields (see `app/ark-cli/internal/core/deps.go` for the full stru
 - **Host:** `HostDeps` (kernel config and port check seams)
 - **Runtime orchestration:** `RuntimeHelper`, `Runtime` (`RuntimeDeps`: `ContainerRuntime`, `RunCommand`, `LookPath`)
 - **Lifecycle seams:** `RestartStartInstance`, `RestartStopInstance`
-- **Scheduling seams:** `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab`
+- **Scheduling seams:** `RunBackupFromSchedule`
 - **Introspection seams:** `RunningServiceSnapshot`, `DiskUsageForPath`, `StopService`, `RemoveVolume`
 
 ```go

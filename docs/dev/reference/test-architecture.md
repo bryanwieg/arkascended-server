@@ -172,7 +172,7 @@ When adding commands or features:
 - `Engine` (`ark.ContainerEngine`), `ComposeService` (`ark.ComposeService`)
 - `HealthChecker`, `Lifecycle`, `BackupService`, `UpdateService`, `ScheduleService`
 - `HostDeps`, `RuntimeHelper`, `Runtime` (`RunCommand`, `LookPath`, ...)
-- function fields such as `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab`,
+- function fields such as `RunBackupFromSchedule`,
   `RunningServiceSnapshot`, `DiskUsageForPath`, `RemoveVolume`
 
 Mocks:
@@ -225,7 +225,8 @@ Packages and the commands they register (`app/ark-cli/internal/cmd/registry_entr
 | `reachability/` | `check reachability` | `HostDeps.FetchText` |
 | `reconfigure/` | `reconfigure instance`, `enable`/`disable remote-rcon` | `MockCompose.LoadProjectFn`/`SaveProjectFn`/`RunningServicesFn`, `RestartStopInstance`/`RestartStartInstance` |
 | `remove/` | `remove instance`, `teardown instances` | `MockCompose.DownFn`/`KillFn`, `RemoveVolume`, `core.IsInteractiveTerminal` |
-| `schedule/` | `create`, `update`, `enable`, `disable`, `remove`, `show`, `check`, `run`, `validate schedule`; `list`, `apply schedules` | `overrideSchedulePathsForTest`, `writeScheduleFixture`, `RunBackupFromSchedule`, `InstallManagedSchedulesCrontab` |
+| `schedule/` | `create`, `update`, `enable`, `disable`, `remove`, `show`, `check`, `run`, `validate schedule`; `list schedules` | `overrideSchedulePathsForTest`, `writeScheduleFixture`, `RunBackupFromSchedule` |
+| `scheduler/` | `enable`, `disable`, `run`, `check scheduler` | `executablePath` (static binary fixture), `healthListenAddr` (`127.0.0.1:0`), `MockEngine.RootlessFn`/`ImageExistsFn`/`BuildImageFn`, `MockCompose.UpFn`/`StopFn`/`RemoveFn`, `Runtime.LookPath`/`RunCommand`, `ARK_SCHEDULER_SOCKET` |
 | `show/` | `show instance`, `list instances`, `show compose`, `show volume-paths`, `show backup`, `list backups` | `MockCompose.LoadProjectFn`, `MockEngine.VolumeMountpointFn`, `RunningServiceSnapshot`, `HostDeps.FetchText` |
 | `update/` | `update instance` | `Engine` mock (`ImageLabelsFn`, `ImageExistsFn`), `HostDeps.FetchText`, `DiskUsageForPath`, `RestartStopInstance`/`RestartStartInstance` |
 

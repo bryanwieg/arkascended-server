@@ -269,29 +269,72 @@ flowchart TD
 ## Schedule Call Graph
 
 `app/ark-cli/internal/schedule/` → `app/pkg/ark/schedule/`. Files under
-`<compose-dir>/.ark-manage/`.
+`.ark-manage/` in the current directory (the compose dir, where the scheduler
+reads them).
 
 ```mermaid
 flowchart TD
     A[ark-cli schedule command] --> B{Verb?}
 
-    B -->|"create/update/enable/disable"| C[Parse + validate]
-    C --> E[SaveScheduleAndCrontab: write schedules.yaml + generated/schedules.crontab]
-
-    B -->|"apply"| F[LoadScheduleFile]
-    F --> G[validateScheduleFile unless --skip-validate]
-    G --> H[WriteManagedScheduleCrontab: enabled backup schedules only]
-    H --> J[crontab generated/schedules.crontab]
+    B -->|"create/update/enable/disable/remove"| C[Parse + validate cron, format, target]
+    C --> E[SaveScheduleFile: write schedules.yaml]
+    E --> E1[warnIfSchedulerDisabled: no ark-scheduler service, or cwd is not the compose dir]
 
     B -->|"check"| K[LoadScheduleByName]
     K --> L[Lock file held? + LoadRunState]
     L --> M[Print status]
 
     B -->|"run"| N[LoadScheduleByName]
-    N --> O[AcquireLock, WriteRunState running]
-    O --> P[RunBackupFromSchedule → create backup command path]
-    P --> Q[WriteRunState success/failed]
+    N --> O[RunScheduleOnce]
 ```
+
+`RunScheduleOnce` (`internal/schedule/run.go`), shared by `run schedule` and
+the scheduler: `AcquireLock` (schedule lock) → log `START`, `WriteRunState
+running` → `RunBackupFromSchedule` (the `create backup` path, `--lock-timeout
+30m` for the instance lock) → log `SUCCESS`/`FAIL`, `WriteRunState
+success/failed`.
+
+## Scheduler Call Graph
+
+`app/ark-cli/internal/scheduler/` → `app/pkg/ark/schedule/`, `app/pkg/ark/health/`.
+
+```mermaid
+flowchart TD
+    A[ark-cli enable scheduler] --> A1[requireComposeDirIsCwd: cwd = compose dir, no outside symlink]
+    A1 --> A2[CheckStatic + BuildImage ark-scheduler:hash from os.Executable, unless it exists]
+    A2 --> A3[DetectServiceSettings: socket, rootless?, user/group, TZ, ARK_BACKUP_DIR]
+    A3 --> A4[RenderService → replace ark-scheduler block; load-check before rename]
+    A4 --> A5[Up ark-scheduler]
+    A5 --> A6[RemoveOldImages; RemoveManagedCrontab]
+
+    B[ark-cli run scheduler] --> B1[Listen :8099 → health.Handler]
+    B --> B2[schedule.Runner.Run: CatchUp, then each minute Step]
+    B2 --> B3[due schedule → RunScheduleOnce, one at a time]
+    B --> B4[health.Monitor.Run: Round at start, then each minute]
+    B4 --> B5[LoadProject → per instance: LockHeld? busy : Probe.Check]
+    B5 --> B6[Schedules: ScheduleService.Health]
+    B6 --> B7[publish: in-memory latest + state/scheduler/health.json]
+    B7 --> B8{hung 5 rounds, under 2/h?}
+    B8 -->|"yes"| B9[Restart: AcquireInstanceLock no wait → Lifecycle.Stop 2m → Lifecycle.Start]
+
+    C[ark-cli check scheduler] --> C1[warnImageMismatch]
+    C1 --> C2[LoadReport health.json; stale after 5m]
+    C2 --> C3[Print table or --json; exit 1 when unhealthy]
+
+    D[ark-cli disable scheduler] --> D1[Lifecycle.Down ark-scheduler, stop_grace_period]
+    D1 --> D2[Remove block; load-check before rename]
+```
+
+## Instance lock (lifecycle commands)
+
+`stop`, `start`, `restart instance` (`internal/compose/lock.go`
+`WithInstanceLocks`, one span over stop + start for restart), the `--restart`
+of `reconfigure instance` and the INI commands, and each instance of `update
+instance --rollout` take the per-instance kernel lock
+`<backup root>/<instance>/.<instance>-backup.lock` before acting: try once,
+then show `Waiting for backup lock: <instance>` and retry every 2 s for up to
+15 minutes. `stop instance --kill` skips the lock. Backups take the same lock;
+a rollout's own backup and restore run inside it with `LockHeld`.
 
 ## INI Edit/Set/Get/Show Call Graph
 

@@ -42,6 +42,13 @@ together by `go.work` (`app/ark-cli`, `app/ark-web`, `app/pkg/ark`,
   compose template used by `create instance`
 - `app/ark-cli/internal/{backup,compose,create,health,host,ini,listenport,reachability,reconfigure,remove,schedule,show,update}/` —
   command handler packages, one per verb group
+- `app/ark-cli/internal/scheduler/` — `enable`/`disable`/`run`/`check scheduler`:
+  renders the `ark-scheduler` compose service (`service.go`), builds its image
+  and edits compose (`enable.go`), runs the schedule and monitor loops and
+  `GET /health` (`scheduler.go`), prints the health report (`check.go`),
+  removes ark-cli's old crontab block (`crontab.go`)
+- `app/ark-cli/internal/compose/lock.go` — `WithInstanceLocks`: lifecycle
+  commands hold the instance lock, waiting up to 15m
 - `app/ark-cli/internal/testutil/` — test deps, mocks, fixtures, output capture
 
 Commands use `docker-compose.yaml` in the current directory; override with
@@ -81,10 +88,17 @@ Commands use `docker-compose.yaml` in the current directory; override with
   image build
 - `app/pkg/ark/host/` — host checks: kernel config (sysctl/NOFILE), port
   probing (TCP/UDP/UE5 handshake), external port checker
-- `app/pkg/ark/health/` — readiness and startup polling
+- `app/pkg/ark/health/` — readiness and startup polling; `probe.go` (the
+  monitor's per-instance container/ready/RCON/UDP checks), `monitor.go`
+  (rounds, restart policy, `health.json` report), `http.go` (`GET /health`)
 - `app/pkg/ark/lifecycle/` — start/stop/down orchestration
-- `app/pkg/ark/backup/` — backup creation, restore, retention, maintenance
-- `app/pkg/ark/schedule/` — schedule CRUD, crontab management, state tracking
+- `app/pkg/ark/backup/` — backup creation, restore, retention, maintenance;
+  `lock.go` (per-instance kernel lock)
+- `app/pkg/ark/filelock/` — Linux OFD locks (`TryLock`, `Held`)
+- `app/pkg/ark/schedule/` — schedule CRUD, cron parsing, state tracking;
+  `runner.go` (due runs and catch-up for the scheduler), `health.go`
+  (schedule health), `image.go` (builds `ark-scheduler:<hash>` from the
+  binary)
 - `app/pkg/ark/update/` — image update checking, host builds, safe rollout and
   rollback, update state and webhook
 
@@ -214,10 +228,12 @@ Schedule state is relative to the current directory; build context and
 backups are relative to the compose file's directory.
 
 - `.ark-manage/schedules.yaml` — schedule definitions
-- `.ark-manage/generated/schedules.crontab` — generated crontab file
 - `.ark-manage/logs/schedules/<name>.log` — per-schedule run logs
 - `.ark-manage/state/schedules/<name>.last.json` — last run state
 - `.ark-manage/locks/schedule-<name>.lock` — per-schedule lock files
+- `.ark-manage/state/scheduler/health.json` — scheduler health report
+  (compose dir)
+- `.ark-manage/build/scheduler/` — scheduler image build context (compose dir)
 - `.ark-manage/build/context/` — extracted image build recipe
 - `backups/<instance>/` — default backup root (override `ARK_BACKUP_DIR`)
 - `.ark-tmp/` — CLI temp files (override `ARK_TMP_DIR`)

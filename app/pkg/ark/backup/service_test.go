@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -311,9 +312,10 @@ func TestRestoreWithLockHeldRunsUnderCallersLock(t *testing.T) {
 		RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
 			return map[string]struct{}{}, nil
 		},
-		RunOneOffFn: func(_ context.Context, _, service string, _ []string, opts ark.RunOptions) (ark.ExecResult, error) {
+		RunOneOffFn: func(_ context.Context, _, _ string, argv []string, opts ark.RunOptions) (ark.ExecResult, error) {
 			hostDir, _, _ := strings.Cut(opts.Volumes[1], ":")
-			name := fmt.Sprintf("%s-pre-restore-%s.tar.gz", service, time.Now().UTC().Format("20060102-150405"))
+			// The name comes from the request, not a second clock read that could cross a second.
+			name := filepath.Base(argv[slices.Index(argv, "--pre-restore")+1])
 			return ark.ExecResult{}, os.WriteFile(filepath.Join(hostDir, name), []byte("x"), 0o644)
 		},
 	}

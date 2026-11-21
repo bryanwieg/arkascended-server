@@ -306,7 +306,6 @@ var newRolloutSteps = func(d *core.AppDeps, composeFile string) update.RolloutSt
 				Format:            "tar.gz",
 				Timestamp:         time.Now().UTC().Format("20060102-150405"),
 				PID:               os.Getpid(),
-				LockTimeout:       2 * time.Minute,
 				BackupWaitTimeout: 10 * time.Minute,
 				Retention:         backup.NewRetentionPolicy(20, 7, 5),
 				LockHeld:          true, // rolloutUpdatedInstances holds the instance lock

@@ -285,7 +285,7 @@ func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
 // TestRunUpdateLocalRolloutRollsBackUnderOneLock is the deadlock guard (design 13a): the rollout
 // holds the instance lock throughout, and its own backup and restore (the real newRolloutSteps
 // wiring, LockHeld) run inside it instead of waiting on it. Without LockHeld the backup fails
-// with "backup lock is held" (after its 2-minute LockTimeout).
+// at once with "backup lock is held" (the request has no lock timeout).
 func TestRunUpdateLocalRolloutRollsBackUnderOneLock(t *testing.T) {
 	backupRoot := t.TempDir()
 	testutil.SetEnv(t, "ARK_BACKUP_DIR", backupRoot)

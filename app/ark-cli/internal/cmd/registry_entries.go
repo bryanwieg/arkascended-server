@@ -13,6 +13,7 @@ import (
 	"ark-cli/internal/reconfigure"
 	"ark-cli/internal/remove"
 	"ark-cli/internal/schedule"
+	"ark-cli/internal/scheduler"
 	"ark-cli/internal/show"
 	"ark-cli/internal/update"
 )
@@ -66,6 +67,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "show", Object: "vol-paths", Route: "show_vol_paths_compat", Handler: show.RunShowVolumePaths, TopLevelHelp: nil},
 	{Verb: "show", Object: "schedule", Route: "show_schedule", Handler: schedule.RunShowSchedule, TopLevelHelp: []string{"show schedule --name <name>                 Show managed schedule details"}},
 	{Verb: "run", Object: "schedule", Route: "run_schedule", Handler: schedule.RunRunSchedule, TopLevelHelp: []string{"run schedule --name <name>                  Run a managed schedule immediately"}},
+	{Verb: "run", Object: "scheduler", Route: "run_scheduler", Handler: scheduler.RunRunScheduler, TopLevelHelp: []string{"run scheduler                               Run schedules and health checks (scheduler service)"}},
 	{Verb: "check", Object: "host-kernel-config", Route: "check_host_kernel_config", Handler: host.RunCheckHostKernelConfig, TopLevelHelp: []string{"check host-kernel-config                    Check host kernel settings required for Proton/Wine"}},
 	{Verb: "fix", Object: "host-kernel-config", Route: "fix_host_kernel_config", Handler: host.RunFixHostKernelConfig, TopLevelHelp: []string{"fix host-kernel-config                      Apply and persist required host kernel settings (requires root)"}},
 	{Verb: "restore", Object: "host-kernel-config", Route: "restore_host_kernel_config", Handler: host.RunRestoreHostKernelConfig, TopLevelHelp: []string{"restore host-kernel-config                  Restore host kernel settings from pre-fix backup (requires root)"}},

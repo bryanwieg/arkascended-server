@@ -271,6 +271,12 @@ func TestParseCommandRouteEnforcesVerbObjectSyntax(t *testing.T) {
 			wantArgs: []string{"nightly"},
 		},
 		{
+			name:     "run scheduler",
+			in:       []string{"run", "scheduler"},
+			wantVerb: "run_scheduler",
+			wantArgs: []string{},
+		},
+		{
 			name:    "legacy backup rejected",
 			in:      []string{"backup", "asa1"},
 			wantErr: "unknown command verb",

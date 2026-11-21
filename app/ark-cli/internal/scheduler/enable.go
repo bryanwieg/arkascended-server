@@ -98,23 +98,23 @@ func RunDisableScheduler(d *core.AppDeps, args []string) error {
 	return nil
 }
 
-// requireComposeDirIsCwd returns the compose dir, failing unless it is the working directory: the schedule
-// store is read from the working directory here and from the compose dir in the scheduler.
+// requireComposeDirIsCwd returns the compose dir, failing unless it is the working directory, or when the
+// compose file is a symlink to a file outside it (the scheduler mounts only the compose dir).
 func requireComposeDirIsCwd(composeFile string) (string, error) {
-	abs, err := filepath.Abs(composeFile)
+	composeDir, cwd, same, err := compose.ComposeDirIsCwd(composeFile)
 	if err != nil {
 		return "", err
 	}
-	composeDir := filepath.Dir(abs)
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	cwdInfo, cwdErr := os.Stat(cwd)
-	dirInfo, dirErr := os.Stat(composeDir)
-	if cwdErr != nil || dirErr != nil || !os.SameFile(cwdInfo, dirInfo) {
+	if !same {
 		return "", fmt.Errorf("Error: run 'ark-cli enable scheduler' from %s: schedules are read from %s, and the scheduler reads them from %s",
 			composeDir, filepath.Join(cwd, ".ark-manage"), filepath.Join(composeDir, ".ark-manage"))
+	}
+	if target, err := filepath.EvalSymlinks(filepath.Join(composeDir, filepath.Base(composeFile))); err == nil {
+		realDir, dirErr := filepath.EvalSymlinks(composeDir)
+		if dirErr == nil && filepath.Dir(target) != realDir {
+			return "", fmt.Errorf("Error: %s links to %s, outside %s; the scheduler mounts only the compose dir. Move the file into %s",
+				composeFile, target, composeDir, composeDir)
+		}
 	}
 	return composeDir, nil
 }

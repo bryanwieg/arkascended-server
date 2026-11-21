@@ -5,7 +5,6 @@ import (
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -188,15 +187,7 @@ func warnIfSchedulerDisabled(d *core.AppDeps, composeFileFlag string) {
 	if project, err := d.RuntimeHelper.LoadComposeProject(composeFile); err == nil && !project.HasScheduler() {
 		core.Warnf("Warning: the scheduler service is not enabled, so schedules will not run. Run 'ark-cli enable scheduler'.\n")
 	}
-	abs, absErr := filepath.Abs(composeFile)
-	cwd, cwdErr := os.Getwd()
-	if absErr != nil || cwdErr != nil {
-		return
-	}
-	composeDir := filepath.Dir(abs)
-	cwdInfo, cwdStatErr := os.Stat(cwd)
-	dirInfo, dirStatErr := os.Stat(composeDir)
-	if cwdStatErr == nil && dirStatErr == nil && !os.SameFile(cwdInfo, dirInfo) {
+	if composeDir, cwd, same, err := compose.ComposeDirIsCwd(composeFile); err == nil && !same {
 		core.Warnf("Warning: schedules are stored in %s; a scheduler only reads %s. Run schedule commands from %s.\n",
 			filepath.Join(cwd, ".ark-manage"), filepath.Join(composeDir, ".ark-manage"), composeDir)
 	}

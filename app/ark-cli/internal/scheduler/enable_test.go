@@ -284,3 +284,24 @@ func TestDisableSchedulerNoopWhenAbsent(t *testing.T) {
 		t.Fatalf("disable changed something: stops=%v removes=%v", f.stops, f.removes)
 	}
 }
+
+func TestEnableSchedulerRefusesComposeLinkOutsideDir(t *testing.T) {
+	f := newEnableFixture(t, staticBinary(t))
+	outside := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	if err := os.WriteFile(outside, []byte(instanceCompose), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(f.file); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, f.file); err != nil {
+		t.Fatal(err)
+	}
+	err := f.run(t, RunEnableScheduler)
+	if err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("err = %v, want the outside-link refusal", err)
+	}
+	if got, _ := os.ReadFile(outside); string(got) != instanceCompose || f.builds != 0 || len(f.ups) != 0 {
+		t.Fatalf("changed something: builds=%d ups=%v\n%s", f.builds, f.ups, got)
+	}
+}

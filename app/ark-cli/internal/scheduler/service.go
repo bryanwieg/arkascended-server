@@ -190,6 +190,12 @@ func RenderService(s ServiceSettings) string {
 		line("    ports:")
 		line("      - %s", q(fmt.Sprintf("%d:%d/tcp", s.HealthPort, HealthContainerPort)))
 	}
+	line("    healthcheck:")
+	line(`      test: ["CMD", "/ark-cli", "check", "scheduler"]`)
+	line("      interval: 1m")
+	line("      timeout: 30s")
+	line("      retries: 1")
+	line("      start_period: 3m")
 	line("    labels:")
 	line("      %s: %s", ark.RoleLabel, ark.SchedulerRole)
 	return b.String()

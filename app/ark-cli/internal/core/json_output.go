@@ -3,6 +3,8 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+
+	"pkg/ark/health"
 )
 
 // PrintJSONOutput marshals v as indented JSON and prints it to stdout.
@@ -139,3 +141,6 @@ type IniKeyJSON struct {
 	Lines   []IniKeyLineJSON `json:"lines"`
 	History string           `json:"history"`
 }
+
+// SchedulerHealthJSON is `check scheduler --json` output: the monitor's report as written to health.json.
+type SchedulerHealthJSON = health.Report

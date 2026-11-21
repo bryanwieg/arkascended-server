@@ -1,7 +1,7 @@
 package scheduler
 
 // Tests: DetectServiceSettings (rootful/rootless, docker/podman, socket and gid overrides, TZ, backup dir)
-// and RenderService golden output that loads with compose-go
+// and RenderService golden output (with the healthcheck) that loads with compose-go
 
 import (
 	"context"
@@ -212,6 +212,12 @@ const rootfulGolden = `services:
       - "/mnt/backups:/mnt/backups"
     ports:
       - "9000:8099/tcp"
+    healthcheck:
+      test: ["CMD", "/ark-cli", "check", "scheduler"]
+      interval: 1m
+      timeout: 30s
+      retries: 1
+      start_period: 3m
     labels:
       ark.role: scheduler
 `
@@ -236,6 +242,12 @@ const rootlessGolden = `services:
     volumes:
       - "/run/user/1000/podman/podman.sock:/var/run/docker.sock"
       - "/srv/ark:/srv/ark"
+    healthcheck:
+      test: ["CMD", "/ark-cli", "check", "scheduler"]
+      interval: 1m
+      timeout: 30s
+      retries: 1
+      start_period: 3m
     labels:
       ark.role: scheduler
 `
@@ -265,6 +277,9 @@ func TestRenderServiceGolden(t *testing.T) {
 			project := loadRendered(t, got)
 			if !project.HasScheduler() || len(project.ServiceNames()) != 0 {
 				t.Fatalf("loaded services = %v, HasScheduler = %v", project.Project.ServiceNames(), project.HasScheduler())
+			}
+			if hc := project.Project.Services[ark.SchedulerService].HealthCheck; hc == nil || strings.Join(hc.Test, " ") != "CMD /ark-cli check scheduler" {
+				t.Fatalf("healthcheck = %+v", hc)
 			}
 		})
 	}

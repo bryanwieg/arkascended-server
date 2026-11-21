@@ -18,7 +18,8 @@ func RunRunScheduler(d *core.AppDeps, args []string) error {
 		return err
 	}
 	sig := d.Context()
-	// Backups read their context from AppDeps; a stop signal must not abort one midway.
+	// Backups read their context from core.CurrentAppDeps() (internal/backup/create_runtime.go), so d must be
+	// the current deps (the registry passes it); a stop signal must not abort a backup midway.
 	d.Ctx = context.WithoutCancel(sig)
 	d.RuntimeHelper.Ctx = d.Ctx
 

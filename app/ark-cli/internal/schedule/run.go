@@ -10,8 +10,8 @@ import (
 	"pkg/ark/schedule"
 )
 
-func runBackupFromSchedule(name string, args []string) error {
-	if dep := core.CurrentAppDeps().RunBackupFromSchedule; dep != nil {
+func runBackupFromSchedule(d *core.AppDeps, name string, args []string) error {
+	if dep := d.RunBackupFromSchedule; dep != nil {
 		return dep(name, args)
 	}
 	return backup.RunBackupFromScheduleImpl(name, args)
@@ -27,11 +27,11 @@ func RunRunSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	_, s, _, err := d.ScheduleService.LoadScheduleByName(name)
 	if err != nil {
 		return err
 	}
-	if err := RunScheduleOnce(core.CurrentAppDeps(), s); err != nil {
+	if err := RunScheduleOnce(d, s); err != nil {
 		return err
 	}
 	core.Infof("Ran schedule %s\n", name)
@@ -61,7 +61,7 @@ func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
 
 	// A stop or update rollout holds the instance lock for minutes; wait for it instead of failing.
 	argsForBackup := append(append([]string{"--instance", s.Instance}, schedule.BackupFlagArgs(s)...), "--lock-timeout", "30m")
-	backupErr := runBackupFromSchedule(s.Name, argsForBackup)
+	backupErr := runBackupFromSchedule(d, s.Name, argsForBackup)
 	finishedAt := svc.Now().Format(time.RFC3339)
 	if backupErr != nil {
 		logLine(fmt.Sprintf("%s FAIL %s: %s", finishedAt, s.Name, backupErr))

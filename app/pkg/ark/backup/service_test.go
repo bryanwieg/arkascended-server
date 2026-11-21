@@ -295,6 +295,72 @@ func TestRestoreFailsWhenBackupLockHeld(t *testing.T) {
 	}
 }
 
+// LockHeld: the caller (a rollout) holds the lock on another descriptor; restore must not take it again.
+func TestRestoreWithLockHeldRunsUnderCallersLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	backupsDir := filepath.Join(tmpDir, "asa1")
+	os.MkdirAll(backupsDir, 0o755)
+	os.WriteFile(filepath.Join(backupsDir, "asa1-backup-20260101-120000.tar.gz"), []byte("x"), 0o644)
+	release, err := AcquireInstanceLock(InstanceLockDir(tmpDir, "asa1"), "asa1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	compose := &arktest.MockCompose{
+		RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
+			return map[string]struct{}{}, nil
+		},
+		RunOneOffFn: func(_ context.Context, _, service string, _ []string, opts ark.RunOptions) (ark.ExecResult, error) {
+			hostDir, _, _ := strings.Cut(opts.Volumes[1], ":")
+			name := fmt.Sprintf("%s-pre-restore-%s.tar.gz", service, time.Now().UTC().Format("20060102-150405"))
+			return ark.ExecResult{}, os.WriteFile(filepath.Join(hostDir, name), []byte("x"), 0o644)
+		},
+	}
+	s := newTestService(compose, &arktest.MockEngine{})
+	_, err = s.Restore(context.Background(), RestoreRequest{
+		ComposeFile: "compose.yaml", Service: "asa1", Archive: "latest", BackupRoot: tmpDir, LockHeld: true,
+	})
+	if err != nil {
+		t.Fatalf("Restore with LockHeld: %v", err)
+	}
+}
+
+func TestCreateForTargetLockHeld(t *testing.T) {
+	for _, lockHeld := range []bool{true, false} {
+		t.Run(fmt.Sprint("LockHeld=", lockHeld), func(t *testing.T) {
+			tmpDir := t.TempDir()
+			release, err := AcquireInstanceLock(InstanceLockDir(tmpDir, "asa1"), "asa1", 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer release()
+			compose := &arktest.MockCompose{
+				RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
+					return map[string]struct{}{"asa1": {}}, nil
+				},
+				ExecFn: func(_ context.Context, _, _ string, _ []string, _ ark.ExecOptions) (ark.ExecResult, error) {
+					return ark.ExecResult{ExitCode: 0}, nil
+				},
+				CopyFromServiceFn: func(_ context.Context, _, _, _, dstPath string) error {
+					return os.WriteFile(dstPath, []byte("backup"), 0o644)
+				},
+			}
+			s := newTestService(compose, &arktest.MockEngine{})
+			_, err = s.CreateForTarget(context.Background(), CreateRequest{
+				ComposeFile: "compose.yaml", BackupRoot: tmpDir, Format: "tar.gz", Timestamp: "20260101-120000",
+				PID: 1, BackupWaitTimeout: time.Second, LockHeld: lockHeld,
+			}, "asa1")
+			if lockHeld && err != nil {
+				t.Fatalf("CreateForTarget with LockHeld: %v", err)
+			}
+			if !lockHeld && (err == nil || !strings.Contains(err.Error(), "backup lock is held")) {
+				t.Fatalf("err = %v, want lock-held error", err)
+			}
+		})
+	}
+}
+
 // --- Cleanup tests ---
 
 func TestCleanupArtifactSourceEphemeralRemovesContainer(t *testing.T) {

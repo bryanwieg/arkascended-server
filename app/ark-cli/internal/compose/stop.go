@@ -31,13 +31,22 @@ func RunStop(d *core.AppDeps, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runStopRequest(stopCommandRequest{
-		Instance:        instance,
-		ComposeFileFlag: *composeFileFlag,
-		Timeout:         timeout,
-		Kill:            *kill,
-	})
+	stop := func() error {
+		return runStopRequest(stopCommandRequest{
+			Instance:        instance,
+			ComposeFileFlag: *composeFileFlag,
+			Timeout:         timeout,
+			Kill:            *kill,
+		})
+	}
+	// --kill is the way out of a hung stop, rollout or backup: it must not wait behind their lock.
+	if *kill {
+		return stop()
+	}
+	return withTargetLocks(d, *composeFileFlag, instance, stopNoServicesErr, stop)
 }
+
+const stopNoServicesErr = "Error: compose config has no services to stop."
 
 func runStopRequest(req stopCommandRequest) error {
 	return NewComposeLifecycleCommandService(core.CurrentAppDeps()).runStopRequest(req)
@@ -48,7 +57,7 @@ func (s ComposeLifecycleCommandService) runStopRequest(req stopCommandRequest) e
 		composeFile, _, services, err := ResolveDockerComposeServiceTargets(core.CurrentAppDeps(),
 			req.ComposeFileFlag,
 			req.Instance,
-			"Error: compose config has no services to stop.",
+			stopNoServicesErr,
 		)
 		if err != nil {
 			return err

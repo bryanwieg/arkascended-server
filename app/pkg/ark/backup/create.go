@@ -46,7 +46,7 @@ func BuildArtifactPaths(
 	containerPath := filepath.ToSlash(filepath.Join("/home/ark-user/maintenance", filename))
 	return ArtifactPaths{
 		DestDir:            destDir,
-		LockDir:            filepath.Join(backupRoot, target),
+		LockDir:            InstanceLockDir(backupRoot, target),
 		OutputPath:         filepath.Join(destDir, filename),
 		ContainerPath:      containerPath,
 		ContainerReadyPath: containerPath + ".ready",
@@ -71,7 +71,7 @@ func (s *Service) CreateForTarget(ctx context.Context, req CreateRequest, target
 	}
 
 	var result *CreateResult
-	err := WithInstanceLock(paths.LockDir, target, req.LockTimeout, func() error {
+	err := withInstanceLockUnless(req.LockHeld, paths.LockDir, target, req.LockTimeout, func() error {
 		usingEphemeral, err := s.startBackupArchiveProduction(ctx, req, target, paths)
 		if err != nil {
 			return err

@@ -19,6 +19,19 @@ type lockHeldError struct{ msg string }
 func (e lockHeldError) Error() string { return e.msg }
 func (lockHeldError) Unwrap() error   { return ErrLockHeld }
 
+// InstanceLockDir is the directory holding instance's lock file.
+func InstanceLockDir(backupRoot, instance string) string {
+	return filepath.Join(backupRoot, instance)
+}
+
+// withInstanceLockUnless runs fn directly when the caller already holds the lock.
+func withInstanceLockUnless(held bool, lockDir, instance string, timeout time.Duration, fn func() error) error {
+	if held {
+		return fn()
+	}
+	return WithInstanceLock(lockDir, instance, timeout, fn)
+}
+
 func instanceLockPath(lockDir, instance string) string {
 	return filepath.Join(lockDir, fmt.Sprintf(".%s-backup.lock", instance))
 }

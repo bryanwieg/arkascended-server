@@ -31,13 +31,17 @@ func RunStart(d *core.AppDeps, args []string) error {
 	if instance == "" {
 		return errors.New("Error: --instance is required.")
 	}
-	return RunStartRequest(d, startCommandRequest{
-		Instance:        instance,
-		ComposeFileFlag: *composeFileFlag,
-		NoWait:          *noWait,
-		WaitTimeout:     *waitTimeout,
+	return withTargetLocks(d, *composeFileFlag, instance, startNoServicesErr, func() error {
+		return RunStartRequest(d, startCommandRequest{
+			Instance:        instance,
+			ComposeFileFlag: *composeFileFlag,
+			NoWait:          *noWait,
+			WaitTimeout:     *waitTimeout,
+		})
 	})
 }
+
+const startNoServicesErr = "Error: compose config has no services to start."
 
 func RunStartRequest(d *core.AppDeps, req startCommandRequest) error {
 	plan, err := buildStartExecutionPlan(d, req)
@@ -77,7 +81,7 @@ func buildStartExecutionPlan(d *core.AppDeps, req startCommandRequest) (StartExe
 	composeFile, config, services, err := ResolveDockerComposeServiceTargets(d,
 		req.ComposeFileFlag,
 		req.Instance,
-		"Error: compose config has no services to start.",
+		startNoServicesErr,
 	)
 	if err != nil {
 		return StartExecutionPlan{}, err

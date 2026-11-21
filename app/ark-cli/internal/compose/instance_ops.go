@@ -47,19 +47,23 @@ func RunRestart(d *core.AppDeps, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := DoRestartStopInstance(d, stopCommandRequest{
-		Instance:        instance,
-		ComposeFileFlag: *composeFileFlag,
-		Timeout:         timeout,
-	}); err != nil {
-		return err
-	}
-	if err := DoRestartStartInstance(d, startCommandRequest{
-		Instance:        instance,
-		ComposeFileFlag: *composeFileFlag,
-		// Restart uses the same readiness wait default as `start instance`.
-		WaitTimeout: DefaultStartReadyWaitTimeout,
-	}); err != nil {
+	// One lock span over stop and start, so the monitor never sees the gap between them.
+	err = withTargetLocks(d, *composeFileFlag, instance, stopNoServicesErr, func() error {
+		if err := DoRestartStopInstance(d, stopCommandRequest{
+			Instance:        instance,
+			ComposeFileFlag: *composeFileFlag,
+			Timeout:         timeout,
+		}); err != nil {
+			return err
+		}
+		return DoRestartStartInstance(d, startCommandRequest{
+			Instance:        instance,
+			ComposeFileFlag: *composeFileFlag,
+			// Restart uses the same readiness wait default as `start instance`.
+			WaitTimeout: DefaultStartReadyWaitTimeout,
+		})
+	})
+	if err != nil {
 		return err
 	}
 	core.Infof("Restarted instance target %s\n", instance)

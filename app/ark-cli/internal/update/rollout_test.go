@@ -9,15 +9,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"pkg/ark"
 	"pkg/ark/arktest"
+	"pkg/ark/backup"
 	"pkg/ark/runtime"
 	update "pkg/ark/update"
 
@@ -33,8 +37,8 @@ var stopReasonExit = 0
 // runLocalUpdate runs `update instance` for one instance on ark-server:100 while
 // Steam reports build 200, whose image newImage already exists (no build).
 // startFails makes starting the new image fail. Returns the compose file afterwards,
-// the stop/start calls, the recorded last attempt and the command error.
-func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []string, *update.UpdateAttempt, error) {
+// the stop/start calls, the recorded last attempt and the command error. extra patches run last.
+func runLocalUpdate(t *testing.T, args []string, startFails bool, extra ...func(*core.AppDeps)) (string, []string, *update.UpdateAttempt, error) {
 	t.Helper()
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    image: ark-server:100\n")
@@ -74,6 +78,9 @@ func runLocalUpdate(t *testing.T, args []string, startFails bool) (string, []str
 				return errors.New("not ready")
 			}
 			return nil
+		}
+		for _, patch := range extra {
+			patch(d)
 		}
 	}, func() {
 		runErr = RunUpdate(core.CurrentAppDeps(), append([]string{"--compose-file", composePath}, args...))
@@ -272,5 +279,56 @@ func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
 		if st.LastAttempt == nil || st.LastAttempt.Result != update.ResultBuildFailed {
 			t.Fatalf("%s recorded %+v, want build_failed", instance, st.LastAttempt)
 		}
+	}
+}
+
+// TestRunUpdateLocalRolloutRollsBackUnderOneLock is the deadlock guard (design 13a): the rollout
+// holds the instance lock throughout, and its own backup and restore (the real newRolloutSteps
+// wiring, LockHeld) run inside it instead of waiting on it. Without LockHeld the backup fails
+// with "backup lock is held" (after its 2-minute LockTimeout).
+func TestRunUpdateLocalRolloutRollsBackUnderOneLock(t *testing.T) {
+	backupRoot := t.TempDir()
+	testutil.SetEnv(t, "ARK_BACKUP_DIR", backupRoot)
+	var steps []string
+	record := func(step string) {
+		held, err := backup.InstanceLockHeld(backup.InstanceLockDir(backupRoot, "asa1"), "asa1")
+		if err != nil || !held {
+			t.Errorf("%s ran without the instance lock (held=%v, err=%v)", step, held, err)
+		}
+		steps = append(steps, step)
+	}
+	_, _, attempt, err := runLocalUpdate(t, []string{"--rollout"}, true, func(d *core.AppDeps) {
+		stop, start := d.RestartStopInstance, d.RestartStartInstance
+		d.RestartStopInstance = func(req runtime.StopCommandRequest) error { record("stop"); return stop(req) }
+		d.RestartStartInstance = func(req runtime.StartCommandRequest) error { record("start"); return start(req) }
+		// The backup helper's ready file and the archive: CopyFromContainer writes whatever is asked for.
+		d.Engine.(*arktest.MockEngine).CopyFromContainerFn = func(_ context.Context, _, src, dst string) error {
+			if strings.HasSuffix(src, ".tar.gz") {
+				record("backup")
+			}
+			return os.WriteFile(dst, []byte("archive"), 0o644)
+		}
+		// Restore's maintenance container writes the pre-restore archive into its output mount.
+		d.ComposeService.(*arktest.MockCompose).RunOneOffFn = func(_ context.Context, _, _ string, argv []string, opts ark.RunOptions) (ark.ExecResult, error) {
+			record("restore")
+			hostDir, _, _ := strings.Cut(opts.Volumes[1], ":")
+			preRestore := argv[slices.Index(argv, "--pre-restore")+1]
+			return ark.ExecResult{}, os.WriteFile(filepath.Join(hostDir, path.Base(preRestore)), []byte("x"), 0o644)
+		}
+		bs := backup.New(d.Engine, d.ComposeService, nil, nil, slog.New(slog.DiscardHandler))
+		bs.CheckFileInContainer = func(context.Context, string, string) (bool, error) { return true, nil }
+		d.BackupService = bs
+	})
+	if err == nil || !strings.Contains(err.Error(), "rolled back") || strings.Contains(err.Error(), "lock") {
+		t.Fatalf("err = %v, want a rolled-back error without a lock error", err)
+	}
+	if attempt == nil || attempt.Result != update.ResultRolledBack || strings.Contains(attempt.Message, "lock") {
+		t.Fatalf("recorded %+v, want rolled_back without a lock error", attempt)
+	}
+	if got := strings.Join(steps, ","); got != "stop,backup,start,stop,restore,start" {
+		t.Fatalf("steps %s", got)
+	}
+	if held, _ := backup.InstanceLockHeld(backup.InstanceLockDir(backupRoot, "asa1"), "asa1"); held {
+		t.Fatal("instance lock still held after the update")
 	}
 }

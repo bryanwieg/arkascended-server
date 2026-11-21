@@ -34,6 +34,7 @@ func composeTestServices(services []string) types.Services {
 
 func withComposeLifecycleDeps(t *testing.T, services []string, patch func(*core.AppDeps), fn func()) {
 	t.Helper()
+	setEnv(t, "ARK_BACKUP_DIR", t.TempDir()) // stop/start take the instance lock under the backup root
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {

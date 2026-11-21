@@ -32,6 +32,8 @@ type CreateRequest struct {
 	LockTimeout       time.Duration
 	BackupWaitTimeout time.Duration
 	Retention         RetentionPolicy
+	// LockHeld: the caller already holds the instance lock, so CreateForTarget does not take it.
+	LockHeld bool
 }
 
 // CreateResult reports what happened during backup creation.
@@ -49,6 +51,8 @@ type RestoreRequest struct {
 	// ArchivePath bypasses the Archive/BackupRoot lookup when non-empty.
 	// When set, Restore uses this path directly as the input archive.
 	ArchivePath string
+	// LockHeld: the caller already holds the instance lock, so Restore does not take it.
+	LockHeld bool
 }
 
 // VerifyRequest describes a backup verification operation.

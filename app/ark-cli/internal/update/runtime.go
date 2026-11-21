@@ -218,12 +218,18 @@ func rolloutUpdatedInstances(composeFile string, updates []plannedUpdate) error 
 	stateDir := update.StateDir(composeFile)
 	for i, u := range updates {
 		core.Infof("Updating %s\n", u.summary())
-		if err := compose.SetStopReason(d, composeFile, u.Instance, "updating to "+runtime.FallbackDash(u.ToVersion)); err != nil {
-			core.Warnf("Warning: %s: could not pass the update reason to its player warnings: %v\n", u.Instance, err)
-		}
-		attempt, err := update.Rollout(d.Context(), update.RolloutRequest{
-			StateDir: stateDir, Instance: u.Instance, From: u.From, To: u.To,
-		}, steps)
+		var attempt update.UpdateAttempt
+		// The rollout's own backup and restore run inside this lock (LockHeld in newRolloutSteps).
+		err := compose.WithInstanceLocks(d, composeFile, []string{u.Instance}, func() error {
+			if err := compose.SetStopReason(d, composeFile, u.Instance, "updating to "+runtime.FallbackDash(u.ToVersion)); err != nil {
+				core.Warnf("Warning: %s: could not pass the update reason to its player warnings: %v\n", u.Instance, err)
+			}
+			var rolloutErr error
+			attempt, rolloutErr = update.Rollout(d.Context(), update.RolloutRequest{
+				StateDir: stateDir, Instance: u.Instance, From: u.From, To: u.To,
+			}, steps)
+			return rolloutErr
+		})
 		if attempt.Result == update.ResultRolledBack || attempt.Result == update.ResultRollbackFailed {
 			alertFailure(u.Instance, attempt)
 		}
@@ -303,6 +309,7 @@ var newRolloutSteps = func(d *core.AppDeps, composeFile string) update.RolloutSt
 				LockTimeout:       2 * time.Minute,
 				BackupWaitTimeout: 10 * time.Minute,
 				Retention:         backup.NewRetentionPolicy(20, 7, 5),
+				LockHeld:          true, // rolloutUpdatedInstances holds the instance lock
 			}, instance)
 			if err != nil {
 				return "", err
@@ -329,6 +336,7 @@ var newRolloutSteps = func(d *core.AppDeps, composeFile string) update.RolloutSt
 		Restore: func(ctx context.Context, instance, archive string) error {
 			_, err := d.BackupService.Restore(ctx, backup.RestoreRequest{
 				ComposeFile: composeFile, Service: instance, ArchivePath: archive, BackupRoot: backupRoot,
+				LockHeld: true, // rolloutUpdatedInstances holds the instance lock
 			})
 			return err
 		},

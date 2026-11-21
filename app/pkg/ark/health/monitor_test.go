@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -424,5 +425,72 @@ func TestMonitorReportGolden(t *testing.T) {
 }`
 	if string(got) != want {
 		t.Fatalf("report JSON =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestMonitorBusyInstanceNeverRestarted(t *testing.T) {
+	inst := hung()
+	env, m := newMonitorEnv(t, map[string]*fakeInstance{"asa1": inst})
+	for range 4 {
+		env.round(m)
+	}
+	env.restartErr = ErrInstanceBusy // the counter reaches 5 and is kept
+	env.round(m)
+	env.restartErr = nil
+	inst.locked = true
+	env.round(m)
+	if len(env.restarted) != 0 {
+		t.Fatalf("restarted %v while busy", env.restarted)
+	}
+}
+
+func TestMonitorFailedRestartUnhealthyUntilRunning(t *testing.T) {
+	inst := hung()
+	env, m := newMonitorEnv(t, map[string]*fakeInstance{"asa1": inst})
+	env.restartErr = errors.New("start failed")
+	for range 5 {
+		env.round(m)
+	}
+	inst.state = "exited"
+	r := env.round(m)
+	got := r.Instances["asa1"]
+	if r.Healthy || got.Checks["container"] != CheckFail || got.Details["container"] != "not running after a failed restart" {
+		t.Fatalf("after a failed restart: healthy=%v instance=%+v", r.Healthy, got)
+	}
+	inst.state, inst.rconOK = "running", true
+	if r := env.round(m); !r.Healthy {
+		t.Fatalf("running again: %+v", r.Instances["asa1"])
+	}
+	inst.state = "exited" // stopped on purpose now
+	if r := env.round(m); !r.Healthy {
+		t.Fatalf("stopped after recovery: %+v", r.Instances["asa1"])
+	}
+}
+
+func TestMonitorLogsChangingDetailOnce(t *testing.T) {
+	inst := hung()
+	inst.ready = false // detail "not ready <n>m after start" changes every round
+	env, m := newMonitorEnv(t, map[string]*fakeInstance{"asa1": inst})
+	for range 3 {
+		env.round(m)
+	}
+	want := []string{"Health: unhealthy: asa1 ready: not ready 60m after start; asa1 rcon: Error: RCON command timed out"}
+	if !slices.Equal(env.logs, want) {
+		t.Fatalf("logs =\n %q\nwant\n %q", env.logs, want)
+	}
+}
+
+func TestMonitorCancelledRoundChangesNothing(t *testing.T) {
+	env, m := newMonitorEnv(t, map[string]*fakeInstance{"asa1": hung()})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 5 {
+		m.Round(ctx)
+	}
+	if _, ok := m.Latest(); ok || len(env.restarted) != 0 || len(env.logs) != 0 {
+		t.Fatalf("cancelled rounds: published %v, restarted %v, logs %q", ok, env.restarted, env.logs)
+	}
+	if _, err := LoadReport(m.HealthPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("report file after cancelled rounds: %v", err)
 	}
 }

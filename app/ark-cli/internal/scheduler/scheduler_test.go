@@ -2,11 +2,13 @@ package scheduler
 
 // Tests: run scheduler start/stop on a cancelled context (both loops and the health endpoint); a taken health
 // port fails the command; a running backup keeps an uncancelled context; the monitor's restart holds the
-// instance lock around stop (2m timeout) and start, and is busy when another holder has the lock
+// instance lock around stop (2m timeout) and start, starts after a failed stop, and is busy when another
+// holder has the lock
 
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -60,14 +62,14 @@ func TestRunSchedulerReturnsOnCancelledContext(t *testing.T) {
 			}
 		})
 	})
-	for _, want := range []string{"Scheduler started (TZ ", "schedules " + svc.ConfigPath, "Health: healthy", "Scheduler stopped"} {
+	for _, want := range []string{"Scheduler started (TZ ", "schedules " + svc.ConfigPath, "Scheduler stopped"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
 	}
-	// The monitor's first round ran before the loops ended.
-	if r, err := health.LoadReport(healthPath(file)); err != nil || r.Instances["asa1"].State != "stopped" {
-		t.Fatalf("health report = %+v, %v", r, err)
+	// The monitor's round on the cancelled context published nothing.
+	if _, err := health.LoadReport(healthPath(file)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("health report after a cancelled round: %v", err)
 	}
 }
 
@@ -88,9 +90,10 @@ func TestRunSchedulerFailsWhenHealthPortIsTaken(t *testing.T) {
 
 // restartCalls records the lifecycle calls of a monitor restart and whether the instance lock was held.
 type restartCalls struct {
-	stops []time.Duration
-	ups   []ark.UpOptions
-	held  []bool
+	stopErr error
+	stops   []time.Duration
+	ups     []ark.UpOptions
+	held    []bool
 }
 
 func restartDeps(t *testing.T, lockDir string, calls *restartCalls) *core.AppDeps {
@@ -107,7 +110,7 @@ func restartDeps(t *testing.T, lockDir string, calls *restartCalls) *core.AppDep
 			}
 			calls.stops = append(calls.stops, *timeout)
 			calls.held = append(calls.held, lockHeld())
-			return nil
+			return calls.stopErr
 		},
 		UpFn: func(_ context.Context, _ string, services []string, opts ark.UpOptions) error {
 			if !slices.Equal(services, []string{"asa1"}) {
@@ -154,6 +157,21 @@ func TestMonitorRestartHoldsInstanceLock(t *testing.T) {
 	}
 	if len(busy.stops)+len(busy.ups) != 0 {
 		t.Fatalf("busy restart called stop %v, up %v", busy.stops, busy.ups)
+	}
+}
+
+func TestMonitorRestartStartsAfterFailedStop(t *testing.T) {
+	testutil.SetEnv(t, "ARK_BACKUP_DIR", "")
+	file := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	lockDir := backup.InstanceLockDir(core.BackupRootDirForComposeFile(file), "asa1")
+	stopErr := errors.New("stop timed out")
+	calls := &restartCalls{stopErr: stopErr}
+	m := newMonitor(restartDeps(t, lockDir, calls), file, time.Now(), t.Logf)
+	if err := m.Restart(context.Background(), "asa1"); !errors.Is(err, stopErr) {
+		t.Fatalf("Restart = %v, want the stop error", err)
+	}
+	if len(calls.ups) != 1 {
+		t.Fatalf("ups = %+v, want a start after the failed stop", calls.ups)
 	}
 }
 

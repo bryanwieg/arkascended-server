@@ -57,7 +57,7 @@ func printReport(r health.Report) {
 	rows := [][]string{{"INSTANCE", "STATE", "CHECK", "RESULT", "DETAIL"}}
 	for _, name := range slices.Sorted(maps.Keys(r.Instances)) {
 		inst := r.Instances[name]
-		for _, check := range []string{"container", "ready", "rcon", "udp"} {
+		for _, check := range health.InstanceChecks {
 			rows = append(rows, []string{name, inst.State, check, inst.Checks[check], inst.Details[check]})
 		}
 	}

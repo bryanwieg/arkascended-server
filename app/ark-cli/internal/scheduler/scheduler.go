@@ -114,11 +114,10 @@ func newMonitor(d *core.AppDeps, composeFile string, started time.Time, logf fun
 			// A stop signal must not leave the instance stopped halfway (stop_grace_period 8m covers both).
 			noCancel := context.WithoutCancel(ctx)
 			services := []string{inst}
-			if err := d.Lifecycle.Stop(noCancel, lifecycle.StopRequest{ComposeFile: composeFile, Services: services, Timeout: RestartStopTimeout}); err != nil {
-				return err
-			}
-			_, err = d.Lifecycle.Start(noCancel, lifecycle.StartRequest{ComposeFile: composeFile, Services: services, PullPolicy: "never"})
-			return err
+			// Start even when the stop failed: a half-stopped instance is worse than a failed start attempt.
+			stopErr := d.Lifecycle.Stop(noCancel, lifecycle.StopRequest{ComposeFile: composeFile, Services: services, Timeout: RestartStopTimeout})
+			_, startErr := d.Lifecycle.Start(noCancel, lifecycle.StartRequest{ComposeFile: composeFile, Services: services, PullPolicy: "never"})
+			return errors.Join(stopErr, startErr)
 		},
 		HealthPath: healthPath(composeFile),
 		Now:        time.Now,

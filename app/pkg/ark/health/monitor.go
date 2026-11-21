@@ -37,8 +37,8 @@ const (
 // ErrInstanceBusy is returned by Monitor.Restart when the instance lock is held.
 var ErrInstanceBusy = errors.New("instance lock held")
 
-// instanceChecks are the checks every InstanceReport lists.
-var instanceChecks = []string{"container", "ready", "rcon", "udp"}
+// InstanceChecks are the checks every InstanceReport lists, in display order.
+var InstanceChecks = []string{"container", "ready", "rcon", "udp"}
 
 // Report is the serialized health (file, HTTP, check scheduler --json). Maps keep it addressable by
 // Gatus JSON paths: [BODY].instances.<name>.checks.rcon.
@@ -84,10 +84,11 @@ type Monitor struct {
 	latest    Report
 	hasLatest bool
 
-	hungRounds  map[string]int       // instance → consecutive hung rounds
-	restarts    []RestartRecord      // last hour
-	limitLogged map[string]time.Time // instance → last "restart limit reached" log
-	lastSummary string               // health line logged last
+	hungRounds    map[string]int       // instance → consecutive hung rounds
+	restarts      []RestartRecord      // last hour
+	limitLogged   map[string]time.Time // instance → last "restart limit reached" log
+	failedRestart map[string]bool      // instances whose last monitor restart failed, until a container runs
+	lastProblems  string               // problems (without details) logged last
 }
 
 // Run does a Round at start and on each tick until ctx is done.
@@ -111,15 +112,21 @@ func (m *Monitor) Latest() (Report, bool) {
 }
 
 // Round checks every instance and schedule, publishes the report and restarts at most one hung instance.
+// When ctx ends during the probes it returns an empty report and changes nothing.
 func (m *Monitor) Round(ctx context.Context) Report {
 	if m.hungRounds == nil {
 		m.hungRounds = map[string]int{}
 		m.limitLogged = map[string]time.Time{}
+		m.failedRestart = map[string]bool{}
 	}
 	now := m.Now()
 	m.restarts = slices.DeleteFunc(m.restarts, func(r RestartRecord) bool { return now.Sub(r.Time) >= time.Hour })
 
-	healths, err := m.probeAll(ctx)
+	probed, err := m.probeAll(ctx)
+	if ctx.Err() != nil { // shutting down: the probes failed with context canceled, not because of the instances
+		return Report{}
+	}
+	healths := m.markFailedRestarts(probed)
 	m.countHung(healths)
 	report := m.buildReport(now, healths, err)
 	m.logChange(report)
@@ -160,6 +167,22 @@ func (m *Monitor) probeAll(ctx context.Context) ([]InstanceHealth, error) {
 		healths = append(healths, m.Probe.Check(ctx, m.ComposeFile, name, project.Project.Services[name], c, found))
 	}
 	return healths, nil
+}
+
+// markFailedRestarts fails the container check of a stopped instance whose monitor restart failed, and
+// forgets the failure once the instance has a container again.
+func (m *Monitor) markFailedRestarts(healths []InstanceHealth) []InstanceHealth {
+	out := slices.Clone(healths)
+	for i, h := range out {
+		switch {
+		case !m.failedRestart[h.Instance]:
+		case h.State == "stopped":
+			out[i].Checks = []CheckResult{{Name: "container", Detail: "not running after a failed restart"}}
+		case h.State != StateBusy: // busy is not probed, so it says nothing about the container
+			delete(m.failedRestart, h.Instance)
+		}
+	}
+	return out
 }
 
 // countHung updates the consecutive hung-round counters; busy rounds leave them unchanged.
@@ -206,7 +229,7 @@ func (m *Monitor) buildReport(now time.Time, healths []InstanceHealth, err error
 
 func instanceReport(h InstanceHealth) InstanceReport {
 	checks := map[string]string{}
-	for _, name := range instanceChecks {
+	for _, name := range InstanceChecks {
 		checks[name] = CheckSkipped
 	}
 	if h.State == "running" {
@@ -227,23 +250,26 @@ func instanceReport(h InstanceHealth) InstanceReport {
 	return InstanceReport{State: h.State, Checks: checks, Details: details}
 }
 
+// problem is one thing that makes a report unhealthy: what failed ("asa1 rcon") and its detail.
+type problem struct{ what, detail string }
+
 // problems lists what makes a report unhealthy, in a stable order.
-func problems(r Report) []string {
-	var out []string
+func problems(r Report) []problem {
+	var out []problem
 	if r.Error != "" {
-		out = append(out, "compose: "+r.Error)
+		out = append(out, problem{"compose", r.Error})
 	}
 	for _, name := range sortedKeys(r.Instances) {
 		inst := r.Instances[name]
-		for _, check := range instanceChecks {
+		for _, check := range InstanceChecks {
 			if inst.Checks[check] == CheckFail {
-				out = append(out, name+" "+check+": "+inst.Details[check])
+				out = append(out, problem{name + " " + check, inst.Details[check]})
 			}
 		}
 	}
 	for _, name := range sortedKeys(r.Schedules) {
 		if r.Schedules[name] != CheckOK {
-			out = append(out, "schedule "+name+": "+r.ScheduleDetails[name])
+			out = append(out, problem{"schedule " + name, r.ScheduleDetails[name]})
 		}
 	}
 	return out
@@ -258,16 +284,22 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-// logChange logs the health line when it differs from the previous round's.
+// logChange logs the health line when what fails differs from the previous round; details are left out of
+// the comparison since some change every round ("not ready 21m after start").
 func (m *Monitor) logChange(r Report) {
-	summary := "Health: healthy"
-	if p := problems(r); len(p) > 0 {
-		summary = "Health: unhealthy: " + strings.Join(p, "; ")
+	var whats, texts []string
+	for _, p := range problems(r) {
+		whats = append(whats, p.what)
+		texts = append(texts, p.what+": "+p.detail)
 	}
-	if summary != m.lastSummary {
-		m.Logf("%s", summary)
+	line, key := "Health: healthy", "healthy" // key is never "" so the first round logs
+	if len(texts) > 0 {
+		line, key = "Health: unhealthy: "+strings.Join(texts, "; "), strings.Join(whats, "; ")
 	}
-	m.lastSummary = summary
+	if key != m.lastProblems {
+		m.Logf("%s", line)
+	}
+	m.lastProblems = key
 }
 
 // publish stores the report for Latest and writes it to HealthPath atomically.
@@ -308,10 +340,11 @@ func LoadReport(path string) (Report, error) {
 	return r, nil
 }
 
-// restartCandidate returns the first instance, in name order, hung long enough and under the hourly cap.
+// restartCandidate returns the first instance, in name order, hung this round, hung long enough and under the
+// hourly cap.
 func (m *Monitor) restartCandidate(healths []InstanceHealth, now time.Time) (InstanceHealth, bool) {
 	for _, h := range healths {
-		if m.hungRounds[h.Instance] < HungRoundsBeforeRestart {
+		if !h.Hung() || m.hungRounds[h.Instance] < HungRoundsBeforeRestart { // busy rounds keep the counter
 			continue
 		}
 		recent := 0
@@ -350,6 +383,7 @@ func (m *Monitor) restart(ctx context.Context, h InstanceHealth) (RestartRecord,
 	if err != nil {
 		m.Logf("Warning: restart of %s failed: %v", h.Instance, err)
 		rec.Error = err.Error()
+		m.failedRestart[h.Instance] = true
 	}
 	delete(m.hungRounds, h.Instance)
 	return rec, true

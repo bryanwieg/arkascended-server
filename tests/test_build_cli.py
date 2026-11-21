@@ -31,6 +31,7 @@ def test_build_cli() -> None:
     env = os.environ.copy()
     env["GOCACHE"] = env.get("GOCACHE", str(root / ".go-cache"))
     env["GOTMPDIR"] = env.get("GOTMPDIR", str(root / ".ark-tmp"))
+    env["CGO_ENABLED"] = "0"  # static, so the binary runs in the scratch scheduler image
 
     subprocess.run(
         ["go", "build", "-o", str(bin_path)],

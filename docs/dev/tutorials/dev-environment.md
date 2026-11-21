@@ -23,7 +23,8 @@ cd arkascended-server
 ./.github/build-cli.sh
 ```
 
-Output: `app/ark-cli/ark-cli`. The CLI test fixtures rebuild it on every run, so
+Output: `app/ark-cli/ark-cli`, linked statically (`CGO_ENABLED=0 go build`, as releases are;
+`enable scheduler` copies it into a scratch image). The CLI test fixtures rebuild it on every run, so
 this step is only needed to use the CLI by hand.
 
 ## 3. Build the Docker image

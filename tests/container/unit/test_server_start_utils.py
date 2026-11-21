@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import os
+import re
 import types
 from pathlib import Path
 
@@ -211,6 +213,43 @@ def test_stop_script_timeout_includes_shutdown_warning(start_mod, monkeypatch: p
     assert start_mod._load_server_config()["graceful_stop_script_timeout"] == 1200
     monkeypatch.delenv("SHUTDOWN_WARNING_MINUTES")
     assert start_mod._load_server_config()["graceful_stop_script_timeout"] == 900  # default 5 minutes
+    monkeypatch.delenv("GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS")
+    assert start_mod._load_server_config()["graceful_stop_script_timeout"] == 420  # 120 + 5 * 60
+
+
+_STOP_ENV = (
+    "SHUTDOWN_WARNING_MINUTES",
+    "SAVE_MAX_RETRIES",
+    "SAVE_CONFIRM_TIMEOUT_SECONDS",
+    "STOP_CHECK_TIMEOUT_SECONDS",
+    "GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS",
+    "GRACEFUL_STOP_WAIT_SECONDS",
+    "FORCE_TERM_WAIT_SECONDS",
+)
+
+
+def test_default_stop_budget_fits_compose_grace_period(start_mod, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default worst-case stop fits the default compose stop_grace_period, or Docker kills mid-save."""
+    for name in _STOP_ENV:
+        monkeypatch.delenv(name, raising=False)
+    repo = Path(__file__).resolve().parents[3]
+    defaults_yaml = (repo / "app/ark-cli/internal/compose/assets/docker-compose.defaults.yaml").read_text()
+    match = re.search(r"stop_grace_period:\s*(\d+)m", defaults_yaml)
+    assert match, "stop_grace_period not found in docker-compose.defaults.yaml"
+    grace_seconds = int(match.group(1)) * 60
+
+    server = start_mod._load_server_config()
+    worst_case = server["graceful_stop_script_timeout"] + server["graceful_stop_wait"] + server["force_term_wait"]
+    assert worst_case <= grace_seconds
+
+    stop_path = repo / "container/scripts/runtime/ark-server-stop.py"
+    spec = importlib.util.spec_from_file_location("ark_server_stop", stop_path)
+    assert spec is not None and spec.loader is not None
+    stop_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stop_mod)
+    stop = stop_mod._load_stop_config()
+    script_timeout = server["graceful_stop_script_timeout"] - stop["warning_minutes"] * 60
+    assert stop["save_max_retries"] * stop["save_confirm_timeout"] + stop["stop_check_timeout"] <= script_timeout
 
 
 # ---------------------------------------------------------------------------

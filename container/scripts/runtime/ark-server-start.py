@@ -347,9 +347,9 @@ def _load_server_config() -> dict:
     """Read all runtime settings from environment variables."""
     return {
         # The stop script sleeps through the player warning before saving, so the warning must not eat its budget.
-        "graceful_stop_script_timeout": env_int("GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS", 600)
+        "graceful_stop_script_timeout": env_int("GRACEFUL_STOP_SCRIPT_TIMEOUT_SECONDS", 120)
         + shutdown_warning_minutes() * 60,
-        "graceful_stop_wait": env_int("GRACEFUL_STOP_WAIT_SECONDS", 180),
+        "graceful_stop_wait": env_int("GRACEFUL_STOP_WAIT_SECONDS", 15),
         "force_term_wait": env_int("FORCE_TERM_WAIT_SECONDS", 20),
         "force_poll_interval": env_int("FORCE_STOP_POLL_SECONDS", 1),
         "log_rotation_keep_files": env_int("LOG_ROTATION_KEEP_FILES", 10, minimum=0),

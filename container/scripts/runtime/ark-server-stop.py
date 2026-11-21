@@ -83,10 +83,10 @@ def _load_stop_config() -> dict:
     """Read all stop-workflow settings from environment variables."""
     return {
         "warning_minutes": shutdown_warning_minutes(),
-        "save_max_retries": env_int("SAVE_MAX_RETRIES", 3),
+        "save_max_retries": env_int("SAVE_MAX_RETRIES", 2),
         "save_retry_delay": env_int("SAVE_RETRY_DELAY_SECONDS", 3),
-        "save_confirm_timeout": env_int("SAVE_CONFIRM_TIMEOUT_SECONDS", 60),
-        "stop_check_timeout": env_int("STOP_CHECK_TIMEOUT_SECONDS", 120),
+        "save_confirm_timeout": env_int("SAVE_CONFIRM_TIMEOUT_SECONDS", 20),
+        "stop_check_timeout": env_int("STOP_CHECK_TIMEOUT_SECONDS", 60),
         "stop_check_interval": env_int("STOP_CHECK_INTERVAL_SECONDS", 5),
     }
 

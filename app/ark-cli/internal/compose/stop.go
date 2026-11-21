@@ -16,7 +16,7 @@ func RunStop(d *core.AppDeps, args []string) error {
 		[]string{"stop instance --instance <instance|all> [options]"},
 		"Gracefully stop one or more compose services.",
 	)
-	timeoutFlag := fs.String("timeout", "", "Time to allow for graceful shutdown before SIGKILL (e.g. 20m, 1200s). Default: the compose stop_grace_period.")
+	timeoutFlag := fs.String("timeout", "", "Time to allow for graceful shutdown before SIGKILL (e.g. 8m, 480s). Default: the compose stop_grace_period.")
 	kill := fs.Bool("kill", false, "Kill the service immediately (bypasses graceful shutdown).")
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	instanceFlag := fs.String("instance", "", "Target instance name or 'all'.")

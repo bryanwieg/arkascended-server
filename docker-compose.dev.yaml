@@ -6,7 +6,7 @@ services:
     image: ark-server:latest
     container_name: ark-server-1
     restart: "no"
-    stop_grace_period: 20m
+    stop_grace_period: 8m
     stop_signal: SIGTERM
     environment:
       - TZ=America/Los_Angeles

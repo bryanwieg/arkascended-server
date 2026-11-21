@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
+
+	"pkg/ark/filelock"
 )
 
 // LogPath returns the log file path for a named schedule.
@@ -81,21 +82,25 @@ func (s *Service) LoadRunState(name string) (RunState, bool) {
 	return state, true
 }
 
-// AcquireLock creates an exclusive lock file for the named schedule.
-// Returns a release function that removes the lock file.
+// AcquireLock takes the kernel lock for the named schedule without waiting.
+// The release function unlocks it; the lock file stays.
 func (s *Service) AcquireLock(name string) (func(), error) {
 	path := s.LockPath(name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	release, held, err := filelock.TryLock(path)
 	if err != nil {
-		if os.IsExist(err) {
-			return nil, fmt.Errorf("Error: schedule lock held: %s", name)
-		}
 		return nil, err
 	}
-	_, _ = fmt.Fprintf(f, "pid=%d started=%s\n", os.Getpid(), s.Now().Format(time.RFC3339))
-	_ = f.Close()
-	return func() { _ = os.Remove(path) }, nil
+	if held {
+		return nil, fmt.Errorf("Error: schedule lock held: %s", name)
+	}
+	return release, nil
+}
+
+// LockHeld reports whether the named schedule is running; an error counts as not held.
+func (s *Service) LockHeld(name string) bool {
+	held, err := filelock.Held(s.LockPath(name))
+	return err == nil && held
 }

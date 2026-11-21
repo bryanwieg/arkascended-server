@@ -271,7 +271,11 @@ func TestRestoreFailsWhenBackupLockHeld(t *testing.T) {
 	backupsDir := filepath.Join(tmpDir, "asa1")
 	os.MkdirAll(backupsDir, 0o755)
 	os.WriteFile(filepath.Join(backupsDir, "asa1-backup-20260101-120000.tar.gz"), []byte("x"), 0o644)
-	os.WriteFile(filepath.Join(backupsDir, ".asa1-backup.lock"), []byte("held"), 0o600)
+	release, err := AcquireInstanceLock(backupsDir, "asa1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
 
 	compose := &arktest.MockCompose{
 		RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
@@ -283,7 +287,7 @@ func TestRestoreFailsWhenBackupLockHeld(t *testing.T) {
 		},
 	}
 	s := newTestService(compose, &arktest.MockEngine{})
-	_, err := s.Restore(context.Background(), RestoreRequest{
+	_, err = s.Restore(context.Background(), RestoreRequest{
 		ComposeFile: "compose.yaml", Service: "asa1", Archive: "latest", BackupRoot: tmpDir,
 	})
 	if err == nil || !strings.Contains(err.Error(), "backup lock is held") {
@@ -678,64 +682,6 @@ func TestWithInstanceLockPropagatesError(t *testing.T) {
 	})
 	if !errors.Is(err, want) {
 		t.Fatalf("expected inner error, got: %v", err)
-	}
-}
-
-func TestWithInstanceLockStaleLockRecovery(t *testing.T) {
-	dir := t.TempDir()
-	lockPath := filepath.Join(dir, ".asa1-backup.lock")
-
-	// Write a lock file with a PID that does not exist.
-	os.WriteFile(lockPath, []byte("pid=2147483647 started=2026-01-01T00:00:00Z\n"), 0o600)
-
-	var called bool
-	err := WithInstanceLock(dir, "asa1", 0, func() error {
-		called = true
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("expected stale lock to be recovered: %v", err)
-	}
-	if !called {
-		t.Fatal("expected fn to be called after stale lock recovery")
-	}
-}
-
-func TestWithInstanceLockDoesNotRecoverLiveLock(t *testing.T) {
-	dir := t.TempDir()
-	lockPath := filepath.Join(dir, ".asa1-backup.lock")
-
-	// Write a lock file with our own PID — the lock is valid.
-	os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=%d started=2026-01-01T00:00:00Z\n", os.Getpid())), 0o600)
-
-	err := WithInstanceLock(dir, "asa1", time.Second, func() error {
-		t.Fatal("fn should not be called when lock is held by live process")
-		return nil
-	})
-	if err == nil {
-		t.Fatal("expected error for live lock that can't be acquired")
-	}
-	if !strings.Contains(err.Error(), "backup lock is held") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestParsePID(t *testing.T) {
-	tests := []struct {
-		content string
-		want    int
-	}{
-		{"pid=12345 started=2026-01-01T00:00:00Z\n", 12345},
-		{"pid=0 started=...\n", 0},
-		{"pid=-1 started=...\n", -1},
-		{"no pid here\n", 0},
-		{"", 0},
-	}
-	for _, tc := range tests {
-		got := parsePID(tc.content)
-		if got != tc.want {
-			t.Errorf("parsePID(%q) = %d, want %d", tc.content, got, tc.want)
-		}
 	}
 }
 

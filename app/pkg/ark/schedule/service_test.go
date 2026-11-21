@@ -253,9 +253,8 @@ func TestAcquireAndReleaseLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Lock file should exist
-	if _, err := os.Stat(s.LockPath("nightly")); err != nil {
-		t.Fatal("lock file should exist")
+	if !s.LockHeld("nightly") {
+		t.Fatal("LockHeld should be true while held")
 	}
 	// Second acquire should fail
 	_, err = s.AcquireLock("nightly")
@@ -267,6 +266,9 @@ func TestAcquireAndReleaseLock(t *testing.T) {
 	}
 	// Release and re-acquire
 	release()
+	if s.LockHeld("nightly") {
+		t.Fatal("LockHeld should be false after release")
+	}
 	release2, err := s.AcquireLock("nightly")
 	if err != nil {
 		t.Fatalf("re-acquire failed: %v", err)

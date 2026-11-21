@@ -328,9 +328,8 @@ schedules:
 		t.Fatalf("unexpected state: %+v", state)
 	}
 
-	lockDir := filepath.Dir(core.CurrentAppDeps().ScheduleService.LockPath("nightly"))
-	if entries, _ := os.ReadDir(lockDir); len(entries) != 0 {
-		t.Fatalf("expected lock cleanup, found files in %s", lockDir)
+	if core.CurrentAppDeps().ScheduleService.LockHeld("nightly") {
+		t.Fatal("expected the schedule lock to be released")
 	}
 }
 
@@ -346,12 +345,11 @@ schedules:
     cron: "0 3 * * *"
 `
 	writeScheduleFixture(t, initial)
-	if err := os.MkdirAll(filepath.Dir(core.CurrentAppDeps().ScheduleService.LockPath("nightly")), 0o755); err != nil {
-		t.Fatalf("mkdir lock dir: %v", err)
+	release, err := core.CurrentAppDeps().ScheduleService.AcquireLock("nightly")
+	if err != nil {
+		t.Fatalf("hold lock: %v", err)
 	}
-	if err := os.WriteFile(core.CurrentAppDeps().ScheduleService.LockPath("nightly"), []byte("held"), 0o600); err != nil {
-		t.Fatalf("write lock: %v", err)
-	}
+	defer release()
 
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.RunBackupFromSchedule = func(_ string, _ []string) error { return errors.New("should not run") }
@@ -914,13 +912,11 @@ schedules:
     cron: "0 3 * * *"
 `)
 
-	lockPath := core.CurrentAppDeps().ScheduleService.LockPath("nightly")
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		t.Fatalf("mkdir lock dir: %v", err)
+	release, err := core.CurrentAppDeps().ScheduleService.AcquireLock("nightly")
+	if err != nil {
+		t.Fatalf("hold lock: %v", err)
 	}
-	if err := os.WriteFile(lockPath, []byte("held"), 0o600); err != nil {
-		t.Fatalf("write lock: %v", err)
-	}
+	defer release()
 
 	out := captureStdout(t, func() {
 		if err := RunCheckSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err != nil {

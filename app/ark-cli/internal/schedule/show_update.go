@@ -5,7 +5,6 @@ import (
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"pkg/ark/backup"
@@ -28,9 +27,7 @@ func RunCheckSchedule(d *core.AppDeps, args []string) error {
 		return err
 	}
 
-	lockPath := core.CurrentAppDeps().ScheduleService.LockPath(name)
-	_, lockErr := os.Stat(lockPath)
-	running := lockErr == nil
+	running := core.CurrentAppDeps().ScheduleService.LockHeld(name)
 
 	result := "ok"
 	if running {

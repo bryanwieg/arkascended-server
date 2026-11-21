@@ -55,8 +55,6 @@ PKG_ARK_STDIO_ALLOWLIST: tuple[str, ...] = (
     "app/pkg/ark/runtime/privilege.go",
     # Runtime primitive owns subprocess stdio attachment.
     "app/pkg/ark/runtime/exec.go",
-    # Lock file uses fmt.Fprintf on a file handle, not a stream.
-    "app/pkg/ark/backup/lock.go",
     # SDK conformance test helper uses os.Stderr for test logger output.
     "app/pkg/ark/sdkbackend_test/conformance_test.go",
 )

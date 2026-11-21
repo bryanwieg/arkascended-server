@@ -161,6 +161,12 @@ ALL_BATCHES = (
         1800,
         ("tests/app/ark_cli/integration/docker/slow/test_manage_schedule_backup.py",),
     ),
+    Batch(
+        "cli-slow",
+        "cli-scheduler-slow",
+        3600,
+        ("tests/app/ark_cli/integration/docker/slow/test_scheduler_backup_health.py",),
+    ),
 )
 
 # CI's publish gate: a healthy start and a clean stop against the new image.

@@ -153,8 +153,7 @@ def _wait_for_stop(log_file: Path, timeout: int, interval: int) -> bool:
     elapsed = 0
     while elapsed < timeout:
         if server_log_closed(log_file):
-            emit_event("stop", "Server log closed; waiting 10s for process exit.")
-            time.sleep(10)
+            emit_event("stop", "Server log closed.")
             return True
         time.sleep(interval)
         elapsed += interval

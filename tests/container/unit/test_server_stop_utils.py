@@ -119,6 +119,46 @@ def test_save_confirmed_by_marker_written_after_request(stop_mod, tmp_path: Path
 
 
 # ---------------------------------------------------------------------------
+# _wait_for_stop and the stop-script budget
+# ---------------------------------------------------------------------------
+
+
+def test_wait_for_stop_returns_when_log_closes(stop_mod, tmp_path: Path, monkeypatch) -> None:
+    """The script returns as soon as the log closes; the start script waits for the process."""
+    closed = iter([False, True])
+    slept: list[int] = []
+    monkeypatch.setattr(stop_mod, "server_log_closed", lambda _log: next(closed))
+    monkeypatch.setattr(stop_mod.time, "sleep", slept.append)
+    assert stop_mod._wait_for_stop(tmp_path / "ShooterGame.log", timeout=60, interval=5) is True
+    assert sum(slept) == 5
+
+
+def test_main_with_rcon_down_fails_within_script_budget(stop_mod, tmp_path: Path, monkeypatch) -> None:
+    """With RCON down, the save attempts give up inside the default 120 s stop-script timeout."""
+    for name in ("SAVE_MAX_RETRIES", "SAVE_RETRY_DELAY_SECONDS", "SAVE_CONFIRM_TIMEOUT_SECONDS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SHUTDOWN_WARNING_MINUTES", "0")
+    monkeypatch.setattr(stop_mod, "STOP_STATUS_FILE", tmp_path / "ark-stop-status.env")
+    monkeypatch.setattr(stop_mod, "read_stop_reason", lambda: "")
+    monkeypatch.setattr(stop_mod, "SERVER_LOG", tmp_path / "ShooterGame.log")
+    clock = [0.0]
+    sent: list[str] = []
+
+    def rcon_timeout(cmd: str, **_k) -> bool:
+        sent.append(cmd)
+        clock[0] += 10  # rcon_client timeout
+        return False
+
+    monkeypatch.setattr(stop_mod, "run_rcon", rcon_timeout)
+    monkeypatch.setattr(stop_mod.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    retries = stop_mod._load_stop_config()["save_max_retries"]
+    assert retries == 2
+    assert stop_mod.main() == 1
+    assert sent == ["saveworld"] * retries
+    assert clock[0] <= 120
+
+
+# ---------------------------------------------------------------------------
 # player warning countdown
 # ---------------------------------------------------------------------------
 

@@ -9,8 +9,16 @@ import (
 )
 
 // ParseCron parses a standard 5-field cron expression (descriptors such as
-// @daily allowed). Times are interpreted in time.Local.
+// @daily allowed). Times are interpreted in time.Local, so the per-schedule
+// TZ=/CRON_TZ= prefix and @every, which cron.ParseStandard also accepts, are refused.
 func ParseCron(expr string) (cron.Schedule, error) {
+	trimmed := strings.TrimSpace(expr)
+	if strings.HasPrefix(trimmed, "TZ=") || strings.HasPrefix(trimmed, "CRON_TZ=") {
+		return nil, errors.New("time zone prefixes are not supported; schedules use the TZ environment variable")
+	}
+	if strings.HasPrefix(trimmed, "@every") {
+		return nil, errors.New("@every is not supported; use a 5-field expression")
+	}
 	return cron.ParseStandard(expr)
 }
 

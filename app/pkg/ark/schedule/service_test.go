@@ -307,7 +307,7 @@ func TestValidateCronExpr(t *testing.T) {
 			t.Errorf("ValidateCronExpr(%q): %v", expr, err)
 		}
 	}
-	for _, expr := range []string{"61 * * * *", "0 3 * *", "", "bad"} {
+	for _, expr := range []string{"61 * * * *", "0 3 * *", "", "bad", "@every 5m", "TZ=Asia/Tokyo 0 3 * * *", "CRON_TZ=UTC 0 3 * * *"} {
 		err := ValidateCronExpr(expr)
 		if err == nil || !strings.HasPrefix(err.Error(), fmt.Sprintf("Error: invalid cron expression %q: ", expr)) {
 			t.Errorf("ValidateCronExpr(%q) = %v, want invalid cron expression error", expr, err)

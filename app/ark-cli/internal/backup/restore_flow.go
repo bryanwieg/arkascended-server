@@ -120,6 +120,9 @@ func scaffoldComposeService(composeFile, instance, mapName, adminPassword, serve
 	if instance == pkgbackup.ClusterTarget {
 		return pkgbackup.ErrClusterNameReserved
 	}
+	if instance == ark.SchedulerService {
+		return errors.New("Error: instance name ark-scheduler is reserved for the scheduler service.")
+	}
 	if composeStr != "" && serviceExistsInComposeText(composeStr, instance) {
 		return fmt.Errorf("Error: instance '%s' already exists. Use 'restore backup --instance %s --archive ...' instead.", instance, instance)
 	}

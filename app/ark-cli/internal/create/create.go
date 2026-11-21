@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"pkg/ark"
 	pkgbackup "pkg/ark/backup"
 	"pkg/ark/runtime"
 )
@@ -211,6 +212,9 @@ func RunCreate(d *core.AppDeps, args []string) error {
 	}
 	if instance == pkgbackup.ClusterTarget {
 		return pkgbackup.ErrClusterNameReserved
+	}
+	if instance == ark.SchedulerService {
+		return errors.New("Error: instance name ark-scheduler is reserved for the scheduler service.")
 	}
 
 	composeFile := compose.ResolveComposeFile(*composeFileFlag)

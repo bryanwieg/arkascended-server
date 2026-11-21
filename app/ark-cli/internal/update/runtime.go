@@ -13,26 +13,25 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 
+	"pkg/ark"
 	"pkg/ark/backup"
 	"pkg/ark/composeutil"
 	"pkg/ark/runtime"
 	"pkg/ark/update"
 )
 
-func resolveUpdateTargetServices(project *types.Project, target string) ([]string, error) {
-	if len(project.Services) == 0 {
+func resolveUpdateTargetServices(project *ark.ComposeProject, target string) ([]string, error) {
+	if len(project.Project.Services) == 0 {
 		return nil, errors.New("Error: services section not found in compose file.")
 	}
 	if target == "all" {
-		names := make([]string, 0, len(project.Services))
-		for name := range project.Services {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		return names, nil
+		return project.ServiceNames(), nil
 	}
-	if _, ok := project.Services[target]; !ok {
+	if _, ok := project.Project.Services[target]; !ok {
 		return nil, fmt.Errorf("Error: service not found in compose file: %s", target)
+	}
+	if err := project.EnsureService(target); err != nil {
+		return nil, err
 	}
 	return []string{target}, nil
 }

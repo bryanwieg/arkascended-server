@@ -5,36 +5,19 @@ import os
 import re
 import shutil
 import threading
-import urllib.error
-import urllib.request
 import uuid
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from helpers.compose import pick_free_port
-from helpers.compose_client import get_docker_client
+from helpers.web_client import scheduler_health
 from python_on_whales import DockerClient
 
-from tests.app.ark_cli.integration.docker.fast.test_scheduler_enable_docker import _daemon_host
-
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.usefixtures("remove_new_scheduler_images")]
 
 SCHEDULER = "ark-scheduler"
 SCHEDULE = "pytest-sched-every-minute"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def remove_scheduler_images() -> Iterator[None]:
-    yield
-    dc = get_docker_client()
-    for image in dc.image.list(SCHEDULER):
-        dc.image.remove(image.id, force=True)
-
-
-@pytest.fixture
-def env(test_env: dict[str, str], scheduler_socket_env: dict[str, str]) -> dict[str, str]:
-    return {**test_env, **scheduler_socket_env}
 
 
 @pytest.fixture
@@ -43,33 +26,6 @@ def instance(env: dict[str, str]) -> Iterator[str]:
     name = f"pytest-ark-{uuid.uuid4().hex[:8]}"
     yield name
     shutil.rmtree(Path(env["ARK_BACKUP_DIR"]) / name, ignore_errors=True)
-
-
-@pytest.fixture
-def compose_dir(env: dict[str, str]) -> Path:
-    """ark-cli runs from the compose dir: enable scheduler refuses any other cwd."""
-    return Path(env["COMPOSE_FILE"]).parent
-
-
-@pytest.fixture
-def cli(
-    env: dict[str, str], compose_dir: Path, cli_path: Path, run_cmd: Callable[..., object]
-) -> Callable[..., object]:
-    def _cli(*args: str, check: bool = True) -> object:
-        return run_cmd([str(cli_path), *args], env=env, cwd=compose_dir, check=check, capture_output=True)
-
-    return _cli
-
-
-def _http_health(env: dict[str, str], port: int) -> tuple[int | None, dict | None]:
-    """GET /health on the published port: (status, report), (None, None) when it does not answer."""
-    try:
-        with urllib.request.urlopen(f"http://{_daemon_host(env)}:{port}/health", timeout=5) as resp:
-            return resp.status, json.load(resp)
-    except urllib.error.HTTPError as exc:
-        return exc.code, None
-    except OSError:
-        return None, None
 
 
 def _check_scheduler(cli: Callable[..., object]) -> tuple[int, dict | None]:
@@ -183,7 +139,7 @@ def test_scheduler_backup_and_health_end_to_end(
             seen[0] == 0 and {"rcon": "ok", "udp": "ok"}.items() <= _instance_checks(seen[1], instance).items()
         ),
     )
-    status, body = _http_health(env, port)
+    status, body = scheduler_health(env, port)
     assert status == 200, (status, body)
     assert body["instances"][instance]["checks"]["rcon"] == "ok", body
     _wait_until(
@@ -203,7 +159,7 @@ def test_scheduler_backup_and_health_end_to_end(
         lambda: _check_scheduler(cli),
         lambda seen: seen[0] == 0 and _instance_state(seen[1], instance) == "stopped",
     )
-    _, body = _http_health(env, port)
+    _, body = scheduler_health(env, port)
     assert set(_instance_checks(body, instance).values()) == {"skipped"}, body
 
     # Lock edge case (design 13a): rounds during restart instance see busy, never a failing check.
@@ -213,7 +169,7 @@ def test_scheduler_backup_and_health_end_to_end(
 
     def _poll_health() -> None:
         while not stop_polling.wait(5):
-            _, polled = _http_health(env, port)
+            _, polled = scheduler_health(env, port)
             if polled and instance in polled["instances"]:
                 seen_during_restart.append(polled["instances"][instance])
 
@@ -230,7 +186,7 @@ def test_scheduler_backup_and_health_end_to_end(
         wait_for,
         "the restarted instance running with every check ok",
         180,
-        lambda: _http_health(env, port),
+        lambda: scheduler_health(env, port),
         lambda seen: (
             _instance_state(seen[1], instance) == "running"
             and set(_instance_checks(seen[1], instance).values()) == {"ok"}

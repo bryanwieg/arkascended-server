@@ -1,51 +1,19 @@
 from __future__ import annotations
 
 import re
-import urllib.error
-import urllib.request
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
-from urllib.parse import urlparse
 
 import pytest
 import yaml
 from helpers.compose import pick_free_port
-from helpers.compose_client import get_docker_client
+from helpers.web_client import daemon_host, scheduler_health
 from python_on_whales import DockerClient
 
-pytestmark = [pytest.mark.container]
+pytestmark = [pytest.mark.container, pytest.mark.usefixtures("remove_new_scheduler_images")]
 
 INSTANCE = "pytest-ark-sched-svc"
 SCHEDULER = "ark-scheduler"
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _remove_scheduler_images() -> Iterator[None]:
-    yield
-    dc = get_docker_client()
-    for image in dc.image.list(SCHEDULER):
-        dc.image.remove(image.id, force=True)
-
-
-@pytest.fixture
-def env(test_env: dict[str, str], scheduler_socket_env: dict[str, str]) -> dict[str, str]:
-    return {**test_env, **scheduler_socket_env}
-
-
-@pytest.fixture
-def compose_dir(env: dict[str, str]) -> Path:
-    """ark-cli runs from the compose dir: enable scheduler refuses any other cwd."""
-    return Path(env["COMPOSE_FILE"]).parent
-
-
-@pytest.fixture
-def cli(
-    env: dict[str, str], compose_dir: Path, cli_path: Path, run_cmd: Callable[..., object]
-) -> Callable[..., object]:
-    def _cli(*args: str, check: bool = True) -> object:
-        return run_cmd([str(cli_path), *args], env=env, cwd=compose_dir, check=check, capture_output=True)
-
-    return _cli
 
 
 def _create_instance(cli: Callable[..., object]) -> None:
@@ -70,22 +38,6 @@ def _service_block(text: str, name: str) -> str:
 
 def _scheduler_service(env: dict[str, str]) -> dict | None:
     return yaml.safe_load(Path(env["COMPOSE_FILE"]).read_text())["services"].get(SCHEDULER)
-
-
-def _daemon_host(env: dict[str, str]) -> str:
-    """Host where the engine publishes ports: the tcp:// DOCKER_HOST's host, else this machine."""
-    docker_host = env.get("DOCKER_HOST", "")
-    return urlparse(docker_host).hostname if docker_host.startswith("tcp://") else "127.0.0.1"
-
-
-def _health_status(env: dict[str, str], port: int) -> int | None:
-    try:
-        with urllib.request.urlopen(f"http://{_daemon_host(env)}:{port}/health", timeout=5) as resp:
-            return resp.status
-    except urllib.error.HTTPError as exc:
-        return exc.code
-    except OSError:
-        return None
 
 
 def test_enable_scheduler_adds_and_starts_service(
@@ -150,10 +102,10 @@ def test_enable_scheduler_again_keeps_image_and_port(
     status: list[int | None] = []
 
     def _answers() -> bool:
-        status.append(_health_status(env, port))
+        status.append(scheduler_health(env, port)[0])
         return status[-1] in (200, 503)
 
-    wait_for(f"/health on {_daemon_host(env)}:{port}", 60, _answers)
+    wait_for(f"/health on {daemon_host(env)}:{port}", 60, _answers)
 
 
 def test_disable_scheduler_removes_service(

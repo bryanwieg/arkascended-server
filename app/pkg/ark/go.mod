@@ -13,6 +13,7 @@ require (
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
 	github.com/moby/patternmatcher v0.6.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/pflag v1.1.0
 	golang.org/x/sys v0.50.0
 	google.golang.org/protobuf v1.36.12

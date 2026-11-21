@@ -4,13 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/robfig/cron/v3"
 )
 
-// ValidateCronExpr checks that a cron expression has exactly 5 fields.
+// ParseCron parses a standard 5-field cron expression (descriptors such as
+// @daily allowed). Times are interpreted in time.Local.
+func ParseCron(expr string) (cron.Schedule, error) {
+	return cron.ParseStandard(expr)
+}
+
+// ValidateCronExpr reports whether expr is a valid standard cron expression.
 func ValidateCronExpr(expr string) error {
-	fields := strings.Fields(expr)
-	if len(fields) != 5 {
-		return errors.New("Error: cron expression must have 5 fields.")
+	if _, err := ParseCron(expr); err != nil {
+		return fmt.Errorf("Error: invalid cron expression %q: %w", expr, err)
 	}
 	return nil
 }

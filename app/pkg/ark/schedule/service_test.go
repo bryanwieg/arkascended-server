@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -301,11 +302,28 @@ func TestPathDerivation(t *testing.T) {
 // --- Helpers ---
 
 func TestValidateCronExpr(t *testing.T) {
-	if err := ValidateCronExpr("0 3 * * *"); err != nil {
+	for _, expr := range []string{"0 3 * * *", "*/15 * * * *", "@daily"} {
+		if err := ValidateCronExpr(expr); err != nil {
+			t.Errorf("ValidateCronExpr(%q): %v", expr, err)
+		}
+	}
+	for _, expr := range []string{"61 * * * *", "0 3 * *", "", "bad"} {
+		err := ValidateCronExpr(expr)
+		if err == nil || !strings.HasPrefix(err.Error(), fmt.Sprintf("Error: invalid cron expression %q: ", expr)) {
+			t.Errorf("ValidateCronExpr(%q) = %v, want invalid cron expression error", expr, err)
+		}
+	}
+}
+
+func TestParseCronNext(t *testing.T) {
+	sched, err := ParseCron("0 3 * * *")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateCronExpr("bad"); err == nil {
-		t.Fatal("expected error for bad cron")
+	from := time.Date(2026, 11, 21, 4, 0, 0, 0, time.Local)
+	want := time.Date(2026, 11, 22, 3, 0, 0, 0, time.Local)
+	if got := sched.Next(from); !got.Equal(want) {
+		t.Fatalf("Next(%v) = %v, want %v", from, got, want)
 	}
 }
 

@@ -68,9 +68,9 @@ The newest backups are always kept; see
 
 - The scheduler rereads `schedules.yaml` every minute, so a new or changed
   schedule applies within a minute. Nothing else to run.
-- Times are in the scheduler's `TZ`: the `TZ` of the first instance in
-  `docker-compose.yaml` when you ran `enable scheduler`, else your shell's
-  `TZ`, else UTC. After changing it, rerun `enable scheduler`.
+- Times are in the scheduler's `TZ`: the `TZ` of the instance whose name
+  sorts first in `docker-compose.yaml` when you ran `enable scheduler`, else
+  your shell's `TZ`, else UTC. After changing it, rerun `enable scheduler`.
 - Runs that were missed while the scheduler was down run once when it starts
   again (not once per missed run). A schedule that never ran is not caught up.
 - Schedules run one at a time. A scheduled backup waits up to 30 minutes for an
@@ -119,9 +119,9 @@ What is checked, per instance:
 | `rcon` | RCON `ListPlayers` does not answer within 15 s. |
 | `udp` | The game port does not answer within 3 s. |
 
-An instance's `state` is `running`, `starting` (in its first 20 minutes, not
-ready yet), `stopped`, `restarting` or `busy` (a backup, stop, start, restart
-or update holds its lock). `stopped`, `starting` and `busy` report all checks
+An instance's `state` is `running`, `starting` (not ready yet, at most
+its first 20 minutes), `stopped`, `restarting` or `busy` (a backup, stop,
+start, restart or update holds its lock). `stopped`, `starting` and `busy` report all checks
 as `skipped`, so an instance you stopped on purpose is not a failure; the one
 exception is `container: fail` on an instance a failed automatic restart left
 stopped.
@@ -207,7 +207,8 @@ restarts. The restart is a stop and a start:
 
 - Never while the instance is `busy` (its lock is held by a backup, stop,
   start, restart or update); those rounds do not count.
-- Never in the instance's first 20 minutes (it is `starting` then).
+- Never while the instance is `starting` (until it logs ready, at most its
+  first 20 minutes).
 - At most one instance per minute, and at most 2 restarts per instance per
   hour. After that it stays unhealthy until you act.
 - The stop is cut off after 2 minutes (the engine kills the container): a

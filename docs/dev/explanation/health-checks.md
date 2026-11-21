@@ -214,6 +214,6 @@ instance; a 503 for any failure would fail all of them. 503 is kept for "the
 monitor itself is down or stuck". `ReportStaleAfter` leaves room for a restart
 round (2m stop, start, probes).
 
-The monitor logs `Health: healthy` or `Health: unhealthy: <check>: <detail>;
-...` only when the set of failing checks changes, so the service log does not
+The monitor logs `Health: healthy` or `Health: unhealthy: <instance> <check>:
+<detail>; ...` (schedules as `schedule <name>`, compose errors as `compose`) only when the set of failing checks changes, so the service log does not
 repeat a line every minute.

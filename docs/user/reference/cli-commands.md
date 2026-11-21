@@ -613,7 +613,7 @@ The service it writes:
 - The engine socket mounted at `/var/run/docker.sock`; the compose directory
   (and `ARK_BACKUP_DIR` when set outside it) mounted at the same path, with the
   compose directory as `working_dir`.
-- Environment: `TZ` (first instance's `TZ`, else the shell's, else `UTC`),
+- Environment: `TZ` (the `TZ` of the instance whose name sorts first, else the shell's, else `UTC`),
   `DOCKER_HOST`, `ARK_CONTAINER_RUNTIME`, `HOME=<compose dir>/.ark-manage`,
   `TMPDIR=<compose dir>/.ark-tmp`, `COMPOSE_FILE`, and `COMPOSE_PROJECT_NAME`
   and `ARK_BACKUP_DIR` when set.
@@ -640,7 +640,8 @@ the command the `ark-scheduler` service runs. Serves `GET /health` on port
 8099 (fails at once if the port is taken). A stop signal lets a running backup
 or restart finish first. Logs `Scheduler started (TZ <tz>, schedules <path>)`,
 each run's `START`/`SUCCESS`/`FAIL` line, `Health: healthy` or
-`Health: unhealthy: <check>: <detail>; ...` when the result changes, and
+`Health: unhealthy: <instance> <check>: <detail>; ...` (schedules as
+`schedule <name>`, compose errors as `compose`) when the result changes, and
 `Restarting <instance>: <checks>`. No flags; uses `COMPOSE_FILE` or
 `./docker-compose.yaml`.
 

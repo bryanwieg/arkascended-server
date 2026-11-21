@@ -41,7 +41,7 @@ The RCON host port (`--rcon-port` on `reconfigure instance`) is published on
 
 | Variable | Default | Effect |
 |---|---|---|
-| `TZ` | `America/New_York` (written by `create instance`) | Container timezone; affects log timestamps. `enable scheduler` gives the scheduler the first instance's `TZ`; schedules run in it. |
+| `TZ` | `America/New_York` (written by `create instance`) | Container timezone; affects log timestamps. `enable scheduler` gives the scheduler the `TZ` of the instance whose name sorts first; schedules run in it. |
 | `NoBattlEye` | `false` | `true` (case-insensitive) passes `-NoBattlEye`. |
 | `ARK_SKIP_RAM_CHECK` | `0` | `1` silences the startup warning when host `MemAvailable` is below the container's `mem_reservation`. |
 | `LOG_ROTATION_KEEP_FILES` | `10` | Rotated `ShooterGame.log.*` and `crashcallstack.txt.*` files kept at each server start. `0` allowed. |
@@ -115,7 +115,7 @@ without it. See [restore-backup.md](../how-to/restore-backup.md).
 | `DOCKER_HOST` | `/var/run/docker.sock` | Docker daemon endpoint. A `unix://` path is the socket `enable scheduler` mounts into the scheduler. |
 | `ARK_SCHEDULER_SOCKET` | unset | Absolute host path of the engine's unix socket for `enable scheduler`; required when `DOCKER_HOST` is not `unix://` (e.g. `tcp://`). |
 | `ARK_SCHEDULER_SOCKET_GID` | group of the socket file | Group `enable scheduler` adds to the scheduler on rootful Docker so it can use the socket. Non-negative integer. |
-| `TZ` | `UTC` | Scheduler time zone when the first instance sets no `TZ` (read by `enable scheduler`). |
+| `TZ` | `UTC` | Scheduler time zone when the instance whose name sorts first sets no `TZ` (read by `enable scheduler`). |
 | `XDG_RUNTIME_DIR` | `/run/user/<uid>` | Locates the rootless Podman socket (`$XDG_RUNTIME_DIR/podman/podman.sock`). |
 | `ARK_START_WAIT_TIMEOUT` | `5m` | Default for `start --wait-timeout`; Go duration (e.g. `10m`). Invalid or non-positive values are ignored. |
 | `ARK_BACKUP_DIR` | `<compose dir>/backups` | Backup root; archives go in `<root>/<instance>/`. Set it before `enable scheduler`, which passes it to the scheduler and mounts it. |

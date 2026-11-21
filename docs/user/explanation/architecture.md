@@ -3,16 +3,17 @@
 Admin-level overview. Code layers and container internals:
 [developer architecture](../../dev/explanation/architecture.md).
 
-## The two pieces
+## The three pieces
 
 | Piece | Runs | Does |
 |---|---|---|
 | `ark-cli` | On the host | Edits `docker-compose.yaml`, builds images, starts/stops containers, backups, schedules, status. Talks to Docker or rootless Podman through their API; never touches the ARK process directly. |
 | Container | One per instance, as `ark-user` | ARK server under GE-Proton (Wine), plus Python scripts for startup, save, shutdown, backup and restore. |
+| `ark-scheduler` | Optional, one per compose project (`enable scheduler`) | `ark-cli` in its own container with the engine socket mounted: runs schedules, monitors instance health (and restarts hung ones), serves `GET /health`. See [Schedule backups](../how-to/schedule-backups.md). |
 
 ```
 ark-cli ──Docker/Podman API──▶ container ──▶ ARK server (GE-Proton)
-                                   ▲
+ark-scheduler ──engine socket──┘   ▲
                                    └── RCON (save, shutdown)
 ```
 

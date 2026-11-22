@@ -98,7 +98,7 @@ can't make it pass silently.
 
 `tests/.test-order.yaml` lists ordered groups (directory relative to `tests/` → test file
 stems). Listed files run in that order; if one fails, later ones in the group are skipped.
-Results persist in `.tests/.run-state/` across runs; `ARK_TEST_WIPE_STATE=1` clears them.
+Results persist in `.run-state/` in the artifacts dir (`ARK_TEST_ARTIFACTS_DIR`, default `.tests/`) across runs; `ARK_TEST_WIPE_STATE=1` clears them.
 
 ### Slow test protection
 

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
+ROOT_DIR=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$ROOT_DIR"
+# Temp files and output go to the project temp dir (gitignored), like the CLI.
+tmp_dir=${ARK_TMP_DIR:-.ark-tmp}
+mkdir -p "$tmp_dir"
 
 CONTAINER=${1:-ark-server-1}
 BURST_CONCURRENCY=${2:-100}
@@ -18,7 +21,7 @@ COMPOSE_SERVICE=${11:-asa-server-1}
 DINO_CMD=${DINO_CMD:-"cheat Summon Dodo_Character_BP_C"}
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-out_dir="codex/benchmarks"
+out_dir="$tmp_dir/benchmarks"
 results_csv="$out_dir/dino-burst-cpu-$stamp.csv"
 summary_csv="$out_dir/dino-burst-cpu-summary-$stamp.csv"
 report_md="$out_dir/dino-burst-cpu-$stamp-report.md"
@@ -38,9 +41,9 @@ log() { echo "[$(ts_utc)] $*" | tee -a "$log_file"; }
 append_row() { printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7" "${8//,/;}" >> "$results_csv"; }
 log "config burst_concurrency=$BURST_CONCURRENCY burst_repeats=$BURST_REPEATS pre_seconds=$PRE_SECONDS post_seconds=$POST_SECONDS sample_interval=$SAMPLE_INTERVAL runs_per_mode=$RUNS_PER_MODE"
 
-OVR_DISABLED=$(mktemp /tmp/compose-sync-disabled.XXXXXX.yaml)
-OVR_ENABLED=$(mktemp /tmp/compose-sync-enabled.XXXXXX.yaml)
-COMPOSE_UP_LOG=$(mktemp /tmp/dino_burst_compose.XXXXXX.log)
+OVR_DISABLED=$(mktemp "$tmp_dir"/compose-sync-disabled.XXXXXX.yaml)
+OVR_ENABLED=$(mktemp "$tmp_dir"/compose-sync-enabled.XXXXXX.yaml)
+COMPOSE_UP_LOG=$(mktemp "$tmp_dir"/dino_burst_compose.XXXXXX.log)
 cleanup() {
   rm -f "$OVR_DISABLED" "$OVR_ENABLED" "$COMPOSE_UP_LOG"
 }
@@ -208,7 +211,7 @@ printf "%s %s %s %s\n" "$ark" "$wine" "$ark_n" "$wine_n"
 concurrent_burst_once() {
   local concurrency=$1
   docker exec "$CONTAINER" sh -lc '
-TD=$(mktemp -d)
+TD=$(mktemp -d -p "$tmp_dir")
 for i in $(seq 1 '"$concurrency"'); do
   (
     /usr/bin/python3.14 /home/ark-user/scripts/runtime/ark-rcon.py "'"$DINO_CMD"'" >"$TD/$i.out" 2>&1 || true
@@ -238,14 +241,14 @@ run_burst_mode() {
   log "READY mode=$mode run=$run_no sync='$sync_line'"
 
   # Best-effort cleanup and baseline save to start from a cleaner runtime state.
-  rcon 'cheat DestroyWildDinos' >/tmp/dino_burst_cleanup.out 2>&1 || true
-  append_row "$(ts_utc)" "$mode" event "$run_no" cleanup_destroy_wild_dinos 0 text "$(cat /tmp/dino_burst_cleanup.out 2>/dev/null || true)"
+  rcon 'cheat DestroyWildDinos' >"$tmp_dir"/dino_burst_cleanup.out 2>&1 || true
+  append_row "$(ts_utc)" "$mode" event "$run_no" cleanup_destroy_wild_dinos 0 text "$(cat "$tmp_dir"/dino_burst_cleanup.out 2>/dev/null || true)"
   save_took=$(saveworld_measure "$mode" "$run_no" preclean || true)
   [ -n "${save_took:-}" ] || true
 
   bench_start_ms=$(date +%s%3N)
   append_row "$(ts_utc)" "$mode" event "$run_no" benchmark_start_ms "$bench_start_ms" ms ""
-  stop_flag=$(mktemp)
+  stop_flag=$(mktemp -p "$tmp_dir")
   rm -f "$stop_flag"
   cpu_monitor_loop "$mode" "$run_no" "$bench_start_ms" "$SAMPLE_INTERVAL" "$stop_flag" &
   monitor_pid=$!

@@ -166,9 +166,8 @@ args are positional and optional; read the defaults at the top of each script.
   `ark-rcon.py`.
 - The sync and burst scripts recreate the compose service with `docker compose up --force-recreate`,
   once per mode switch.
-- Scripts `cd` two levels above `scripts/`, which is `docs/dev/reference/`, not the repo root. Pass an
-  absolute compose file path. Output (CSV, log, Markdown report) goes to
-  `docs/dev/reference/codex/benchmarks/`.
+- Scripts run from the repo root, so compose file paths are relative to it. Temp files and output
+  (CSV, log, Markdown report) go to `.ark-tmp/benchmarks/` (`ARK_TMP_DIR` overrides `.ark-tmp`).
 
 ## Conclusions
 

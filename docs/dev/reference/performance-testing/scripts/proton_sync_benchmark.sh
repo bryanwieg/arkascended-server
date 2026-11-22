@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
+ROOT_DIR=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$ROOT_DIR"
+# Temp files and output go to the project temp dir (gitignored), like the CLI.
+tmp_dir=${ARK_TMP_DIR:-.ark-tmp}
+mkdir -p "$tmp_dir"
 
 pairs=${1:-10}
 cpu_minutes=${2:-5}
@@ -11,7 +14,7 @@ compose_base=${4:-docker-compose.dev.yaml}
 compose_service=${5:-asa-server-1}
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-out_dir="codex/benchmarks"
+out_dir="$tmp_dir/benchmarks"
 results_csv="$out_dir/proton-sync-benchmark-$stamp.csv"
 summary_csv="$out_dir/proton-sync-benchmark-summary-$stamp.csv"
 log_txt="$out_dir/proton-sync-benchmark-$stamp.log"
@@ -23,9 +26,9 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "missing required command
 need_cmd docker
 need_cmd rg
 
-over_disabled=$(mktemp /tmp/compose-sync-disabled.XXXXXX.yaml)
-over_enabled=$(mktemp /tmp/compose-sync-enabled.XXXXXX.yaml)
-compose_up_log=$(mktemp /tmp/proton_sync_compose_up.XXXXXX.log)
+over_disabled=$(mktemp "$tmp_dir"/compose-sync-disabled.XXXXXX.yaml)
+over_enabled=$(mktemp "$tmp_dir"/compose-sync-enabled.XXXXXX.yaml)
+compose_up_log=$(mktemp "$tmp_dir"/proton_sync_compose_up.XXXXXX.log)
 cleanup() {
   rm -f "$over_disabled" "$over_enabled" "$compose_up_log"
 }
@@ -150,7 +153,7 @@ cpu_samples_for_mode() {
 
   # summarize numeric samples
   local tmpf
-  tmpf=$(mktemp)
+  tmpf=$(mktemp -p "$tmp_dir")
   printf '%s\n' "${samples[@]}" | rg '^[0-9]+(\.[0-9]+)?$' > "$tmpf" || true
   local count min max avg median
   count=$(wc -l < "$tmpf" | tr -d ' ')

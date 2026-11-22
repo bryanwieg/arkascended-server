@@ -96,18 +96,20 @@ def test_docker_compose_stop_unresponsive_rcon_forces_kill_exit_code(
         Shutdown signal is sent to a hung / unresponsive server process.
 
         Simulated hung scenario:
-        A compose service is generated with RCON_PORT injected as port 1 — an
-        unused port nothing will ever listen on. This makes the graceful stop
-        script's RCON calls fail immediately with connection refused on every
-        attempt, deterministically simulating a server whose RCON listener is
-        unavailable (crashed, hung, or not yet started). GameUserSettings.ini is
+        A compose service is generated with RCON_HOST set to 192.0.2.1
+        (TEST-NET-1, never assigned), so every RCON call the stop script makes
+        times out (10 s), deterministically simulating a server whose RCON
+        listener is unavailable (crashed, hung, or not yet started). RCON_PORT
+        cannot do this: the entrypoint writes it into GameUserSettings.ini on
+        every start, so the server would listen on that port. RCON_HOST is read
+        only by the RCON client. GameUserSettings.ini is
         also pre-seeded, so the entrypoint keeps it (does not install the
         image's default) and the runtime manager starts immediately.
 
         docker compose stop -t 30 is then issued, sending SIGTERM to the
         runtime manager (PID 1). The manager runs the graceful stop script,
-        which fails in ~1 s (RCON_PORT=1 → instant connection refused,
-        SAVE_MAX_RETRIES=1, SAVE_RETRY_DELAY_SECONDS=1). The manager then
+        which fails in ~10 s (one save attempt timing out, SAVE_MAX_RETRIES=1,
+        SAVE_RETRY_DELAY_SECONDS=1). The manager then
         sends SIGTERM to the game process group and waits for it to exit,
         logging the unconfirmed save/shutdown/stop outcome before exiting
         cleanly — well within the 30-second stop window.
@@ -115,7 +117,7 @@ def test_docker_compose_stop_unresponsive_rcon_forces_kill_exit_code(
     NOTE — RCON failure is the deliberate condition under test, not a setup
     problem to work around.  Do NOT add a wait for RCON readiness before the
     stop call.  Do NOT increase the -t timeout or raise the retry counts.
-    The injected env vars (RCON_PORT, SAVE_MAX_RETRIES, SAVE_RETRY_DELAY)
+    The injected env vars (RCON_HOST, SAVE_MAX_RETRIES, SAVE_RETRY_DELAY)
     are what keep the graceful stop script fast enough for the -t 30 budget.
 
     Expected:
@@ -140,7 +142,7 @@ def test_docker_compose_stop_unresponsive_rcon_forces_kill_exit_code(
         admin_password=admin_password,
         server_password=server_password,
         extra_env={
-            "RCON_PORT": "1",
+            "RCON_HOST": "192.0.2.1",
             "SAVE_MAX_RETRIES": "1",
             "SAVE_RETRY_DELAY_SECONDS": "1",
         },
@@ -182,10 +184,9 @@ def test_docker_compose_stop_unresponsive_rcon_forces_kill_exit_code(
         lambda: container_file_exists(compose_client, instance, _SERVER_LOG),
     )
 
-    # Send SIGTERM to the runtime manager.  Because RCON_PORT=1 guarantees
-    # instant connection refused, the graceful stop script exhausts its single
-    # retry in ~2 s and the full shutdown sequence completes well within this
-    # 30-second window.
+    # Send SIGTERM to the runtime manager.  Because RCON_HOST is unreachable, the
+    # graceful stop script's single save attempt times out in ~10 s and the full
+    # shutdown sequence completes well within this 30-second window.
     compose_stop(compose_client, instance, timeout=30)
 
     wait_for(

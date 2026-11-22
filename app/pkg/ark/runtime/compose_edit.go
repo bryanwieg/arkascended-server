@@ -215,11 +215,12 @@ func (d *ComposeDoc) RemoveEntry(section, name string) bool {
 	case *ast.MappingNode:
 		mapping.Values = append(mapping.Values[:idx], mapping.Values[idx+1:]...)
 		if len(mapping.Values) == 0 {
-			value.Value = ast.Null(value.GetToken())
+			// `{}`, not null: compose refuses `services: null` ("services must be a mapping").
+			value.Value = ast.Mapping(value.GetToken(), true)
 		}
 		return true
 	case *ast.MappingValueNode:
-		value.Value = ast.Mapping(value.GetToken(), false)
+		value.Value = ast.Mapping(value.GetToken(), true)
 		return true
 	default:
 		return false

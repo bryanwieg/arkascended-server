@@ -60,8 +60,8 @@ func fakeSocket(t *testing.T, path string) string {
 
 func projectWithTZ(tz string) *ark.ComposeProject {
 	return &ark.ComposeProject{Project: &types.Project{Services: types.Services{
-		"asa2":               {Name: "asa2"},
-		"asa1":               {Name: "asa1", Environment: types.NewMappingWithEquals([]string{"TZ=" + tz})},
+		"asa2":               {Name: "asa2", Labels: types.Labels{ark.PortASALabel: "27015"}},
+		"asa1":               {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Environment: types.NewMappingWithEquals([]string{"TZ=" + tz})},
 		ark.SchedulerService: {Name: ark.SchedulerService, Labels: types.Labels{ark.RoleLabel: ark.SchedulerRole}},
 	}}}
 }

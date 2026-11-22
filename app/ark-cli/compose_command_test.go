@@ -27,7 +27,7 @@ const composeTestFile = "compose.yaml"
 func composeTestServices(services []string) types.Services {
 	svcMap := types.Services{}
 	for _, name := range services {
-		svcMap[name] = types.ServiceConfig{Name: name, Image: "ark-server:200"}
+		svcMap[name] = types.ServiceConfig{Name: name, Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "ark-server:200"}
 	}
 	return svcMap
 }
@@ -194,7 +194,7 @@ func TestRunStartBuildsWhenMissing(t *testing.T) {
 		}
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"a": {Name: "a", Image: "ark-server:latest"}}), nil
+				return fakeProject(types.Services{"a": {Name: "a", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "ark-server:latest"}}), nil
 			},
 			UpFn: func(_ context.Context, _ string, _ []string, _ ark.UpOptions) error {
 				calledUp = true

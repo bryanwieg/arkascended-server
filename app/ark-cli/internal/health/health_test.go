@@ -33,7 +33,7 @@ func withComposeEnv(t *testing.T, composeFile string) {
 
 func TestRunCheckInstanceStopped(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	out := captureStdout(t, func() {
@@ -54,7 +54,7 @@ func TestRunCheckInstanceStopped(t *testing.T) {
 
 func TestRunCheckInstanceHealthy(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	out := captureStdout(t, func() {
@@ -78,7 +78,7 @@ func TestRunCheckInstanceHealthy(t *testing.T) {
 
 func TestRunCheckInstanceStarting(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
@@ -101,7 +101,7 @@ func TestRunCheckInstanceStarting(t *testing.T) {
 
 func TestRunCheckInstanceMissingInstance(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  other:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  other:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	withPatchedAppDeps(t, nil, func() {
@@ -114,7 +114,7 @@ func TestRunCheckInstanceMissingInstance(t *testing.T) {
 
 func TestRunWaitInvalidForValue(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	withPatchedAppDeps(t, nil, func() {
@@ -150,7 +150,7 @@ func TestRunWaitNonPositiveInterval(t *testing.T) {
 
 func TestRunWaitForStarted(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	out := captureStdout(t, func() {
@@ -171,7 +171,7 @@ func TestRunWaitForStarted(t *testing.T) {
 
 func TestRunWaitForStopped(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	out := captureStdout(t, func() {
@@ -192,7 +192,7 @@ func TestRunWaitForStopped(t *testing.T) {
 
 func TestRunWaitForReadyAlias(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	out := captureStdout(t, func() {
@@ -213,7 +213,7 @@ func TestRunWaitForReadyAlias(t *testing.T) {
 
 func TestRunValidateComposeReportsServiceCount(t *testing.T) {
 	dir := t.TempDir()
-	composeFile := writeComposeFile(t, dir, "services:\n  svc1:\n    image: ark-server:latest\n  svc2:\n    image: ark-server:latest\n")
+	composeFile := writeComposeFile(t, dir, "services:\n  svc1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n  svc2:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 	withComposeEnv(t, composeFile)
 
 	out := captureStdout(t, func() {
@@ -254,7 +254,7 @@ func TestRunCheckInstanceShowsLastUpdate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    image: ark-server:latest\n")
+			composeFile := writeComposeFile(t, dir, "services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n")
 			withComposeEnv(t, composeFile)
 			if tc.state != "" {
 				path := update.StatePath(update.StateDir(composeFile), "asa1")

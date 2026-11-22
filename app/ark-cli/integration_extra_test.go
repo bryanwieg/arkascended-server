@@ -128,7 +128,7 @@ func TestCLIIntegrationStartPinsLatestAndNeverPulls(t *testing.T) {
 	tempDir := t.TempDir()
 	composePath := filepath.Join(tempDir, "docker-compose.yaml")
 	setEnv(t, "COMPOSE_FILE", composePath)
-	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    image: ark-server:latest\n"), 0o644); err != nil {
+	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestCLIIntegrationStartPinsLatestAndNeverPulls(t *testing.T) {
 		}
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"asa1": {Name: "asa1", Image: "ark-server:latest"}}), nil
+				return fakeProject(types.Services{"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "ark-server:latest"}}), nil
 			},
 			UpFn: func(_ context.Context, _ string, _ []string, opts ark.UpOptions) error {
 				gotPullPolicy = opts.PullPolicy
@@ -180,7 +180,7 @@ func TestCLIIntegrationStartLocalBuildsWhenMissing(t *testing.T) {
 	tempDir := t.TempDir()
 	composePath := filepath.Join(tempDir, "docker-compose.yaml")
 	setEnv(t, "COMPOSE_FILE", composePath)
-	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    image: ark-server:latest\n"), 0o644); err != nil {
+	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestCLIIntegrationStartLocalBuildsWhenMissing(t *testing.T) {
 		}
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"asa1": {Name: "asa1", Image: "ark-server:latest"}}), nil
+				return fakeProject(types.Services{"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "ark-server:latest"}}), nil
 			},
 			UpFn: func(_ context.Context, _ string, _ []string, _ ark.UpOptions) error {
 				return nil

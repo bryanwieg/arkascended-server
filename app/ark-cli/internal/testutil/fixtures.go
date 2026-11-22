@@ -34,11 +34,11 @@ func FakeProjectWithVolumes(services types.Services, volumes types.Volumes) *ark
 	}
 }
 
-// EmptyServices builds a types.Services map with only service names (empty configs).
+// EmptyServices builds a types.Services map of bare ARK instances: a name and the instance label only.
 func EmptyServices(names ...string) types.Services {
 	svcs := types.Services{}
 	for _, name := range names {
-		svcs[name] = types.ServiceConfig{Name: name}
+		svcs[name] = types.ServiceConfig{Name: name, Labels: types.Labels{ark.PortASALabel: "27015"}}
 	}
 	return svcs
 }

@@ -205,4 +205,4 @@ func composeHasService(services map[string]struct{}, service string) bool {
 }
 
 // LabelPortASA is the label key for the ASA game port.
-const LabelPortASA = "ark.port.asa"
+const LabelPortASA = ark.PortASALabel

@@ -131,7 +131,7 @@ func TestRunReconfigureUpdatesTargetEnvironmentValues(t *testing.T) {
 		"name: test\n" +
 		"services:\n" +
 		"  asa1:\n" +
-		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n" +
 		"    environment:\n" +
 		"      - TZ=America/New_York\n" +
 		"      - MAP_NAME=TheIsland_WP\n" +
@@ -139,7 +139,7 @@ func TestRunReconfigureUpdatesTargetEnvironmentValues(t *testing.T) {
 		"      - SERVER_ADMIN_PASSWORD=AdminPass123\n" +
 		"      - SERVER_PASSWORD=ServerPass123\n" +
 		"  asa2:\n" +
-		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n" +
 		"    environment:\n" +
 		"      TZ: Europe/Berlin\n" +
 		"      MAP_NAME: Aberration\n"
@@ -197,7 +197,7 @@ func TestRunReconfigureUpdatesTargetEnvironmentValues(t *testing.T) {
 
 func TestRunReconfigureExplicitEmptyClearsValues(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n    environment:\n" +
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n    environment:\n" +
 		"      - SERVER_PASSWORD=ServerPass123\n      - MOD_IDS=940975\n      - CLUSTER_ID=c1\n      - TZ=UTC\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
@@ -227,7 +227,7 @@ func TestRunReconfigureExplicitEmptyClearsValues(t *testing.T) {
 
 func TestRunReconfigureRejectsWhenNoSettingFlagsProvided(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestRunReconfigureRejectsWhenNoSettingFlagsProvided(t *testing.T) {
 
 func TestRunReconfigureWithoutRestartPrintsRestartRequired(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -266,7 +266,7 @@ func TestRunReconfigureWithoutRestartPrintsRestartRequired(t *testing.T) {
 
 func TestRunReconfigureRejectsWhenServiceRunningWithoutForce(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestRunReconfigureRejectsWhenServiceRunningWithoutForce(t *testing.T) {
 
 func TestRunReconfigureAllowsWhenServiceRunningWithForce(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestRunReconfigureAllowsWhenServiceRunningWithForce(t *testing.T) {
 
 func TestRunReconfigureRestartWhenServiceWasRunning(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestRunReconfigureRestartWhenServiceWasRunning(t *testing.T) {
 
 func TestRunReconfigureRestartSkipsWhenServiceWasStopped(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestRunReconfigureRejectsMapNameChange(t *testing.T) {
 		"name: test\n" +
 		"services:\n" +
 		"  asa1:\n" +
-		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n" +
 		"    environment:\n" +
 		"      - MAP_NAME=TheIsland_WP\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
@@ -480,7 +480,7 @@ func TestRunReconfigureRejectsMapNameChange(t *testing.T) {
 
 func TestRunReconfigureAllowsMapNameWhenNotSet(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestRunReconfigureAllowsMapNameSameValue(t *testing.T) {
 		"name: test\n" +
 		"services:\n" +
 		"  asa1:\n" +
-		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n" +
 		"    environment:\n" +
 		"      - MAP_NAME=TheIsland_WP\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {

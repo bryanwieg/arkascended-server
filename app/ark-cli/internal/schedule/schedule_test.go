@@ -27,7 +27,7 @@ func TestCreateListRemoveScheduleBackupPhase1(t *testing.T) {
 	overrideSchedulePathsForTest(t, tmp)
 	setEnv(t, "COMPOSE_FILE", filepath.Join(tmp, "docker-compose.yaml"))
 
-	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services:\n  asa1:\n    image: ark-server:latest\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
 
@@ -553,7 +553,7 @@ func TestCreateScheduleBackupWithDisabledFlag(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 	setEnv(t, "COMPOSE_FILE", filepath.Join(tmp, "docker-compose.yaml"))
-	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services:\n  asa1:\n    image: ark-server:latest\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
 
@@ -576,7 +576,7 @@ func TestCreateScheduleBackupWithComposeFile(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 	composePath := filepath.Join(tmp, "custom-compose.yaml")
-	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    image: ark-server:latest\n"), 0o644); err != nil {
+	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
 
@@ -917,7 +917,7 @@ func TestCreateScheduleBackupForCluster(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
-	withCluster := types.Services{"asa1": {Name: "asa1", Volumes: []types.ServiceVolumeConfig{
+	withCluster := types.Services{"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Volumes: []types.ServiceVolumeConfig{
 		{Type: "volume", Source: "ark-cluster-1", Target: backup.ClusterMountPath},
 	}}}
 	captureStdout(t, func() {

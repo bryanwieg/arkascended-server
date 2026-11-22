@@ -14,25 +14,31 @@ type ComposeProject struct {
 	Project *types.Project
 }
 
-// The scheduler service carries label RoleLabel=SchedulerRole; it is never an ARK instance.
+// An ARK instance is a service with label PortASALabel (set by create instance); any other service, such
+// as the scheduler (label RoleLabel=SchedulerRole) or a web UI, is not one.
 const (
+	PortASALabel     = "ark.port.asa"
 	RoleLabel        = "ark.role"
 	SchedulerRole    = "scheduler"
 	SchedulerService = "ark-scheduler" // service name; no container_name (compose names it <project>-ark-scheduler-1, so two projects on one engine never clash)
 )
 
+func isInstance(svc types.ServiceConfig) bool {
+	return svc.Labels[PortASALabel] != ""
+}
+
 func isScheduler(svc types.ServiceConfig) bool {
 	return svc.Labels[RoleLabel] == SchedulerRole
 }
 
-// ServiceNames returns the sorted names of the project's ARK instances (every service but the scheduler).
+// ServiceNames returns the sorted names of the project's ARK instances.
 func (p *ComposeProject) ServiceNames() []string {
 	if p == nil || p.Project == nil {
 		return nil
 	}
 	names := make([]string, 0, len(p.Project.Services))
 	for name, svc := range p.Project.Services {
-		if !isScheduler(svc) {
+		if isInstance(svc) {
 			names = append(names, name)
 		}
 	}
@@ -51,6 +57,9 @@ func (p *ComposeProject) EnsureService(service string) error {
 	}
 	if isScheduler(svc) {
 		return fmt.Errorf("Error: %s is the scheduler service, not an ARK instance", service)
+	}
+	if !isInstance(svc) {
+		return fmt.Errorf("Error: %s is not an ARK instance (no %s label)", service, PortASALabel)
 	}
 	return nil
 }

@@ -206,8 +206,9 @@ func patchFakeCLIHostDeps(t *testing.T) {
 					Name: "test",
 					Services: types.Services{
 						"asa1": types.ServiceConfig{
-							Name:  "asa1",
-							Image: "ark-server:latest",
+							Name:   "asa1",
+							Labels: types.Labels{ark.PortASALabel: "27015"},
+							Image:  "ark-server:latest",
 							Ports: []types.ServicePortConfig{
 								{Target: 27015, Published: "27015", Protocol: "udp"},
 								{Target: 27020, Published: "27020", Protocol: "tcp"},
@@ -706,7 +707,7 @@ func TestCLIIntegrationCheckReachabilityInstance(t *testing.T) {
 		}
 	})
 
-	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    image: ark-server:latest\n    ports:\n      - \"27015:27015/udp\"\n      - \"27020:27020/tcp\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n    ports:\n      - \"27015:27015/udp\"\n      - \"27020:27020/tcp\"\n"), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
 

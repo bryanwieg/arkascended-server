@@ -40,6 +40,7 @@ func TestRunReconfigureUpdatesShortSyntaxPorts(t *testing.T) {
 		"services:\n" +
 		"  asa1:\n" +
 		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: \"27015\"}\n" +
 		"    ports:\n" +
 		"      - \"127.0.0.1:27015:27015/udp\"\n" +
 		"      - \"27020:27020/tcp\"\n"
@@ -65,7 +66,7 @@ func TestRunReconfigureUpdatesShortSyntaxPorts(t *testing.T) {
 	svc := project.Services["asa1"]
 	text := portConfigsToStrings(svc.Ports)
 	joined := strings.Join(text, "\n")
-	if !strings.Contains(joined, "127.0.0.1:28015:27015/udp") {
+	if !strings.Contains(joined, "127.0.0.1:28015:28015/udp") {
 		t.Fatalf("expected updated ark port mapping, got:\n%s", joined)
 	}
 	if !strings.Contains(joined, "28020:27020/tcp") {
@@ -78,6 +79,7 @@ func TestRunReconfigureUpdatesShortSyntaxPorts(t *testing.T) {
 func TestRunReconfigureRCONPortFollowsRCONPortEnv(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: \"27015\"}\n" +
 		"    environment:\n      - RCON_PORT=27030\n" +
 		"    ports:\n      - \"27015:27015/udp\"\n      - \"127.0.0.1:27030:27030/tcp\"\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
@@ -107,6 +109,7 @@ func TestRunReconfigureUpdatesLongSyntaxPorts(t *testing.T) {
 		"services:\n" +
 		"  asa1:\n" +
 		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: \"27015\"}\n" +
 		"    ports:\n" +
 		"      - target: 27015\n" +
 		"        published: 27015\n" +
@@ -139,8 +142,8 @@ func TestRunReconfigureUpdatesLongSyntaxPorts(t *testing.T) {
 		t.Fatalf("expected two ports, got %d", len(ports))
 	}
 
-	if ports[0].Target != 27015 {
-		t.Fatalf("expected ark target unchanged, got %d", ports[0].Target)
+	if ports[0].Target != 28115 {
+		t.Fatalf("expected ark target to follow the published port (1:1), got %d", ports[0].Target)
 	}
 	if ports[0].Published != "28115" {
 		t.Fatalf("expected ark published update, got %s", ports[0].Published)
@@ -160,6 +163,7 @@ func TestRunReconfigureAppendsMissingRolePortMapping(t *testing.T) {
 		"services:\n" +
 		"  asa1:\n" +
 		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: \"27015\"}\n" +
 		"    ports:\n" +
 		"      - \"27015:27015/udp\"\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
@@ -195,13 +199,15 @@ func TestRunReconfigureRejectsConflictingRolePort(t *testing.T) {
 		"services:\n" +
 		"  asa1:\n" +
 		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: \"27015\"}\n" +
 		"    ports:\n" +
 		"      - \"27015:27015/udp\"\n" +
 		"      - \"27020:27020/tcp\"\n" +
 		"  asa2:\n" +
 		"    image: ark-server:latest\n" +
+		"    labels: {ark.port.asa: \"29015\", ark.port.rcon: \"29020\"}\n" +
 		"    ports:\n" +
-		"      - \"29015:27015/udp\"\n" +
+		"      - \"29015:29015/udp\"\n" +
 		"      - \"29020:27020/tcp\"\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)

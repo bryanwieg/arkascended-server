@@ -22,7 +22,7 @@ import (
 func fakeProject(services ...string) *ark.ComposeProject {
 	svcMap := make(types.Services)
 	for _, name := range services {
-		svcMap[name] = types.ServiceConfig{Name: name}
+		svcMap[name] = types.ServiceConfig{Name: name, Labels: types.Labels{ark.PortASALabel: "27015"}}
 	}
 	return &ark.ComposeProject{Project: &types.Project{Services: svcMap}}
 }

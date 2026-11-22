@@ -175,7 +175,7 @@ func fakeProjectWithVolumes(services types.Services, volumes types.Volumes) *ark
 func emptyServices(names ...string) types.Services {
 	svcs := types.Services{}
 	for _, name := range names {
-		svcs[name] = types.ServiceConfig{Name: name}
+		svcs[name] = types.ServiceConfig{Name: name, Labels: types.Labels{ark.PortASALabel: "27015"}}
 	}
 	return svcs
 }

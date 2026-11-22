@@ -22,7 +22,7 @@ import (
 func runStartAll(t *testing.T, withScheduler bool, schedulerUpErr error) ([][]string, string) {
 	t.Helper()
 	t.Setenv("ARK_BACKUP_DIR", t.TempDir())
-	services := types.Services{"asa1": {Name: "asa1", Image: "ark-server:abc123"}}
+	services := types.Services{"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "ark-server:abc123"}}
 	if withScheduler {
 		services[ark.SchedulerService] = types.ServiceConfig{Name: ark.SchedulerService, Labels: types.Labels{ark.RoleLabel: ark.SchedulerRole}}
 	}

@@ -29,12 +29,14 @@ func TestRunListInstancesJSON(t *testing.T) {
 					return fakeProject(types.Services{
 						"a": {
 							Name:        "a",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27015:27015/udp"),
 							Environment: testEnv("MAP_NAME=TheIsland_WP"),
 						},
 						"b": {
 							Name:        "b",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27016:27015/udp"),
 							Environment: testEnv("MAP_NAME=ScorchedEarth"),
@@ -92,6 +94,7 @@ func TestRunShowInstanceJSON(t *testing.T) {
 					return fakeProject(types.Services{
 						"asa1": {
 							Name:        "asa1",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27015:27015/udp"),
 							Environment: testEnv("MAP_NAME=TheIsland_WP", "SESSION_NAME=MyServer"),

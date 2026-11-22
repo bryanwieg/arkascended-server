@@ -128,7 +128,7 @@ func TestListBackupsAllIncludesCluster(t *testing.T) {
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(context.Context, string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"asa1": {Name: "asa1"}}), nil
+				return fakeProject(types.Services{"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}}}), nil
 			},
 		}
 	}, func() {

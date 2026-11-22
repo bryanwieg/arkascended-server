@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.6.0...cli-v0.7.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** a compose service without the ark.port.asa label is no longer managed by ark-cli. Move an older instance (game port published as <port>:27015/udp) to <port>:<port>/udp with ASA_PORT=<port> and the label ark.port.asa: "<port>".
+
+### Bug Fixes
+
+* **cli:** backlog bug fixes; instances need the ark.port.asa label ([#45](https://github.com/bryanwieg/arkascended-server/issues/45)) ([c83b248](https://github.com/bryanwieg/arkascended-server/commit/c83b248c98699bc7832e10cd95cb94fb158d678f))
+
 ## [0.6.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.5.0...cli-v0.6.0) (2026-11-22)
 
 

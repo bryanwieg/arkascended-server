@@ -8,7 +8,6 @@ import (
 
 	"pkg/ark"
 	"pkg/ark/composeutil"
-	"pkg/ark/host"
 	"pkg/ark/schedule"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -158,20 +157,12 @@ func FallbackDash(value string) string {
 	return value
 }
 
-// ServiceASAPort resolves the ASA game port for a service.
-// Prefers the ark.port.asa label (new scheme); falls back to scanning for the
-// legacy fixed container port 27015/udp (old scheme).
+// ServiceASAPort returns the ASA game port from the service's ark.port.asa label, or 0 if it is not a port.
 func ServiceASAPort(service types.ServiceConfig) int {
-	if raw := service.Labels[LabelPortASA]; raw != "" {
-		if port, err := strconv.Atoi(raw); err == nil && port > 0 {
-			return port
-		}
+	if port, err := strconv.Atoi(service.Labels[LabelPortASA]); err == nil && port > 0 {
+		return port
 	}
-	port, err := host.ResolveUDPHostPort(service.Ports)
-	if err != nil {
-		return 0
-	}
-	return port
+	return 0
 }
 
 // RCONContainerPort is the port RCON listens on inside the container: the

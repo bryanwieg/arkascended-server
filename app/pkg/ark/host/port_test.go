@@ -123,52 +123,6 @@ func TestResolveHostPortByTarget(t *testing.T) {
 	}
 }
 
-func TestResolveUDPHostPort(t *testing.T) {
-	tests := []struct {
-		name    string
-		ports   []types.ServicePortConfig
-		want    int
-		wantErr bool
-	}{
-		{
-			name:  "udp entry",
-			ports: []types.ServicePortConfig{{Protocol: "udp", Target: 27015, Published: "27015"}},
-			want:  27015,
-		},
-		{
-			name: "multiple udp entries",
-			ports: []types.ServicePortConfig{
-				{Protocol: "udp", Target: 27015, Published: "27016"},
-				{Protocol: "udp", Target: 27015, Published: "27017", HostIP: "127.0.0.1"},
-			},
-			want: 27016,
-		},
-		{
-			name:    "missing udp",
-			ports:   []types.ServicePortConfig{{Protocol: "tcp", Target: 27015, Published: "27015"}},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := ResolveUDPHostPort(tt.ports)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("ResolveUDPHostPort: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("expected %d, got %d", tt.want, got)
-			}
-		})
-	}
-}
-
 func TestCheckLocalhostUDPStatusOpen(t *testing.T) {
 	// Start a UDP echo listener so the probe gets a response → OPEN.
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")

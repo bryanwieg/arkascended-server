@@ -25,12 +25,6 @@ type PortCheckTarget struct {
 	HostPort      int
 }
 
-// ResolveUDPHostPort resolves the published host port for the UDP game port
-// (container target 27015) from a compose service's port mappings.
-func ResolveUDPHostPort(ports []types.ServicePortConfig) (int, error) {
-	return ResolveHostPortByTarget(ports, 27015, ProtocolUDP)
-}
-
 // ResolveHostPortByTarget finds the published host port for a given container
 // target port and protocol from compose service port config.
 func ResolveHostPortByTarget(ports []types.ServicePortConfig, targetPort int, protocol string) (int, error) {

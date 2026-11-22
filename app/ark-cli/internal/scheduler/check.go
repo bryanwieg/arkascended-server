@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"time"
 
@@ -78,7 +79,11 @@ func printReport(r health.Report) {
 }
 
 // warnImageMismatch warns when the compose file's scheduler image was not built from this binary. Silent when
-// either cannot be read: the check is about health, the image tag is a hint.
+// either cannot be read: the check is about health, the image tag is a hint. Silent too for an image enable
+// scheduler did not name (such as the dev compose's ark-scheduler:dev): enable would replace that service.
+// managedImageRE matches the image names schedule.ImageRef gives.
+var managedImageRE = regexp.MustCompile(`^` + regexp.QuoteMeta(schedule.ImageRepo) + `:[0-9a-f]{12}$`)
+
 func warnImageMismatch(d *core.AppDeps, composeFile string) {
 	project, err := d.ComposeService.LoadProject(d.Context(), composeFile)
 	if err != nil || !project.HasScheduler() {
@@ -96,7 +101,11 @@ func warnImageMismatch(d *core.AppDeps, composeFile string) {
 	if err != nil {
 		return
 	}
-	if image := project.Project.Services[ark.SchedulerService].Image; image != ref {
+	image := project.Project.Services[ark.SchedulerService].Image
+	if !managedImageRE.MatchString(image) {
+		return
+	}
+	if image != ref {
 		core.Warnf("Warning: the scheduler runs %s; run 'ark-cli enable scheduler' to update it to %s\n", image, ref)
 	}
 }

@@ -183,3 +183,15 @@ func TestCheckSchedulerWarnsOnImageMismatch(t *testing.T) {
 		t.Fatalf("err = %v, stderr = %q", err, stderr)
 	}
 }
+
+func TestCheckSchedulerNoImageWarningForUnmanagedImage(t *testing.T) {
+	f, _ := newCheckFixture(t, "ark-scheduler:dev") // the dev compose's image; enable scheduler would replace it
+	writeHealthReport(t, f, sampleReport(true))
+	var err error
+	stderr := testutil.CaptureStderr(t, func() {
+		testutil.CaptureStdout(t, func() { err = f.run(t, RunCheckScheduler) })
+	})
+	if err != nil || strings.Contains(stderr, "Warning") {
+		t.Fatalf("err = %v, stderr = %q", err, stderr)
+	}
+}

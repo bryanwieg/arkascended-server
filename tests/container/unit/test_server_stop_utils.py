@@ -101,6 +101,16 @@ def test_save_not_confirmed_by_marker_written_before_request(stop_mod, tmp_path:
     assert stop_mod._save_with_retries(log, max_retries=2, retry_delay=0, confirm_timeout=1) is False
 
 
+def test_save_retry_delay_only_between_attempts(stop_mod, tmp_path: Path, monkeypatch) -> None:
+    """The retry delay runs between attempts, never after the last one (it only delays the forced stop)."""
+    slept: list[float] = []
+    monkeypatch.setattr(stop_mod, "save_world", lambda: False)
+    monkeypatch.setattr(stop_mod.time, "sleep", slept.append)
+    log = tmp_path / "ShooterGame.log"
+    assert stop_mod._save_with_retries(log, max_retries=3, retry_delay=7, confirm_timeout=1) is False
+    assert slept == [7, 7]
+
+
 def test_save_confirmed_by_marker_written_after_request(stop_mod, tmp_path: Path, monkeypatch) -> None:
     """A marker appended after saveworld is sent confirms the save on the first attempt."""
     log = tmp_path / "ShooterGame.log"

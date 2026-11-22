@@ -141,6 +141,9 @@ def _save_with_retries(log_file: Path, max_retries: int, retry_delay: int, confi
         if save_world() and wait_for_save_complete(cursor, confirm_timeout, 1, log_file=log_file):
             emit_event("stop", "Save operation completed.")
             return True
+        if attempt == max_retries:
+            emit_warning("stop", f"saveworld not confirmed (attempt {attempt}/{max_retries}).")
+            break
         emit_warning(
             "stop", f"saveworld not confirmed (attempt {attempt}/{max_retries}). Retrying in {retry_delay}s..."
         )

@@ -15,8 +15,7 @@ REPO_ROOT = repo_root()
 DEFAULT_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 ALL_BATCHES = (
-    Batch("unit", "unit-runtime-log-rotation", 120, ("tests/container/unit/test_log_rotation.py",)),
-    Batch("unit", "unit-rcon-client", 60, ("tests/container/unit/test_rcon_client.py",)),
+    Batch("unit", "container-unit", 300, ("tests/container/unit",)),
     Batch(
         "container-fast",
         "scripts-server-oom-report",

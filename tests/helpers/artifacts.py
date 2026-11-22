@@ -56,13 +56,17 @@ def create_suite_run_dir(root: Path) -> Path:
     return suite_dir
 
 
-def ensure_python(python_bin: str, repo_root: Path) -> None:
-    """Verify a Python binary exists and is executable. Raise SystemExit if not."""
-    path = Path(python_bin)
-    if not path.is_absolute():
-        path = repo_root / path
-    if not path.exists() or not os.access(path, os.X_OK):
+def ensure_python(python_bin: str) -> str:
+    """Resolve a Python binary as a shell would and return its absolute path. Raise SystemExit if unusable.
+
+    A bare name is looked up on PATH; a path is relative to the current directory (batches run from the repo
+    root, so an unresolved relative path would point somewhere else).
+    """
+    found = shutil.which(python_bin) if os.sep not in python_bin else python_bin
+    path = Path(found).absolute() if found else None
+    if path is None or not path.exists() or not os.access(path, os.X_OK):
         raise SystemExit(f"ERROR: pytest Python not found or not executable: {python_bin}\n")
+    return str(path)
 
 
 def test_node_dir_name(nodeid: str) -> str:

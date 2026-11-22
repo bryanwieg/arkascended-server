@@ -253,7 +253,7 @@ def main() -> int:
     args = parse_args()
     batches = selected_batches(args.suite)
     extra_pytest_args = normalize_pytest_args(args.pytest_args)
-    ensure_python(args.python_bin, REPO_ROOT)
+    args.python_bin = ensure_python(args.python_bin)
 
     if args.list:
         for batch in batches:

@@ -31,7 +31,7 @@ the batches a suite selects.
 
 | Option | Effect |
 |---|---|
-| `--python PATH` | Interpreter for pytest. Default `TEST_BATCH_PYTHON`, else `./.venv/bin/python`. Relative paths resolve against the repo root, so pass an absolute path for a system Python (`--python "$(command -v python3)"`). |
+| `--python PATH` | Interpreter for pytest. Default `TEST_BATCH_PYTHON`, else `./.venv/bin/python`. Resolved as a shell would: a bare name (`python3`) from `PATH`, a relative path from the current directory. |
 | `--lite` | Run every container test on the lite image (fake ARK server, no ARK download); `real_server` tests skip. [Lite image](../reference/test-architecture.md#lite-image-no-ark-server) |
 | `--list` | Print selected batches, run nothing |
 | `-- ARGS` | Extra pytest args. Without `--`, flags such as `-v` are rejected. |

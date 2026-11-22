@@ -27,6 +27,8 @@ func TestContainerEngine_Podman(t *testing.T) {
 		}
 		t.Skip("Podman service not available")
 	}
+	// The shared suite pings and seeds fixtures through a DOCKER_HOST client; point it at Podman, as app.go does.
+	t.Setenv("DOCKER_HOST", socketPath)
 
 	logger := newTestLogger(t)
 
@@ -50,6 +52,8 @@ func TestComposeService_Podman(t *testing.T) {
 		}
 		t.Skip("Podman service not available")
 	}
+	// The shared suite pings and seeds fixtures through a DOCKER_HOST client; point it at Podman, as app.go does.
+	t.Setenv("DOCKER_HOST", socketPath)
 
 	logger := newTestLogger(t)
 

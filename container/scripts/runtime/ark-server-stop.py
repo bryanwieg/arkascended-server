@@ -83,10 +83,10 @@ def _load_stop_config() -> dict:
     """Read all stop-workflow settings from environment variables."""
     return {
         "warning_minutes": shutdown_warning_minutes(),
-        "save_max_retries": env_int("SAVE_MAX_RETRIES", 3),
+        "save_max_retries": env_int("SAVE_MAX_RETRIES", 2),
         "save_retry_delay": env_int("SAVE_RETRY_DELAY_SECONDS", 3),
-        "save_confirm_timeout": env_int("SAVE_CONFIRM_TIMEOUT_SECONDS", 60),
-        "stop_check_timeout": env_int("STOP_CHECK_TIMEOUT_SECONDS", 120),
+        "save_confirm_timeout": env_int("SAVE_CONFIRM_TIMEOUT_SECONDS", 20),
+        "stop_check_timeout": env_int("STOP_CHECK_TIMEOUT_SECONDS", 60),
         "stop_check_interval": env_int("STOP_CHECK_INTERVAL_SECONDS", 5),
     }
 
@@ -153,8 +153,7 @@ def _wait_for_stop(log_file: Path, timeout: int, interval: int) -> bool:
     elapsed = 0
     while elapsed < timeout:
         if server_log_closed(log_file):
-            emit_event("stop", "Server log closed; waiting 10s for process exit.")
-            time.sleep(10)
+            emit_event("stop", "Server log closed.")
             return True
         time.sleep(interval)
         elapsed += interval

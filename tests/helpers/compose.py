@@ -224,7 +224,7 @@ def write_single_service_compose(
         [
             '    restart: "no"',
             "    init: true",
-            "    stop_grace_period: 20m",
+            "    stop_grace_period: 8m",
             "    stop_signal: SIGTERM",
             "    environment:",
             *env_lines,

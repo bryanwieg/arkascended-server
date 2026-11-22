@@ -21,7 +21,7 @@ ark-cli ──Docker/Podman API──▶ container ──▶ ARK server (GE-Prot
 `start instance` starts the container and waits until the server log shows
 it is advertising for join (default 5 minutes).
 
-`stop instance` stops the container with a 15-minute grace period. The
+`stop instance` stops the container within the compose `stop_grace_period` (8 minutes by default). The
 container's stop script runs on SIGTERM: an optional player countdown while
 players are online (`SHUTDOWN_WARNING_MINUTES`, default 5), save the world over RCON, exit, and
 force-kill only if the server does not exit in time. `--kill` skips the save.

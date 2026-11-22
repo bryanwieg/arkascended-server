@@ -32,6 +32,7 @@ Test-node directory contents:
 | `cli.log` | `ark-cli` verbose log; `run_with_compose_patch` adds `-v <cli.log>` unless the command sets `-v` | `ark-cli` |
 | `compose.<service>.log` | Streamed service output, one per service | Watchers in `helpers/compose_client.py` |
 | `docker.log` | Container state snapshots (name, id, image, created, status, running, exit code, PID) | `capture_diagnostics()` |
+| `failure.log` | The same snapshot, taken when a test's call phase fails, before teardown | Failure hook in `tests/conftest.py` |
 | `pytest-compose-<id>.yaml` | The test's compose file (`COMPOSE_FILE`), one per test | `prepare_test_env()` (`helpers/infra.py`) |
 | `tmp/` | The test's `tmp_path` (replaces pytest's `/tmp` one so the daemon can bind-mount it) | `tests/conftest.py` |
 
@@ -118,9 +119,8 @@ is the one exception to the "prefer SDK" rule in [test-architecture.md](test-arc
 
 ### `capture_diagnostics(dc, compose_file, output_path)`
 
-Appends a timestamped `container states` block from `compose ps --all` to `docker.log`
-in `output_path`'s directory. The file name part of `output_path` is ignored. Log content
-comes from the `compose.<service>.log` files, not from here.
+Appends a timestamped `container states` block from `compose ps --all` to `output_path`.
+Log content comes from the `compose.<service>.log` files, not from here.
 
 Callers:
 - `slow_test_protection` fixture (slow tests): after the test, before compose down; sets
@@ -141,10 +141,8 @@ When the call phase fails, `pytest_runtest_makereport` in `tests/conftest.py`:
 2. Calls `capture_diagnostics()` with `failure.log` as the output path
 3. Logs `[framework] captured failure diagnostics to <path>`
 
-This records container state before teardown removes the containers. Because
-`capture_diagnostics()` ignores the file name, the snapshot is appended to `docker.log`,
-and `failure.log` is never created. On a failed test, `docker.log` therefore has two
-blocks: one from the failure hook, one from teardown.
+This records container state in `failure.log` before teardown removes the
+containers; teardown appends its own snapshot to `docker.log`.
 
 ## Active compose file
 

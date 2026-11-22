@@ -306,14 +306,12 @@ def log_phase_snapshot(
 
 
 def capture_diagnostics(dc: DockerClient, compose_file: Path, output_path: Path) -> None:
-    """Capture container-level diagnostics (docker.log).
+    """Append a container state summary (name, id, image, status, PID, exit code) to ``output_path``.
 
     Per-service log content is streamed continuously by the ``log_streamer``
-    fixture to ``compose.<service>.log`` files. This function only captures
-    container state summary (name, id, image, status, PID, exit code).
+    fixture to ``compose.<service>.log`` files.
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    docker_log_path = output_path.parent / "docker.log"
     from helpers.compose_client import get_docker_client
 
     dc_log = get_docker_client(compose_file=compose_file) if compose_file and compose_file.is_file() else dc
@@ -324,7 +322,7 @@ def capture_diagnostics(dc: DockerClient, compose_file: Path, output_path: Path)
     except Exception:  # noqa: BLE001
         containers_list = []
 
-    with docker_log_path.open("a", encoding="utf-8") as log_file:
+    with output_path.open("a", encoding="utf-8") as log_file:
         log_file.write(f"\n===== {time.strftime('%y%m%d-%H%M%S')} container states =====\n")
         if containers_list:
             for c in containers_list:

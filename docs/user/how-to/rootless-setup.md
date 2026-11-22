@@ -44,11 +44,9 @@ Project-specific requirements:
   export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
   ```
 
-- **Docker group.** The group check from Option A also runs here. If the
-  host has a `docker` group (for example, the rootful package is also
-  installed) and your user is not in it, `ark-cli` adds your user with
-  `sudo usermod`. That grants rootful daemon access, which rootless setups
-  usually want to avoid.
+- **Docker group.** The group check from Option A is skipped when
+  `DOCKER_HOST` points anywhere but `/var/run/docker.sock`, so `ark-cli`
+  never adds a rootless user to the rootful `docker` group.
 - **Ports.** Defaults (game 27015/UDP and up, RCON from 27020 bound to
   127.0.0.1) are above 1024. Ports below 1024 need
   `net.ipv4.ip_unprivileged_port_start` (see Docker's docs).

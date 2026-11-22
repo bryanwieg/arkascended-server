@@ -41,10 +41,14 @@ func (h *RuntimeHelper) RunWithPrivs(command []string) error {
 }
 
 // EnsureDockerGroup adds the current user to the docker group if needed.
-// Rootless Podman skips this check.
+// It applies only to the rootful daemon socket; rootless Docker and Podman skip it.
 func (h *RuntimeHelper) EnsureDockerGroup(stderr io.Writer) error {
-	// Rootless Podman needs no group membership.
 	if h.Runtime.ContainerRuntime == RuntimePodman {
+		return nil
+	}
+	// The docker group grants the rootful socket (root-equivalent). Rootless Docker needs DOCKER_HOST
+	// pointing at the user's own socket, so any other endpoint needs no group.
+	if host := os.Getenv("DOCKER_HOST"); host != "" && host != "unix:///var/run/docker.sock" {
 		return nil
 	}
 

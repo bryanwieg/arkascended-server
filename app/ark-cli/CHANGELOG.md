@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.5.0...cli-v0.6.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **scheduler:** compose scheduler service with health monitor, replacing host cron ([#42](https://github.com/bryanwieg/arkascended-server/issues/42))
+
+### Features
+
+* **scheduler:** compose scheduler service with health monitor, replacing host cron ([#42](https://github.com/bryanwieg/arkascended-server/issues/42)) ([4a2a3fc](https://github.com/bryanwieg/arkascended-server/commit/4a2a3fcdd4b9467993aad2e86b7fc3ebf4f99ca0))
+
+
+### Bug Fixes
+
+* **stop:** no retry delay after the last save attempt ([#40](https://github.com/bryanwieg/arkascended-server/issues/40)) ([05bde9b](https://github.com/bryanwieg/arkascended-server/commit/05bde9bb9af9b2aac8e06c5dececae938a68dba1))
+* **stop:** shorter stop timeouts ([#39](https://github.com/bryanwieg/arkascended-server/issues/39)) ([ddd6fb3](https://github.com/bryanwieg/arkascended-server/commit/ddd6fb3f8ece6ec58cf2aa386770f9d288111047))
+
 ## [0.5.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.4.0...cli-v0.5.0) (2026-11-19)
 
 

@@ -4,6 +4,7 @@ package create
 
 import (
 	"ark-cli/internal/core"
+	"ark-cli/internal/testutil"
 	"errors"
 	"fmt"
 	"os"
@@ -89,7 +90,7 @@ func TestRunCreateEnsuresClusterAndSaveVolume(t *testing.T) {
 		t.Fatalf("write compose: %v", err)
 	}
 
-	if err := RunCreate(core.CurrentAppDeps(), []string{
+	if err := runCreate(t, []string{
 		"--name", "asa1",
 		"--admin-password", "adminpass",
 		"--server-password", "serverpass",
@@ -115,7 +116,7 @@ func TestRunCreateEnsuresClusterAndSaveVolume(t *testing.T) {
 func TestRunCreateRejectsClusterName(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	setEnv(t, "COMPOSE_FILE", composePath)
-	err := RunCreate(core.CurrentAppDeps(), []string{"--name", "cluster", "--admin-password", "adminpass", "--server-password", "serverpass"})
+	err := runCreate(t, []string{"--name", "cluster", "--admin-password", "adminpass", "--server-password", "serverpass"})
 	if !errors.Is(err, pkgbackup.ErrClusterNameReserved) {
 		t.Fatalf("got %v", err)
 	}
@@ -128,7 +129,7 @@ func TestRunCreateRejectsClusterName(t *testing.T) {
 func TestRunCreateRejectsSchedulerName(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	setEnv(t, "COMPOSE_FILE", composePath)
-	err := RunCreate(core.CurrentAppDeps(), []string{"--name", "ark-scheduler", "--admin-password", "adminpass", "--server-password", "serverpass"})
+	err := runCreate(t, []string{"--name", "ark-scheduler", "--admin-password", "adminpass", "--server-password", "serverpass"})
 	if err == nil || err.Error() != "Error: instance name ark-scheduler is reserved for the scheduler service." {
 		t.Fatalf("got %v", err)
 	}
@@ -168,7 +169,7 @@ func TestRunCreateNoServerPassword(t *testing.T) {
 		t.Fatalf("write compose: %v", err)
 	}
 
-	if err := RunCreate(core.CurrentAppDeps(), []string{
+	if err := runCreate(t, []string{
 		"--name", "asa1",
 		"--admin-password", "adminpass",
 		"--no-server-password",
@@ -196,7 +197,7 @@ func TestRunCreateRejectsBothServerAndNoPasswordFlags(t *testing.T) {
 		t.Fatalf("write compose: %v", err)
 	}
 
-	err := RunCreate(core.CurrentAppDeps(), []string{
+	err := runCreate(t, []string{
 		"--name", "asa1",
 		"--admin-password", "adminpass",
 		"--server-password", "serverpass",
@@ -217,7 +218,7 @@ func TestRunCreateRejectsBothServerAndNoPasswordWithInteractive(t *testing.T) {
 		t.Fatalf("write compose: %v", err)
 	}
 
-	err := RunCreate(core.CurrentAppDeps(), []string{
+	err := runCreate(t, []string{
 		"--name", "asa1",
 		"--admin-password", "adminpass",
 		"--server-password", "serverpass",
@@ -278,4 +279,11 @@ func setEnv(t *testing.T, key, value string) {
 			_ = os.Unsetenv(key)
 		}
 	})
+}
+
+// runCreate runs RunCreate with test deps, whose ComposeService loads the edited compose file.
+func runCreate(t *testing.T, args []string) (err error) {
+	t.Helper()
+	testutil.WithPatchedAppDeps(t, testutil.TestDepsConfig{}, nil, func() { err = RunCreate(core.CurrentAppDeps(), args) })
+	return err
 }

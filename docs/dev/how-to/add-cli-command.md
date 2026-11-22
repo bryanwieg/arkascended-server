@@ -86,6 +86,9 @@ Rules:
 - To edit an existing service, load the project, change it in memory, then
   save it with `ComposeService.SaveProject`, as in the example. Do not use
   direct file I/O or hand-written YAML string edits.
+- To add or remove a whole service, which `SaveProject` refuses, edit the
+  text with the `runtime` helpers and write it with
+  `compose.WriteComposeText` (see conventions.md, "Compose editing").
 - `compose.ResolveRequiredComposeConfig(d, flag)` only loads the project.
   `compose.ResolveRequiredServiceConfig(...)` also checks that the named
   service exists. Both respect `--compose-file`, then `COMPOSE_FILE`.

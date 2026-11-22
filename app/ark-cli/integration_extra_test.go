@@ -6,6 +6,7 @@ import (
 	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
 	"ark-cli/internal/create"
+	"ark-cli/internal/testutil"
 	"context"
 	"os"
 	"path/filepath"
@@ -38,20 +39,22 @@ func TestCLIIntegrationCreateAppendsService(t *testing.T) {
 	composePath := filepath.Join(tempDir, "docker-compose.yaml")
 	setEnv(t, "COMPOSE_FILE", composePath)
 
-	if err := create.RunCreate(core.CurrentAppDeps(), []string{
-		"--name", "asa1",
-		"--admin-password", "adminpass",
-		"--server-password", "serverpass",
-	}); err != nil {
-		t.Fatalf("runCreate: %v", err)
-	}
-	if err := create.RunCreate(core.CurrentAppDeps(), []string{
-		"--name", "asa2",
-		"--admin-password", "adminpass",
-		"--server-password", "serverpass",
-	}); err != nil {
-		t.Fatalf("runCreate second: %v", err)
-	}
+	testutil.WithPatchedAppDeps(t, testutil.TestDepsConfig{}, nil, func() {
+		if err := create.RunCreate(core.CurrentAppDeps(), []string{
+			"--name", "asa1",
+			"--admin-password", "adminpass",
+			"--server-password", "serverpass",
+		}); err != nil {
+			t.Fatalf("runCreate: %v", err)
+		}
+		if err := create.RunCreate(core.CurrentAppDeps(), []string{
+			"--name", "asa2",
+			"--admin-password", "adminpass",
+			"--server-password", "serverpass",
+		}); err != nil {
+			t.Fatalf("runCreate second: %v", err)
+		}
+	})
 
 	contents, err := os.ReadFile(composePath)
 	if err != nil {

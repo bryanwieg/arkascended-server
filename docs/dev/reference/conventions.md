@@ -38,6 +38,12 @@ Project-specific coding rules. Rationale lives in
   Direct file I/O skips project-name derivation ("project name must not be
   empty" on Compose v5) and the `goccy/go-yaml` AST edits that keep user
   comments and custom fields.
+- Exception: adding or removing a service (`create instance`, `remove
+  instance`, `restore backup --new-instance`, `enable`/`disable scheduler`).
+  `SaveProject` refuses those, so edit the text with the `runtime` helpers
+  (`InsertService`, `RemoveServiceBlock`, `RemoveVolumeEntry`) and write it
+  with `compose.WriteComposeText`, which renames the edit over the file only
+  after it loads.
 - No hand-built YAML strings in handlers.
 
 ## Container access

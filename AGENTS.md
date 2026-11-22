@@ -138,7 +138,11 @@ of regenerating from a template. All compose reads go through
 files directly. The `LoadProject` → mutate → `SaveProject` round-trip is
 the only sanctioned compose I/O path. Direct file I/O bypasses the project
 name derivation (causing "project name must not be empty" on Docker Compose
-v5) and loses the AST-preservation logic.
+v5) and loses the AST-preservation logic. The one exception is adding or
+removing a service, which `SaveProject` refuses: edit the text with the
+`runtime` helpers (`InsertService`, `RemoveServiceBlock`, …) and write it
+with `compose.WriteComposeText`, which replaces the file only if the edit
+loads.
 
 ### Seam dependency injection (Go CLI)
 

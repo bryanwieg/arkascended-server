@@ -69,12 +69,6 @@ func TestSubcommandHelpShowsCanonicalSyntax(t *testing.T) {
 			wants: []string{"update schedule --name <name>"},
 		},
 		{
-			name:  "apply schedules",
-			run:   func(args []string) error { return schedule.RunApplySchedules(core.CurrentAppDeps(), args) },
-			args:  []string{"-h"},
-			wants: []string{"apply schedules"},
-		},
-		{
 			name:  "start",
 			run:   func(args []string) error { return compose.RunStart(core.CurrentAppDeps(), args) },
 			args:  []string{"-h"},

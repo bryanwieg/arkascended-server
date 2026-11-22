@@ -14,28 +14,58 @@ type ComposeProject struct {
 	Project *types.Project
 }
 
-// ServiceNames returns the sorted list of service names defined in the project.
+// The scheduler service carries label RoleLabel=SchedulerRole; it is never an ARK instance.
+const (
+	RoleLabel        = "ark.role"
+	SchedulerRole    = "scheduler"
+	SchedulerService = "ark-scheduler" // service name; no container_name (compose names it <project>-ark-scheduler-1, so two projects on one engine never clash)
+)
+
+func isScheduler(svc types.ServiceConfig) bool {
+	return svc.Labels[RoleLabel] == SchedulerRole
+}
+
+// ServiceNames returns the sorted names of the project's ARK instances (every service but the scheduler).
 func (p *ComposeProject) ServiceNames() []string {
 	if p == nil || p.Project == nil {
 		return nil
 	}
 	names := make([]string, 0, len(p.Project.Services))
-	for name := range p.Project.Services {
-		names = append(names, name)
+	for name, svc := range p.Project.Services {
+		if !isScheduler(svc) {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 	return names
 }
 
-// EnsureService returns an error if the named service is not defined in the project.
+// EnsureService returns an error if the named service is not an ARK instance of the project.
 func (p *ComposeProject) EnsureService(service string) error {
 	if p == nil || p.Project == nil {
 		return fmt.Errorf("Error: compose service not found: %s", service)
 	}
-	if _, ok := p.Project.Services[service]; !ok {
+	svc, ok := p.Project.Services[service]
+	if !ok {
 		return fmt.Errorf("Error: compose service not found: %s", service)
 	}
+	if isScheduler(svc) {
+		return fmt.Errorf("Error: %s is the scheduler service, not an ARK instance", service)
+	}
 	return nil
+}
+
+// HasScheduler reports whether a service carries the scheduler label.
+func (p *ComposeProject) HasScheduler() bool {
+	if p == nil || p.Project == nil {
+		return false
+	}
+	for _, svc := range p.Project.Services {
+		if isScheduler(svc) {
+			return true
+		}
+	}
+	return false
 }
 
 // ContainerState describes the runtime state of a single container.

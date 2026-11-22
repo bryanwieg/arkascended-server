@@ -5,7 +5,6 @@ import (
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"pkg/ark/backup"
@@ -28,9 +27,7 @@ func RunCheckSchedule(d *core.AppDeps, args []string) error {
 		return err
 	}
 
-	lockPath := core.CurrentAppDeps().ScheduleService.LockPath(name)
-	_, lockErr := os.Stat(lockPath)
-	running := lockErr == nil
+	running := core.CurrentAppDeps().ScheduleService.LockHeld(name)
 
 	result := "ok"
 	if running {
@@ -111,8 +108,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 	core.Infof("retain_size_gb: %d\n", s.RetainSizeGB)
 	core.Infof("compose_file: %s\n", runtime.FallbackDash(s.ComposeFile))
 	if s.Type == "backup" {
-		preview, _ := core.CurrentAppDeps().ScheduleService.BackupCommandParts(s)
-		core.Infof("command_preview: %s\n", strings.Join(preview, " "))
+		core.Infof("command_preview: %s\n", strings.Join(schedule.BackupCommandPreview(s), " "))
 	}
 	if state, ok := core.CurrentAppDeps().ScheduleService.LoadRunState(s.Name); ok {
 		core.Infof("last_status: %s\n", runtime.FallbackDash(state.LastStatus))
@@ -160,10 +156,11 @@ func setScheduleEnabled(d *core.AppDeps, args []string, command string, enabled 
 	}
 	s.Enabled = enabled
 	file.Schedules[idx] = s
-	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleAndCrontab(file); err != nil {
+	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {
 		return err
 	}
 	core.Infof("%s schedule %s\n", verb, s.Name)
+	warnIfSchedulerDisabled(d, s.ComposeFile)
 	return nil
 }
 
@@ -171,7 +168,7 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"update schedule",
 		[]string{"update schedule --name <name> [options]"},
-		"Update a configured schedule and regenerate the managed crontab file.",
+		"Update a configured schedule in schedules.yaml.",
 	)
 	nameFlag := fs.String("name", "", "Schedule name.")
 	cronExpr := fs.String("cron", "", "Cron expression (5 fields).")
@@ -268,10 +265,10 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	}
 
 	file.Schedules[idx] = s
-	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleAndCrontab(file); err != nil {
+	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {
 		return err
 	}
 	core.Infof("Updated schedule %s\n", s.Name)
-	core.Infof("Managed crontab file: %s\n", core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
+	warnIfSchedulerDisabled(d, s.ComposeFile)
 	return nil
 }

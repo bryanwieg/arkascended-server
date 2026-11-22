@@ -75,7 +75,7 @@ func runUpdateCommand(req UpdateCommandRequest) error {
 		return err
 	}
 	project := composeProject.Project
-	services, err := resolveUpdateTargetServices(project, req.Target)
+	services, err := resolveUpdateTargetServices(composeProject, req.Target)
 	if err != nil {
 		return err
 	}

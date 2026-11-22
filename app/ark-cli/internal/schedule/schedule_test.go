@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,17 +54,6 @@ func TestCreateListRemoveScheduleBackupPhase1(t *testing.T) {
 		}
 	}
 
-	cronBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
-	if err != nil {
-		t.Fatalf("read cron file: %v", err)
-	}
-	cronText := string(cronBytes)
-	for _, want := range []string{"# ark-cli managed schedules", "0 3 * * *", "create backup --instance asa1", "nightly"} {
-		if !strings.Contains(cronText, want) {
-			t.Fatalf("cron file missing %q\n%s", want, cronText)
-		}
-	}
-
 	listOut := captureStdout(t, func() {
 		if err := RunListSchedules(core.CurrentAppDeps(), []string{}); err != nil {
 			t.Fatalf("runListSchedules: %v", err)
@@ -91,13 +81,6 @@ func TestCreateListRemoveScheduleBackupPhase1(t *testing.T) {
 	}
 	if strings.Contains(string(configBytes), "nightly") {
 		t.Fatalf("schedule still present in config:\n%s", string(configBytes))
-	}
-	cronBytes, err = os.ReadFile(core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
-	if err != nil {
-		t.Fatalf("read cron file after remove: %v", err)
-	}
-	if strings.Contains(string(cronBytes), "nightly") {
-		t.Fatalf("schedule still present in cron file:\n%s", string(cronBytes))
 	}
 }
 
@@ -291,9 +274,10 @@ schedules:
 `
 	writeScheduleFixture(t, initial)
 
+	var gotArgs []string
 	out := captureStdout(t, func() {
 		withPatchedAppDeps(t, func(d *core.AppDeps) {
-			d.RunBackupFromSchedule = func(_ string, _ []string) error { return nil }
+			d.RunBackupFromSchedule = func(_ string, args []string) error { gotArgs = args; return nil }
 			d.ScheduleService.Now = func() time.Time { return time.Unix(1707000000, 0).UTC() }
 		}, func() {
 			if err := RunRunSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err != nil {
@@ -301,8 +285,13 @@ schedules:
 			}
 		})
 	})
-	if !strings.Contains(out, "Ran schedule nightly") {
-		t.Fatalf("unexpected output: %s", out)
+	for _, want := range []string{"2024-02-03T22:40:00Z START nightly", "2024-02-03T22:40:00Z SUCCESS nightly", "Ran schedule nightly"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q\n%s", want, out)
+		}
+	}
+	if n := len(gotArgs); n < 2 || gotArgs[n-2] != "--lock-timeout" || gotArgs[n-1] != "30m" {
+		t.Fatalf("backup args must end with --lock-timeout 30m: %#v", gotArgs)
 	}
 
 	logBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.LogPath("nightly"))
@@ -328,9 +317,8 @@ schedules:
 		t.Fatalf("unexpected state: %+v", state)
 	}
 
-	lockDir := filepath.Dir(core.CurrentAppDeps().ScheduleService.LockPath("nightly"))
-	if entries, _ := os.ReadDir(lockDir); len(entries) != 0 {
-		t.Fatalf("expected lock cleanup, found files in %s", lockDir)
+	if core.CurrentAppDeps().ScheduleService.LockHeld("nightly") {
+		t.Fatal("expected the schedule lock to be released")
 	}
 }
 
@@ -346,12 +334,11 @@ schedules:
     cron: "0 3 * * *"
 `
 	writeScheduleFixture(t, initial)
-	if err := os.MkdirAll(filepath.Dir(core.CurrentAppDeps().ScheduleService.LockPath("nightly")), 0o755); err != nil {
-		t.Fatalf("mkdir lock dir: %v", err)
+	release, err := core.CurrentAppDeps().ScheduleService.AcquireLock("nightly")
+	if err != nil {
+		t.Fatalf("hold lock: %v", err)
 	}
-	if err := os.WriteFile(core.CurrentAppDeps().ScheduleService.LockPath("nightly"), []byte("held"), 0o600); err != nil {
-		t.Fatalf("write lock: %v", err)
-	}
+	defer release()
 
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.RunBackupFromSchedule = func(_ string, _ []string) error { return errors.New("should not run") }
@@ -360,54 +347,6 @@ schedules:
 			t.Fatal("expected lock-held error")
 		}
 	})
-}
-
-func TestApplySchedulesInstallsManagedCrontab(t *testing.T) {
-	tmp := t.TempDir()
-	overrideSchedulePathsForTest(t, tmp)
-
-	initial := `version: 1
-schedules:
-  - name: nightly
-    type: backup
-    instance: asa1
-    enabled: true
-    cron: "0 3 * * *"
-    format: tar.gz
-`
-	writeScheduleFixture(t, initial)
-
-	var installedPath string
-	out := captureStdout(t, func() {
-		withScheduleComposeDeps(t, emptyServices("asa1"), func(d *core.AppDeps) {
-			d.InstallManagedSchedulesCrontab = func(path string) error {
-				installedPath = path
-				return nil
-			}
-		}, func() {
-			if err := RunApplySchedules(core.CurrentAppDeps(), []string{}); err != nil {
-				t.Fatalf("runApplySchedules: %v", err)
-			}
-		})
-	})
-	if !strings.Contains(out, "Validated 1 schedule(s)") {
-		t.Fatalf("expected validation output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "Applied schedules to user crontab") {
-		t.Fatalf("expected apply output, got:\n%s", out)
-	}
-	if installedPath != core.CurrentAppDeps().ScheduleService.ManagedCrontabPath {
-		t.Fatalf("installed path=%q want %q", installedPath, core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
-	}
-
-	cronBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
-	if err != nil {
-		t.Fatalf("read managed crontab: %v", err)
-	}
-	cronText := string(cronBytes)
-	if !strings.Contains(cronText, "nightly") || !strings.Contains(cronText, "create backup --instance asa1") {
-		t.Fatalf("unexpected managed crontab contents:\n%s", cronText)
-	}
 }
 
 func TestListSchedulesIncludesLastRunColumns(t *testing.T) {
@@ -488,15 +427,20 @@ schedules:
     enabled: true
     cron: "0 3 * * *"
 `)
-	withPatchedAppDeps(t, func(d *core.AppDeps) {
-		d.RunBackupFromSchedule = func(_ string, _ []string) error {
-			return errors.New("disk full")
-		}
-	}, func() {
-		if err := RunRunSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err == nil {
-			t.Fatal("expected error from failed backup")
-		}
+	out := captureStdout(t, func() {
+		withPatchedAppDeps(t, func(d *core.AppDeps) {
+			d.RunBackupFromSchedule = func(_ string, _ []string) error {
+				return errors.New("disk full")
+			}
+		}, func() {
+			if err := RunRunSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err == nil {
+				t.Fatal("expected error from failed backup")
+			}
+		})
 	})
+	if !strings.Contains(out, " FAIL nightly: disk full") || strings.Contains(out, "Ran schedule") {
+		t.Fatalf("unexpected output: %s", out)
+	}
 
 	stateBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.StatePath("nightly"))
 	if err != nil {
@@ -593,39 +537,6 @@ schedules:
 	}
 }
 
-func TestApplySchedulesSkipValidate(t *testing.T) {
-	tmp := t.TempDir()
-	overrideSchedulePathsForTest(t, tmp)
-	// Invalid cron would fail normal validation — skip-validate bypasses it.
-	writeScheduleFixture(t, `version: 1
-schedules:
-  - name: bad-cron
-    type: backup
-    instance: asa1
-    enabled: true
-    cron: "not-valid-cron"
-`)
-	var installedPath string
-	out := captureStdout(t, func() {
-		withPatchedAppDeps(t, func(d *core.AppDeps) {
-			d.InstallManagedSchedulesCrontab = func(path string) error {
-				installedPath = path
-				return nil
-			}
-		}, func() {
-			if err := RunApplySchedules(core.CurrentAppDeps(), []string{"--skip-validate"}); err != nil {
-				t.Fatalf("runApplySchedules --skip-validate: %v", err)
-			}
-		})
-	})
-	if !strings.Contains(out, "Applied schedules to user crontab") {
-		t.Fatalf("expected apply confirmation, got:\n%s", out)
-	}
-	if installedPath == "" {
-		t.Fatal("expected installManagedSchedulesCrontab to be called")
-	}
-}
-
 func TestCreateScheduleDispatcherRequiresSubcommand(t *testing.T) {
 	if err := RunCreateSchedule(core.CurrentAppDeps(), []string{}); err == nil {
 		t.Fatal("expected error for missing subcommand")
@@ -695,45 +606,6 @@ func TestValidateScheduleNoSchedulesConfigured(t *testing.T) {
 	if err := RunValidateSchedule(core.CurrentAppDeps(), []string{}); err == nil {
 		t.Fatal("expected error for empty schedule list")
 	}
-}
-
-func TestApplySchedulesValidationFailure(t *testing.T) {
-	tmp := t.TempDir()
-	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
-  - name: bad-cron
-    type: backup
-    instance: asa1
-    enabled: true
-    cron: "not-valid-cron"
-`)
-	if err := RunApplySchedules(core.CurrentAppDeps(), []string{}); err == nil {
-		t.Fatal("expected validation error from invalid cron")
-	}
-}
-
-func TestApplySchedulesInstallCrontabError(t *testing.T) {
-	tmp := t.TempDir()
-	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
-  - name: nightly
-    type: backup
-    instance: asa1
-    enabled: true
-    cron: "0 3 * * *"
-    format: tar.gz
-`)
-	withScheduleComposeDeps(t, emptyServices("asa1"), func(d *core.AppDeps) {
-		d.InstallManagedSchedulesCrontab = func(_ string) error {
-			return errors.New("crontab: permission denied")
-		}
-	}, func() {
-		if err := RunApplySchedules(core.CurrentAppDeps(), []string{}); err == nil {
-			t.Fatal("expected error from crontab install failure")
-		}
-	})
 }
 
 func TestRunEnableScheduleFlipsEnabled(t *testing.T) {
@@ -914,13 +786,11 @@ schedules:
     cron: "0 3 * * *"
 `)
 
-	lockPath := core.CurrentAppDeps().ScheduleService.LockPath("nightly")
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
-		t.Fatalf("mkdir lock dir: %v", err)
+	release, err := core.CurrentAppDeps().ScheduleService.AcquireLock("nightly")
+	if err != nil {
+		t.Fatalf("hold lock: %v", err)
 	}
-	if err := os.WriteFile(lockPath, []byte("held"), 0o600); err != nil {
-		t.Fatalf("write lock: %v", err)
-	}
+	defer release()
 
 	out := captureStdout(t, func() {
 		if err := RunCheckSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err != nil {
@@ -1057,12 +927,12 @@ func TestCreateScheduleBackupForCluster(t *testing.T) {
 			}
 		})
 	})
-	cronBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
+	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
 	if err != nil {
-		t.Fatalf("read cron file: %v", err)
+		t.Fatalf("read schedule config: %v", err)
 	}
-	if !strings.Contains(string(cronBytes), "create backup --instance cluster") {
-		t.Fatalf("cron file:\n%s", cronBytes)
+	if !strings.Contains(string(configBytes), "instance: cluster") {
+		t.Fatalf("schedule config:\n%s", configBytes)
 	}
 
 	withScheduleComposeDeps(t, emptyServices("asa1"), func(*core.AppDeps) {}, func() {
@@ -1071,4 +941,61 @@ func TestCreateScheduleBackupForCluster(t *testing.T) {
 			t.Fatalf("got %v", err)
 		}
 	})
+}
+
+// TestScheduleCommandsWarnWithoutScheduler pins the warnings schedule commands print after saving: no scheduler
+// service in the schedule's project, and a working directory other than the compose directory.
+func TestScheduleCommandsWarnWithoutScheduler(t *testing.T) {
+	const notEnabled = "the scheduler service is not enabled"
+	const wrongDir = "a scheduler only reads"
+	withScheduler := types.Services{ark.SchedulerService: {Name: ark.SchedulerService, Labels: types.Labels{ark.RoleLabel: ark.SchedulerRole}}}
+	for _, tc := range []struct {
+		name      string
+		services  types.Services
+		otherCwd  bool
+		wantWarns []string
+		noWarns   []string
+	}{
+		{name: "no scheduler", services: emptyServices("asa1"), wantWarns: []string{notEnabled}, noWarns: []string{wrongDir}},
+		{name: "scheduler enabled", services: withScheduler, noWarns: []string{notEnabled, wrongDir}},
+		{name: "other working dir", services: withScheduler, otherCwd: true, wantWarns: []string{wrongDir}, noWarns: []string{notEnabled}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			overrideSchedulePathsForTest(t, tmp)
+			composeFile := filepath.Join(tmp, "docker-compose.yaml")
+			setEnv(t, "COMPOSE_FILE", composeFile)
+			if err := os.WriteFile(composeFile, []byte("services: {}\n"), 0o644); err != nil {
+				t.Fatalf("write compose: %v", err)
+			}
+			if tc.otherCwd {
+				t.Chdir(t.TempDir())
+			} else {
+				t.Chdir(tmp)
+			}
+			var buf strings.Builder
+			origWarnf := core.Warnf
+			core.Warnf = func(format string, args ...any) { fmt.Fprintf(&buf, format, args...) }
+			t.Cleanup(func() { core.Warnf = origWarnf })
+			withScheduleComposeDeps(t, tc.services, nil, func() {
+				if err := runCreateScheduleBackup([]string{"--instance", "all", "--name", "nightly", "--cron", "0 3 * * *"}); err != nil {
+					t.Fatalf("create: %v", err)
+				}
+				if err := RunRemoveSchedule(core.CurrentAppDeps(), []string{"--name", "nightly"}); err != nil {
+					t.Fatalf("remove: %v", err)
+				}
+			})
+			warnings := buf.String()
+			for _, want := range tc.wantWarns {
+				if strings.Count(warnings, want) != 2 {
+					t.Fatalf("want %q after create and remove, got:\n%s", want, warnings)
+				}
+			}
+			for _, not := range tc.noWarns {
+				if strings.Contains(warnings, not) {
+					t.Fatalf("unexpected %q, got:\n%s", not, warnings)
+				}
+			}
+		})
+	}
 }

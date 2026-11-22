@@ -118,12 +118,25 @@ retention stops and logs a warning instead of deleting more.
 
 ## Locks
 
-`create backup` takes a per-target lock file,
-`<backup-root>/<target>/.<target>-backup.lock`, for the whole run including
+`create backup` takes a per-target lock on the file
+`<backup-root>/<target>/.<target>-backup.lock` for the whole run including
 retention. A second backup of the same target waits up to `--lock-timeout`
-(default 2m), then fails. A lock left by a dead process is removed
-automatically. Restores (instance and cluster) and `prune backups` take the
-same lock without waiting: they fail at once if a backup is running.
+(default 2m; 30m for scheduled backups), then fails. Restores (instance and
+cluster) and `prune backups` take the same lock without waiting: they fail at
+once if a backup is running.
+
+The same per-instance lock is held by `stop`, `start` and `restart instance`,
+by each instance's `update instance --rollout`, and by the `--restart` of
+`reconfigure instance` and the INI commands. These wait up to 15 minutes for
+it (`Waiting for backup lock: <instance>`); `stop instance --kill` never waits.
+So a backup, a lifecycle command and the scheduler's automatic restart never
+run on one instance at the same time.
+
+The locks are kernel file locks: the kernel releases them when the holding
+process exits, even when it crashes or is killed, so there is never a stale
+lock to remove. The lock file stays on disk; it only shows who held it last.
+They work between the host and the `ark-scheduler` container, which shares the
+backup directory.
 
 ## Pre-restore backup
 

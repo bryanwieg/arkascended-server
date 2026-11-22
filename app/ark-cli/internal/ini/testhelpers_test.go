@@ -26,6 +26,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func withPatchedAppDeps(t *testing.T, patch func(*core.AppDeps), fn func()) {
 	t.Helper()
+	setEnv(t, "ARK_BACKUP_DIR", t.TempDir()) // --restart takes the instance lock under the backup root
 	testutil.WithPatchedAppDeps(t, testutil.ShowConfig, patch, fn)
 }
 

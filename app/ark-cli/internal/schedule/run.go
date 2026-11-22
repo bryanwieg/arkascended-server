@@ -10,8 +10,8 @@ import (
 	"pkg/ark/schedule"
 )
 
-func runBackupFromSchedule(name string, args []string) error {
-	if dep := core.CurrentAppDeps().RunBackupFromSchedule; dep != nil {
+func runBackupFromSchedule(d *core.AppDeps, name string, args []string) error {
+	if dep := d.RunBackupFromSchedule; dep != nil {
 		return dep(name, args)
 	}
 	return backup.RunBackupFromScheduleImpl(name, args)
@@ -27,47 +27,48 @@ func RunRunSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	_, s, _, err := d.ScheduleService.LoadScheduleByName(name)
 	if err != nil {
 		return err
 	}
+	if err := RunScheduleOnce(d, s); err != nil {
+		return err
+	}
+	core.Infof("Ran schedule %s\n", name)
+	return nil
+}
+
+// RunScheduleOnce runs one backup schedule: lock, state "running", backup, state "success"/"failed",
+// log file line and a matching stdout line. Returns the lock error or the backup error.
+func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
 	if s.Type != "backup" {
 		return schedule.ErrUnsupportedType(s.Type)
 	}
-	release, err := core.CurrentAppDeps().ScheduleService.AcquireLock(name)
+	svc := d.ScheduleService
+	release, err := svc.AcquireLock(s.Name)
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	startedAt := core.CurrentAppDeps().ScheduleService.Now()
-	core.CurrentAppDeps().ScheduleService.AppendScheduleLog(name, fmt.Sprintf("%s START %s", startedAt.Format(time.RFC3339), name))
-	state := schedule.RunState{
-		Name:          name,
-		LastStartedAt: startedAt.Format(time.RFC3339),
-		LastStatus:    "running",
+	logLine := func(line string) {
+		svc.AppendScheduleLog(s.Name, line)
+		core.Infof("%s\n", line)
 	}
-	core.CurrentAppDeps().ScheduleService.WriteRunState(state)
+	startedAt := svc.Now().Format(time.RFC3339)
+	logLine(fmt.Sprintf("%s START %s", startedAt, s.Name))
+	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastStatus: "running"})
 
-	argsForBackup := []string{"--instance", s.Instance}
-	argsForBackup = append(argsForBackup, schedule.BackupFlagArgs(s)...)
-	if err := runBackupFromSchedule(name, argsForBackup); err != nil {
-		finishedAt := core.CurrentAppDeps().ScheduleService.Now()
-		state.LastFinishedAt = finishedAt.Format(time.RFC3339)
-		state.LastStatus = "failed"
-		state.LastExitCode = 1
-		state.LastError = err.Error()
-		core.CurrentAppDeps().ScheduleService.AppendScheduleLog(name, fmt.Sprintf("%s FAIL %s: %s", finishedAt.Format(time.RFC3339), name, err))
-		core.CurrentAppDeps().ScheduleService.WriteRunState(state)
-		return err
+	// A stop or update rollout holds the instance lock for minutes; wait for it instead of failing.
+	argsForBackup := append(append([]string{"--instance", s.Instance}, schedule.BackupFlagArgs(s)...), "--lock-timeout", "30m")
+	backupErr := runBackupFromSchedule(d, s.Name, argsForBackup)
+	finishedAt := svc.Now().Format(time.RFC3339)
+	if backupErr != nil {
+		logLine(fmt.Sprintf("%s FAIL %s: %s", finishedAt, s.Name, backupErr))
+		svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastFinishedAt: finishedAt, LastStatus: "failed", LastExitCode: 1, LastError: backupErr.Error()})
+		return backupErr
 	}
-	finishedAt := core.CurrentAppDeps().ScheduleService.Now()
-	state.LastFinishedAt = finishedAt.Format(time.RFC3339)
-	state.LastStatus = "success"
-	state.LastExitCode = 0
-	state.LastError = ""
-	core.CurrentAppDeps().ScheduleService.AppendScheduleLog(name, fmt.Sprintf("%s SUCCESS %s", finishedAt.Format(time.RFC3339), name))
-	core.CurrentAppDeps().ScheduleService.WriteRunState(state)
-	core.Infof("Ran schedule %s\n", name)
+	logLine(fmt.Sprintf("%s SUCCESS %s", finishedAt, s.Name))
+	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastFinishedAt: finishedAt, LastStatus: "success"})
 	return nil
 }

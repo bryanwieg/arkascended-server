@@ -184,6 +184,7 @@ def ensure_cli_binary(root: Path) -> Path:
     env = os.environ.copy()
     env["GOCACHE"] = env.get("GOCACHE", str(repo_root() / ".go-cache"))
     env["GOTMPDIR"] = env.get("GOTMPDIR", str(repo_root() / ".ark-tmp"))
+    env["CGO_ENABLED"] = "0"  # static, so the binary runs in the scratch scheduler image
     Path(env["GOTMPDIR"]).mkdir(parents=True, exist_ok=True)  # go refuses a missing GOTMPDIR (fresh CI checkout)
     subprocess.run(
         ["go", "build", "-o", str(path)],

@@ -25,7 +25,7 @@ import (
 // - Expect: usage output contains supported verbs and object forms (no cron placeholder).
 func TestUsageListsCommands(t *testing.T) {
 	out := captureStderr(t, func() { usage() })
-	for _, cmd := range []string{"create", "edit", "reconfigure", "update", "apply", "start", "stop", "restart", "save", "logs", "show", "restore", "list", "check", "wait", "validate", "prune", "remove", "run"} {
+	for _, cmd := range []string{"create", "edit", "reconfigure", "update", "start", "stop", "restart", "save", "logs", "show", "restore", "list", "check", "wait", "validate", "prune", "remove", "run"} {
 		if !strings.Contains(out, cmd) {
 			t.Fatalf("usage missing %s", cmd)
 		}
@@ -33,7 +33,7 @@ func TestUsageListsCommands(t *testing.T) {
 	if strings.Contains(out, " cron ") || strings.Contains(out, "\n  cron") {
 		t.Fatalf("usage should not list cron placeholder anymore:\n%s", out)
 	}
-	for _, syntax := range []string{"create instance", "create schedule", "edit ini", "reconfigure instance", "update instance", "update schedule", "apply schedules", "restart instance", "save instance", "logs instance", "show instance", "show backup", "show compose", "show volume-paths", "show schedule", "run schedule", "list instances", "list schedules", "create backup", "restore backup", "check reachability", "listen port", "check instance", "wait instance", "validate compose", "validate schedule", "validate backup", "prune backups", "remove schedule"} {
+	for _, syntax := range []string{"create instance", "create schedule", "edit ini", "reconfigure instance", "update instance", "update schedule", "restart instance", "save instance", "logs instance", "show instance", "show backup", "show compose", "show volume-paths", "show schedule", "run schedule", "list instances", "list schedules", "create backup", "restore backup", "check reachability", "listen port", "check instance", "wait instance", "validate compose", "validate schedule", "validate backup", "prune backups", "remove schedule"} {
 		if !strings.Contains(out, syntax) {
 			t.Fatalf("usage missing syntax %q", syntax)
 		}
@@ -137,12 +137,6 @@ func TestParseCommandRouteEnforcesVerbObjectSyntax(t *testing.T) {
 			in:       []string{"update", "schedule", "nightly", "--cron", "0 4 * * *"},
 			wantVerb: "update_schedule",
 			wantArgs: []string{"nightly", "--cron", "0 4 * * *"},
-		},
-		{
-			name:     "apply schedules",
-			in:       []string{"apply", "schedules"},
-			wantVerb: "apply_schedules",
-			wantArgs: []string{},
 		},
 		{
 			name:     "restart instance",
@@ -271,6 +265,12 @@ func TestParseCommandRouteEnforcesVerbObjectSyntax(t *testing.T) {
 			wantArgs: []string{"nightly"},
 		},
 		{
+			name:     "run scheduler",
+			in:       []string{"run", "scheduler"},
+			wantVerb: "run_scheduler",
+			wantArgs: []string{},
+		},
+		{
 			name:    "legacy backup rejected",
 			in:      []string{"backup", "asa1"},
 			wantErr: "unknown command verb",
@@ -322,9 +322,9 @@ func TestParseCommandRouteEnforcesVerbObjectSyntax(t *testing.T) {
 			wantErr: "run expected object",
 		},
 		{
-			name:    "apply wrong object rejected",
-			in:      []string{"apply", "schedule"},
-			wantErr: "apply expected object",
+			name:    "removed apply verb rejected",
+			in:      []string{"apply", "schedules"},
+			wantErr: "unknown command verb: apply",
 		},
 		{
 			name:    "list wrong schedule object rejected",

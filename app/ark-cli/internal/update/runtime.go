@@ -13,26 +13,25 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 
+	"pkg/ark"
 	"pkg/ark/backup"
 	"pkg/ark/composeutil"
 	"pkg/ark/runtime"
 	"pkg/ark/update"
 )
 
-func resolveUpdateTargetServices(project *types.Project, target string) ([]string, error) {
-	if len(project.Services) == 0 {
+func resolveUpdateTargetServices(project *ark.ComposeProject, target string) ([]string, error) {
+	if len(project.ServiceNames()) == 0 {
 		return nil, errors.New("Error: services section not found in compose file.")
 	}
 	if target == "all" {
-		names := make([]string, 0, len(project.Services))
-		for name := range project.Services {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		return names, nil
+		return project.ServiceNames(), nil
 	}
-	if _, ok := project.Services[target]; !ok {
+	if _, ok := project.Project.Services[target]; !ok {
 		return nil, fmt.Errorf("Error: service not found in compose file: %s", target)
+	}
+	if err := project.EnsureService(target); err != nil {
+		return nil, err
 	}
 	return []string{target}, nil
 }
@@ -219,12 +218,18 @@ func rolloutUpdatedInstances(composeFile string, updates []plannedUpdate) error 
 	stateDir := update.StateDir(composeFile)
 	for i, u := range updates {
 		core.Infof("Updating %s\n", u.summary())
-		if err := compose.SetStopReason(d, composeFile, u.Instance, "updating to "+runtime.FallbackDash(u.ToVersion)); err != nil {
-			core.Warnf("Warning: %s: could not pass the update reason to its player warnings: %v\n", u.Instance, err)
-		}
-		attempt, err := update.Rollout(d.Context(), update.RolloutRequest{
-			StateDir: stateDir, Instance: u.Instance, From: u.From, To: u.To,
-		}, steps)
+		var attempt update.UpdateAttempt
+		// The rollout's own backup and restore run inside this lock (LockHeld in newRolloutSteps).
+		err := compose.WithInstanceLocks(d, composeFile, []string{u.Instance}, func() error {
+			if err := compose.SetStopReason(d, composeFile, u.Instance, "updating to "+runtime.FallbackDash(u.ToVersion)); err != nil {
+				core.Warnf("Warning: %s: could not pass the update reason to its player warnings: %v\n", u.Instance, err)
+			}
+			var rolloutErr error
+			attempt, rolloutErr = update.Rollout(d.Context(), update.RolloutRequest{
+				StateDir: stateDir, Instance: u.Instance, From: u.From, To: u.To,
+			}, steps)
+			return rolloutErr
+		})
 		if attempt.Result == update.ResultRolledBack || attempt.Result == update.ResultRollbackFailed {
 			alertFailure(u.Instance, attempt)
 		}
@@ -301,9 +306,9 @@ var newRolloutSteps = func(d *core.AppDeps, composeFile string) update.RolloutSt
 				Format:            "tar.gz",
 				Timestamp:         time.Now().UTC().Format("20060102-150405"),
 				PID:               os.Getpid(),
-				LockTimeout:       2 * time.Minute,
 				BackupWaitTimeout: 10 * time.Minute,
 				Retention:         backup.NewRetentionPolicy(20, 7, 5),
+				LockHeld:          true, // rolloutUpdatedInstances holds the instance lock
 			}, instance)
 			if err != nil {
 				return "", err
@@ -330,6 +335,7 @@ var newRolloutSteps = func(d *core.AppDeps, composeFile string) update.RolloutSt
 		Restore: func(ctx context.Context, instance, archive string) error {
 			_, err := d.BackupService.Restore(ctx, backup.RestoreRequest{
 				ComposeFile: composeFile, Service: instance, ArchivePath: archive, BackupRoot: backupRoot,
+				LockHeld: true, // rolloutUpdatedInstances holds the instance lock
 			})
 			return err
 		},

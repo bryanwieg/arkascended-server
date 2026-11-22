@@ -136,3 +136,18 @@ func TestRunRestoreRejectsPasswordFlagsForExistingInstance(t *testing.T) {
 		}
 	})
 }
+
+// TestRestoreNewInstanceRejectsSchedulerName verifies a backup cannot be restored as ark-scheduler.
+func TestRestoreNewInstanceRejectsSchedulerName(t *testing.T) {
+	composeFile := filepath.Join(t.TempDir(), "compose.yaml")
+	if err := os.WriteFile(composeFile, nil, 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	err := scaffoldComposeService(composeFile, ark.SchedulerService, "TheIsland_WP", "adminpass", "")
+	if err == nil || err.Error() != "Error: instance name ark-scheduler is reserved for the scheduler service." {
+		t.Fatalf("got %v", err)
+	}
+	if written, _ := os.ReadFile(composeFile); len(written) != 0 {
+		t.Fatalf("compose file must stay untouched, got:\n%s", written)
+	}
+}

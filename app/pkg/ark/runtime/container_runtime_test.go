@@ -50,6 +50,49 @@ func TestResolveContainerRuntimeEnvVar(t *testing.T) {
 	}
 }
 
+func TestResolveContainerRuntimeEnvEngineSkipsLookPath(t *testing.T) {
+	t.Setenv("ARK_CONTAINER_RUNTIME", "podman")
+	t.Setenv("DOCKER_HOST", "unix:///run/podman.sock")
+	rt, err := ResolveContainerRuntime("", func(name string) (string, error) {
+		t.Fatalf("lookPath(%q) called with ARK_CONTAINER_RUNTIME and DOCKER_HOST set", name)
+		return "", nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rt != RuntimePodman {
+		t.Fatalf("expected podman, got %s", rt)
+	}
+}
+
+func TestResolveContainerRuntimeEnvVarWithoutDockerHostNeedsPath(t *testing.T) {
+	t.Setenv("ARK_CONTAINER_RUNTIME", "podman")
+	t.Setenv("DOCKER_HOST", "")
+	_, err := ResolveContainerRuntime("", func(string) (string, error) { return "", os.ErrNotExist })
+	if err == nil || !strings.Contains(err.Error(), "not found on PATH") {
+		t.Fatalf("expected not-on-PATH error, got %v", err)
+	}
+}
+
+func TestEngineFromEnv(t *testing.T) {
+	tests := []struct {
+		runtime, host string
+		want          bool
+	}{
+		{"docker", "unix:///var/run/docker.sock", true},
+		{"docker", "", false},
+		{"", "unix:///var/run/docker.sock", false},
+		{"", "", false},
+	}
+	for _, tc := range tests {
+		t.Setenv("ARK_CONTAINER_RUNTIME", tc.runtime)
+		t.Setenv("DOCKER_HOST", tc.host)
+		if got := EngineFromEnv(); got != tc.want {
+			t.Fatalf("EngineFromEnv() with runtime=%q host=%q = %v, want %v", tc.runtime, tc.host, got, tc.want)
+		}
+	}
+}
+
 func TestResolveContainerRuntimeAutoDetectPrefersDocker(t *testing.T) {
 	t.Setenv("ARK_CONTAINER_RUNTIME", "")
 	rt, err := ResolveContainerRuntime("", func(name string) (string, error) {

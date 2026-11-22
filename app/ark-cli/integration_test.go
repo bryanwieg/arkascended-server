@@ -609,14 +609,14 @@ func TestCLIIntegrationBackupLockContention(t *testing.T) {
 		})
 	}()
 
-	lockPath := filepath.Join(backupRoot, "asa1", ".asa1-backup.lock")
+	lockDir := filepath.Join(backupRoot, "asa1")
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if _, err := os.Stat(lockPath); err == nil {
+		if held, _ := backup.InstanceLockHeld(lockDir, "asa1"); held {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for lock file: %s", lockPath)
+			t.Fatalf("timed out waiting for the backup lock in %s", lockDir)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -668,8 +668,9 @@ func TestCLIIntegrationBackupFailsWithoutFallbackWhenExecFails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "while the server is running") {
 		t.Fatalf("expected running-server backup error, got %v", err)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(backupRoot, "asa1")); len(entries) != 0 {
-		t.Fatalf("expected no backup archive, found %d entries", len(entries))
+	// The lock file stays behind by design; only archives count.
+	if archives, _ := filepath.Glob(filepath.Join(backupRoot, "asa1", "*.tar.gz")); len(archives) != 0 {
+		t.Fatalf("expected no backup archive, found %v", archives)
 	}
 }
 

@@ -3,7 +3,6 @@ package backup
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -155,14 +154,11 @@ func TestCreateClusterFailures(t *testing.T) {
 
 func holdClusterLock(t *testing.T, root string) {
 	t.Helper()
-	dir := filepath.Join(root, ClusterTarget)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	release, err := AcquireInstanceLock(filepath.Join(root, ClusterTarget), ClusterTarget, 0)
+	if err != nil {
 		t.Fatal(err)
 	}
-	lock := filepath.Join(dir, ".cluster-backup.lock")
-	if err := os.WriteFile(lock, []byte(fmt.Sprintf("pid=%d started=now\n", os.Getpid())), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(release)
 }
 
 func TestCreateClusterRespectsLock(t *testing.T) {

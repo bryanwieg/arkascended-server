@@ -4,13 +4,28 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/robfig/cron/v3"
 )
 
-// ValidateCronExpr checks that a cron expression has exactly 5 fields.
+// ParseCron parses a standard 5-field cron expression (descriptors such as
+// @daily allowed). Times are interpreted in time.Local, so the per-schedule
+// TZ=/CRON_TZ= prefix and @every, which cron.ParseStandard also accepts, are refused.
+func ParseCron(expr string) (cron.Schedule, error) {
+	trimmed := strings.TrimSpace(expr)
+	if strings.HasPrefix(trimmed, "TZ=") || strings.HasPrefix(trimmed, "CRON_TZ=") {
+		return nil, errors.New("time zone prefixes are not supported; schedules use the TZ environment variable")
+	}
+	if strings.HasPrefix(trimmed, "@every") {
+		return nil, errors.New("@every is not supported; use a 5-field expression")
+	}
+	return cron.ParseStandard(expr)
+}
+
+// ValidateCronExpr reports whether expr is a valid standard cron expression.
 func ValidateCronExpr(expr string) error {
-	fields := strings.Fields(expr)
-	if len(fields) != 5 {
-		return errors.New("Error: cron expression must have 5 fields.")
+	if _, err := ParseCron(expr); err != nil {
+		return fmt.Errorf("Error: invalid cron expression %q: %w", expr, err)
 	}
 	return nil
 }
@@ -44,30 +59,7 @@ func BackupFlagArgs(s BackupSchedule) []string {
 	return args
 }
 
-// BackupCommandParts returns the human-readable preview and the full CLI
-// command for executing a backup schedule entry.
-func (s *Service) BackupCommandParts(sched BackupSchedule) (preview []string, cmd []string) {
-	preview = []string{"ark-cli", "create", "backup", "--instance", sched.Instance}
-	cmd = append(s.CLICommand, "create", "backup", "--instance", sched.Instance)
-	flagArgs := BackupFlagArgs(sched)
-	preview = append(preview, flagArgs...)
-	cmd = append(cmd, flagArgs...)
-	return preview, cmd
-}
-
-// ShellQuote returns a single-quoted shell-safe string.
-func ShellQuote(value string) string {
-	if value == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
-}
-
-// ShellJoin joins arguments with shell quoting.
-func ShellJoin(args []string) string {
-	quoted := make([]string, 0, len(args))
-	for _, a := range args {
-		quoted = append(quoted, ShellQuote(a))
-	}
-	return strings.Join(quoted, " ")
+// BackupCommandPreview returns the ark-cli command a backup schedule entry runs.
+func BackupCommandPreview(s BackupSchedule) []string {
+	return append([]string{"ark-cli", "create", "backup", "--instance", s.Instance}, BackupFlagArgs(s)...)
 }

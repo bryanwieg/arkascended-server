@@ -28,6 +28,7 @@ container, image or volume) and `ErrConflict` (in use).
 | `RemoveImage` | Remove one tag, no force. Removing the last tag of an image a container uses returns `ErrConflict`; `ErrNotFound` if the reference is missing |
 | `ImagesInUse` | IDs of images any container uses (running or stopped, any project) |
 | `PruneDangling` | Remove untagged images and unused build cache |
+| `Rootless` | Whether the engine runs rootless (`/info` SecurityOptions) |
 | `VolumeMountpoint` | Host path of a named volume; `("", false)` if missing |
 | `RemoveVolume` | Remove a named volume. `ErrNotFound` if missing, `ErrConflict` if in use |
 | `CopyFromContainer` | Copy a file or directory from a container to a host path |

@@ -67,7 +67,7 @@ func (s *Service) Restore(ctx context.Context, req RestoreRequest) (*RestoreResu
 	preRestoreDir := backupsDir
 	var restorePaths RestoreExecutionPaths
 	// Same lock as create/prune, so retention can't delete the archive mid-restore.
-	err = WithInstanceLock(filepath.Join(req.BackupRoot, req.Service), req.Service, 0, func() error {
+	err = withInstanceLockUnless(req.LockHeld, InstanceLockDir(req.BackupRoot, req.Service), req.Service, 0, func() error {
 		if err := ensureContainerWritableDir(preRestoreDir); err != nil {
 			return err
 		}

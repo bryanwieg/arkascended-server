@@ -5,35 +5,12 @@ import (
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
-	"strings"
 
 	"pkg/ark"
 	backup "pkg/ark/backup"
 	"pkg/ark/runtime"
 	"pkg/ark/schedule"
 )
-
-func InstallManagedSchedulesCrontabImpl(path string) error {
-	result, err := core.CurrentAppDeps().Runtime.RunCommand([]string{"crontab", path}, ark.CommandOptions{Capture: true})
-	if err != nil {
-		return err
-	}
-	if result.ExitCode != 0 {
-		stderr := strings.TrimSpace(result.Stderr)
-		if stderr == "" {
-			stderr = fmt.Sprintf("crontab exited with code %d", result.ExitCode)
-		}
-		return fmt.Errorf("Error: failed to install crontab: %s", stderr)
-	}
-	return nil
-}
-
-func installManagedSchedulesCrontab(path string) error {
-	if dep := core.CurrentAppDeps().InstallManagedSchedulesCrontab; dep != nil {
-		return dep(path)
-	}
-	return InstallManagedSchedulesCrontabImpl(path)
-}
 
 var validateScheduleRetention = schedule.ValidateRetention
 
@@ -142,36 +119,4 @@ func RunValidateSchedule(d *core.AppDeps, args []string) error {
 	}
 	_, err = validateScheduleFile(file, target)
 	return err
-}
-
-func RunApplySchedules(d *core.AppDeps, args []string) error {
-	fs := core.NewCommandFlagSet(
-		"apply schedules",
-		[]string{"apply schedules"},
-		"Validate schedules, regenerate the managed crontab file, and install it with crontab.",
-	)
-	skipValidate := fs.Bool("skip-validate", false, "Skip schedule validation before applying.")
-	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
-		return err
-	}
-
-	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile()
-	if err != nil {
-		return err
-	}
-	if !*skipValidate {
-		if _, err := validateScheduleFile(file, ""); err != nil {
-			return err
-		}
-	}
-	if err := core.CurrentAppDeps().ScheduleService.WriteManagedScheduleCrontab(file); err != nil {
-		return err
-	}
-	cronPath := core.CurrentAppDeps().ScheduleService.ManagedCrontabPath
-	if err := installManagedSchedulesCrontab(cronPath); err != nil {
-		return err
-	}
-	core.Infof("Applied schedules to user crontab\n")
-	core.Infof("Managed crontab file: %s\n", cronPath)
-	return nil
 }

@@ -48,9 +48,6 @@ func MergeNonZeroAppDepFields(dst, src *core.AppDeps) {
 	if src.RunBackupFromSchedule != nil {
 		dst.RunBackupFromSchedule = src.RunBackupFromSchedule
 	}
-	if src.InstallManagedSchedulesCrontab != nil {
-		dst.InstallManagedSchedulesCrontab = src.InstallManagedSchedulesCrontab
-	}
 	if src.RunningServiceSnapshot != nil {
 		dst.RunningServiceSnapshot = src.RunningServiceSnapshot
 	}

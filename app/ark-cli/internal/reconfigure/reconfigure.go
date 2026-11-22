@@ -258,6 +258,9 @@ func runReconfigureCommand(req reconfigureCommandRequest) error {
 	if !ok {
 		return fmt.Errorf("Error: service not found in compose file: %s", req.instance)
 	}
+	if err := composeProject.EnsureService(req.instance); err != nil {
+		return err // the scheduler service is not an instance
+	}
 
 	if err := guardReconfigureMapName(svc, req); err != nil {
 		return err
@@ -325,18 +328,22 @@ func handleReconfigureRestart(composeFile string, req reconfigureCommandRequest,
 			)
 			return nil
 		}
-		if err := compose.DoRestartStopInstance(core.CurrentAppDeps(), runtime.StopCommandRequest{
-			Instance:        req.instance,
-			ComposeFileFlag: composeFile,
-			Timeout:         -1, // default grace so the server saves
-		}); err != nil {
-			return err
-		}
-		if err := compose.DoRestartStartInstance(core.CurrentAppDeps(), runtime.StartCommandRequest{
-			Instance:        req.instance,
-			ComposeFileFlag: composeFile,
-			WaitTimeout:     compose.DefaultStartReadyWaitTimeout,
-		}); err != nil {
+		d := core.CurrentAppDeps()
+		err := compose.WithInstanceLocks(d, composeFile, []string{req.instance}, func() error {
+			if err := compose.DoRestartStopInstance(d, runtime.StopCommandRequest{
+				Instance:        req.instance,
+				ComposeFileFlag: composeFile,
+				Timeout:         -1, // default grace so the server saves
+			}); err != nil {
+				return err
+			}
+			return compose.DoRestartStartInstance(d, runtime.StartCommandRequest{
+				Instance:        req.instance,
+				ComposeFileFlag: composeFile,
+				WaitTimeout:     compose.DefaultStartReadyWaitTimeout,
+			})
+		})
+		if err != nil {
 			return err
 		}
 		core.Infof("Restarted instance %s.\n", req.instance)

@@ -34,15 +34,14 @@ type AppDeps struct {
 	RuntimeHelper runtime.RuntimeHelper
 
 	// CLI-specific I/O seams (for testability)
-	Runtime                        RuntimeDeps
-	RestartStartInstance           func(runtime.StartCommandRequest) error
-	RestartStopInstance            func(runtime.StopCommandRequest) error
-	RunBackupFromSchedule          func(string, []string) error
-	InstallManagedSchedulesCrontab func(string) error
-	RunningServiceSnapshot         func(string) (map[string]struct{}, error)
-	DiskUsageForPath               func(string) (int64, int64, error)
-	StopService                    func(string, string) error
-	RemoveVolume                   func(string, string) error
+	Runtime                RuntimeDeps
+	RestartStartInstance   func(runtime.StartCommandRequest) error
+	RestartStopInstance    func(runtime.StopCommandRequest) error
+	RunBackupFromSchedule  func(string, []string) error
+	RunningServiceSnapshot func(string) (map[string]struct{}, error)
+	DiskUsageForPath       func(string) (int64, int64, error)
+	StopService            func(string, string) error
+	RemoveVolume           func(string, string) error
 }
 
 // RuntimeDeps holds primitive function seams for command execution.

@@ -13,6 +13,7 @@ import (
 	"ark-cli/internal/reconfigure"
 	"ark-cli/internal/remove"
 	"ark-cli/internal/schedule"
+	"ark-cli/internal/scheduler"
 	"ark-cli/internal/show"
 	"ark-cli/internal/update"
 )
@@ -45,7 +46,8 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "disable", Object: "schedule", Route: "disable_schedule", Handler: schedule.RunDisableSchedule, TopLevelHelp: []string{"disable schedule --name <name>              Disable a managed schedule"}},
 	{Verb: "enable", Object: "remote-rcon", Route: "enable_remote_rcon", Handler: reconfigure.RunEnableRemoteRCON, TopLevelHelp: []string{"enable remote-rcon --instance <inst>        Publish RCON on all host interfaces"}},
 	{Verb: "disable", Object: "remote-rcon", Route: "disable_remote_rcon", Handler: reconfigure.RunDisableRemoteRCON, TopLevelHelp: []string{"disable remote-rcon --instance <inst>       Publish RCON on 127.0.0.1 only (default)"}},
-	{Verb: "apply", Object: "schedules", Route: "apply_schedules", Handler: schedule.RunApplySchedules, TopLevelHelp: []string{"apply schedules                             Install the generated managed crontab"}},
+	{Verb: "enable", Object: "scheduler", Route: "enable_scheduler", Handler: scheduler.RunEnableScheduler, TopLevelHelp: []string{"enable scheduler                            Build and start the scheduler service (backups, health)"}},
+	{Verb: "disable", Object: "scheduler", Route: "disable_scheduler", Handler: scheduler.RunDisableScheduler, TopLevelHelp: []string{"disable scheduler                           Stop and remove the scheduler service"}},
 	{Verb: "start", Object: "instance", Route: "start", Handler: compose.RunStart, TopLevelHelp: []string{"start instance --instance <inst|all>        Start compose service(s)"}},
 	{Verb: "stop", Object: "instance", Route: "stop", Handler: compose.RunStop, TopLevelHelp: []string{"stop instance --instance <inst|all>         Graceful stop via ark-server-stop.py"}},
 	{Verb: "restart", Object: "instance", Route: "restart", Handler: compose.RunRestart, TopLevelHelp: []string{"restart instance --instance <inst|all>      Restart instance(s) (stop then start)"}},
@@ -66,6 +68,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "show", Object: "vol-paths", Route: "show_vol_paths_compat", Handler: show.RunShowVolumePaths, TopLevelHelp: nil},
 	{Verb: "show", Object: "schedule", Route: "show_schedule", Handler: schedule.RunShowSchedule, TopLevelHelp: []string{"show schedule --name <name>                 Show managed schedule details"}},
 	{Verb: "run", Object: "schedule", Route: "run_schedule", Handler: schedule.RunRunSchedule, TopLevelHelp: []string{"run schedule --name <name>                  Run a managed schedule immediately"}},
+	{Verb: "run", Object: "scheduler", Route: "run_scheduler", Handler: scheduler.RunRunScheduler, TopLevelHelp: []string{"run scheduler                               Run schedules and health checks (scheduler service)"}},
 	{Verb: "check", Object: "host-kernel-config", Route: "check_host_kernel_config", Handler: host.RunCheckHostKernelConfig, TopLevelHelp: []string{"check host-kernel-config                    Check host kernel settings required for Proton/Wine"}},
 	{Verb: "fix", Object: "host-kernel-config", Route: "fix_host_kernel_config", Handler: host.RunFixHostKernelConfig, TopLevelHelp: []string{"fix host-kernel-config                      Apply and persist required host kernel settings (requires root)"}},
 	{Verb: "restore", Object: "host-kernel-config", Route: "restore_host_kernel_config", Handler: host.RunRestoreHostKernelConfig, TopLevelHelp: []string{"restore host-kernel-config                  Restore host kernel settings from pre-fix backup (requires root)"}},
@@ -77,6 +80,7 @@ var CommandRegistry = []CommandRegistryEntry{
 		"listen port --port <num>                    Open listeners on a port and wait (no probe; for firewall testing)",
 	}},
 	{Verb: "check", Object: "instance", Route: "check_instance", Handler: health.RunCheckInstance, TopLevelHelp: []string{"check instance --instance <inst>            Check instance health (running + ready)"}},
+	{Verb: "check", Object: "scheduler", Route: "check_scheduler", Handler: scheduler.RunCheckScheduler, TopLevelHelp: []string{"check scheduler                             Show scheduler health (exit 1 when unhealthy)"}},
 	{Verb: "check", Object: "schedule", Route: "check_schedule", Handler: schedule.RunCheckSchedule, TopLevelHelp: []string{"check schedule --name <name>                Check schedule running status and last result"}},
 	{Verb: "list", Object: "instances", Route: "list_instances", Handler: show.RunListInstances, TopLevelHelp: []string{"list instances                              List instances in the compose project"}},
 	{Verb: "list", Object: "backups", Route: "list_backups", Handler: show.RunListBackups, TopLevelHelp: []string{"list backups --instance <inst|cluster|all>   List backups"}},

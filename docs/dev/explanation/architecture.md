@@ -37,6 +37,11 @@ containers through domain services that call the backend interfaces. All
 server-state operations (save, graceful stop, backup) go through RCON or
 container-internal scripts.
 
+The optional `ark-scheduler` compose service is the same CLI run in a
+container (`run scheduler`) with the engine socket mounted: it runs
+schedules and the health monitor and serves `/health`. See
+[health-checks.md](health-checks.md).
+
 ### Container script boundary
 
 The runtime scripts in `container/scripts/runtime/` are the container's API.

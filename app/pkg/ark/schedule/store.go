@@ -1,11 +1,9 @@
 package schedule
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/goccy/go-yaml"
 )
@@ -50,39 +48,6 @@ func (s *Service) SaveScheduleFile(file ScheduleFile) error {
 		return err
 	}
 	return os.WriteFile(s.ConfigPath, data, 0o644)
-}
-
-// WriteManagedScheduleCrontab generates the managed crontab file from the
-// current schedule configuration.
-func (s *Service) WriteManagedScheduleCrontab(file ScheduleFile) error {
-	if err := os.MkdirAll(filepath.Dir(s.ManagedCrontabPath), 0o755); err != nil {
-		return err
-	}
-	lines := []string{
-		"# ark-cli managed schedules",
-		"# Do not edit manually; regenerate via ark-cli schedule commands.",
-	}
-	for _, sched := range file.Schedules {
-		if !sched.Enabled || sched.Type != "backup" {
-			continue
-		}
-		preview, cmd := s.BackupCommandParts(sched)
-		lines = append(lines, fmt.Sprintf("# schedule %s: %s", sched.Name, strings.Join(preview, " ")))
-		commandText := ShellJoin(cmd)
-		logPath := filepath.Join(s.RepoDir, ".ark-manage", "logs", "schedules", sched.Name+".log")
-		line := fmt.Sprintf("%s cd %s && %s >> %s 2>&1", strings.TrimSpace(sched.Cron), ShellQuote(s.RepoDir), commandText, ShellQuote(logPath))
-		lines = append(lines, line)
-	}
-	content := strings.Join(lines, "\n") + "\n"
-	return os.WriteFile(s.ManagedCrontabPath, []byte(content), 0o644)
-}
-
-// SaveScheduleAndCrontab saves the schedule file and regenerates the crontab.
-func (s *Service) SaveScheduleAndCrontab(file ScheduleFile) error {
-	if err := s.SaveScheduleFile(file); err != nil {
-		return err
-	}
-	return s.WriteManagedScheduleCrontab(file)
 }
 
 // FindScheduleByName looks up a schedule entry by name.

@@ -30,11 +30,12 @@ func TestRunPruneBackupsFailsWhenLockHeld(t *testing.T) {
 	if err := os.WriteFile(archive, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(lockDir, ".asa1-backup.lock"), []byte("held"), 0o600); err != nil {
-		t.Fatalf("write lock: %v", err)
+	release, err := pkgbackup.AcquireInstanceLock(lockDir, "asa1", 0)
+	if err != nil {
+		t.Fatalf("hold lock: %v", err)
 	}
+	defer release()
 	setEnv(t, "ARK_BACKUP_DIR", backupRoot)
-	var err error
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.BackupService = pkgbackup.New(nil, nil, nil, nil, slog.Default())
 	}, func() {

@@ -85,3 +85,23 @@ def wait_for_web_ready(web_client: WebClient, timeout: int = 30) -> None:
             pass
         time.sleep(0.5)
     raise RuntimeError(f"Web server not ready after {timeout}s")
+
+
+def daemon_host(env: dict[str, str]) -> str:
+    """Host where the engine publishes ports: the tcp:// DOCKER_HOST's host, else this machine."""
+    docker_host = env.get("DOCKER_HOST", "")
+    return urllib.parse.urlparse(docker_host).hostname if docker_host.startswith("tcp://") else "127.0.0.1"
+
+
+def scheduler_health(env: dict[str, str], port: int) -> tuple[int | None, dict | None]:
+    """GET the scheduler's /health on a published port: (status, report), report None on HTTP errors.
+
+    (None, None) when nothing answers.
+    """
+    try:
+        with urllib.request.urlopen(f"http://{daemon_host(env)}:{port}/health", timeout=5) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, None
+    except OSError:
+        return None, None

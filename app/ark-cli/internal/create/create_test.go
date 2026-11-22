@@ -124,6 +124,19 @@ func TestRunCreateRejectsClusterName(t *testing.T) {
 	}
 }
 
+// TestRunCreateRejectsSchedulerName verifies ark-scheduler is reserved for the scheduler service.
+func TestRunCreateRejectsSchedulerName(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	setEnv(t, "COMPOSE_FILE", composePath)
+	err := RunCreate(core.CurrentAppDeps(), []string{"--name", "ark-scheduler", "--admin-password", "adminpass", "--server-password", "serverpass"})
+	if err == nil || err.Error() != "Error: instance name ark-scheduler is reserved for the scheduler service." {
+		t.Fatalf("got %v", err)
+	}
+	if _, statErr := os.Stat(composePath); statErr == nil {
+		t.Fatal("compose file was written")
+	}
+}
+
 // TestBuildSettingsNoServerPassword verifies --no-server-password allows empty server password.
 // - Expect: buildCreateSettings succeeds with empty server password when noServerPassword is set.
 func TestBuildSettingsNoServerPassword(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"ark-cli/internal/compose"
@@ -100,17 +101,14 @@ func FillTestDefaults(d *core.AppDeps, cfg TestDepsConfig) {
 		bs := backup.New(d.Engine, d.ComposeService, d.Lifecycle, runner, d.Logger)
 		bs.DiskUsage = d.DiskUsageForPath
 		bs.LookPath = d.Runtime.LookPath
+		// Same probe as core.FillDefaults: copy through the engine API; a copy error means "not there yet".
 		bs.CheckFileInContainer = func(ctx context.Context, container, path string) (bool, error) {
-			rt := d.Runtime.ContainerRuntime
-			if rt == "" {
-				rt = runtime.RuntimeDocker
-			}
-			cmd := []string{string(rt), "exec", container, "test", "-f", path}
-			result, err := d.Runtime.RunCommand(cmd, ark.CommandOptions{Capture: true})
+			dir, err := ark.TempDir("ark-ready")
 			if err != nil {
 				return false, err
 			}
-			return result.ExitCode == 0, nil
+			defer os.RemoveAll(dir)
+			return d.Engine.CopyFromContainer(ctx, container, path, filepath.Join(dir, "ready")) == nil, nil
 		}
 		d.BackupService = bs
 	}

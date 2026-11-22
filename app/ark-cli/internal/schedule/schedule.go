@@ -1,9 +1,11 @@
 package schedule
 
 import (
+	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	backup "pkg/ark/backup"
@@ -27,7 +29,7 @@ func runCreateScheduleBackup(args []string) error {
 	fs := core.NewCommandFlagSet(
 		"create schedule backup",
 		[]string{"create schedule backup --instance <instance> --name <name> --cron \"m h dom mon dow\" [options]"},
-		"Create a managed backup schedule entry and regenerate the managed crontab file.",
+		"Create a managed backup schedule entry in schedules.yaml.",
 	)
 	instanceFlag := fs.String("instance", "", "Backup target: instance name, 'cluster' or 'all'.")
 	name := fs.String("name", "", "Unique schedule name.")
@@ -92,12 +94,12 @@ func runCreateScheduleBackup(args []string) error {
 		s.ComposeFile = *composeFileFlag
 	}
 	file.Schedules = append(file.Schedules, s)
-	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleAndCrontab(file); err != nil {
+	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {
 		return err
 	}
 	core.Infof("Created schedule %s\n", s.Name)
 	core.Infof("Schedule config: %s\n", core.CurrentAppDeps().ScheduleService.ConfigPath)
-	core.Infof("Managed crontab file: %s\n", core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
+	warnIfSchedulerDisabled(core.CurrentAppDeps(), s.ComposeFile)
 	return nil
 }
 
@@ -150,7 +152,7 @@ func RunRemoveSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"remove schedule",
 		[]string{"remove schedule --name <name>"},
-		"Remove a configured schedule and regenerate the managed crontab file.",
+		"Remove a configured schedule from schedules.yaml.",
 	)
 	nameFlag := fs.String("name", "", "Schedule name.")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
@@ -164,23 +166,29 @@ func RunRemoveSchedule(d *core.AppDeps, args []string) error {
 	if err != nil {
 		return err
 	}
-	out := file.Schedules[:0]
-	removed := false
-	for _, s := range file.Schedules {
-		if s.Name == name {
-			removed = true
-			continue
-		}
-		out = append(out, s)
-	}
-	if !removed {
+	removed, idx, ok := schedule.FindScheduleByName(file, name)
+	if !ok {
 		return schedule.ErrNotFound(name)
 	}
-	file.Schedules = out
-	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleAndCrontab(file); err != nil {
+	file.Schedules = append(file.Schedules[:idx:idx], file.Schedules[idx+1:]...)
+	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {
 		return err
 	}
 	core.Infof("Removed schedule %s\n", name)
-	core.Infof("Managed crontab file: %s\n", core.CurrentAppDeps().ScheduleService.ManagedCrontabPath)
+	warnIfSchedulerDisabled(core.CurrentAppDeps(), removed.ComposeFile)
 	return nil
+}
+
+// warnIfSchedulerDisabled warns when the schedule's compose project has no scheduler service, or when the
+// schedule store (the working directory) is not the one a scheduler in the compose directory reads.
+func warnIfSchedulerDisabled(d *core.AppDeps, composeFileFlag string) {
+	composeFile := compose.ResolveComposeFile(composeFileFlag)
+	// A load error is ignored: validation already ran, and this is only a hint.
+	if project, err := d.RuntimeHelper.LoadComposeProject(composeFile); err == nil && !project.HasScheduler() {
+		core.Warnf("Warning: the scheduler service is not enabled, so schedules will not run. Run 'ark-cli enable scheduler'.\n")
+	}
+	if composeDir, cwd, same, err := compose.ComposeDirIsCwd(composeFile); err == nil && !same {
+		core.Warnf("Warning: schedules are stored in %s; a scheduler only reads %s. Run schedule commands from %s.\n",
+			filepath.Join(cwd, ".ark-manage"), filepath.Join(composeDir, ".ark-manage"), composeDir)
+	}
 }

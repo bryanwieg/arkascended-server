@@ -84,25 +84,28 @@ func RunSetIni(d *core.AppDeps, args []string) error {
 
 // withInstanceStopped stops a running instance with the normal grace (so the world saves), runs fn,
 // then starts it again even when fn failed, so a refused change never leaves the server down.
+// The instance lock is held from the stop to the start.
 func withInstanceStopped(d *core.AppDeps, instance, composeFileFlag string, fn func() error) error {
-	core.Infof("Stopping %s...\n", instance)
-	if err := compose.DoRestartStopInstance(d, runtime.StopCommandRequest{
-		Instance: instance, ComposeFileFlag: composeFileFlag, Timeout: -1, // default grace so the server saves
-	}); err != nil {
-		return err
-	}
-	fnErr := fn()
-	core.Infof("Starting %s...\n", instance)
-	startErr := compose.DoRestartStartInstance(d, runtime.StartCommandRequest{
-		Instance: instance, ComposeFileFlag: composeFileFlag, WaitTimeout: compose.DefaultStartReadyWaitTimeout,
+	return compose.WithInstanceLocks(d, compose.ResolveComposeFile(composeFileFlag), []string{instance}, func() error {
+		core.Infof("Stopping %s...\n", instance)
+		if err := compose.DoRestartStopInstance(d, runtime.StopCommandRequest{
+			Instance: instance, ComposeFileFlag: composeFileFlag, Timeout: -1, // default grace so the server saves
+		}); err != nil {
+			return err
+		}
+		fnErr := fn()
+		core.Infof("Starting %s...\n", instance)
+		startErr := compose.DoRestartStartInstance(d, runtime.StartCommandRequest{
+			Instance: instance, ComposeFileFlag: composeFileFlag, WaitTimeout: compose.DefaultStartReadyWaitTimeout,
+		})
+		if fnErr != nil && startErr != nil {
+			return fmt.Errorf("%w\n%w", fnErr, startErr)
+		}
+		if fnErr != nil {
+			return fnErr
+		}
+		return startErr
 	})
-	if fnErr != nil && startErr != nil {
-		return fmt.Errorf("%w\n%w", fnErr, startErr)
-	}
-	if fnErr != nil {
-		return fnErr
-	}
-	return startErr
 }
 
 func applySetIni(d *core.AppDeps, composeFile, instance string, scriptArgs []string) error {

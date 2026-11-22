@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"pkg/ark"
 	"pkg/ark/backup"
@@ -56,17 +57,16 @@ func FillDefaults(d *AppDeps) {
 		bs := backup.New(d.Engine, d.ComposeService, d.Lifecycle, runner, d.Logger)
 		bs.DiskUsage = d.DiskUsageForPath
 		bs.LookPath = d.Runtime.LookPath
+		// Copy the file out through the engine API instead of `<runtime> exec
+		// test -f`: the scheduler image has no engine binary, and a copy works
+		// on exited containers too. Any copy error means "not there yet".
 		bs.CheckFileInContainer = func(ctx context.Context, container, path string) (bool, error) {
-			rt := d.Runtime.ContainerRuntime
-			if rt == "" {
-				rt = runtime.RuntimeDocker
-			}
-			cmd := []string{string(rt), "exec", container, "test", "-f", path}
-			result, err := d.Runtime.RunCommand(cmd, ark.CommandOptions{Capture: true})
+			dir, err := ark.TempDir("ark-ready")
 			if err != nil {
 				return false, err
 			}
-			return result.ExitCode == 0, nil
+			defer os.RemoveAll(dir)
+			return d.Engine.CopyFromContainer(ctx, container, path, filepath.Join(dir, "ready")) == nil, nil
 		}
 		d.BackupService = bs
 	}
@@ -153,9 +153,6 @@ func MergeNonZeroAppDepFields(dst, src *AppDeps) {
 	}
 	if src.RunBackupFromSchedule != nil {
 		dst.RunBackupFromSchedule = src.RunBackupFromSchedule
-	}
-	if src.InstallManagedSchedulesCrontab != nil {
-		dst.InstallManagedSchedulesCrontab = src.InstallManagedSchedulesCrontab
 	}
 	if src.RunningServiceSnapshot != nil {
 		dst.RunningServiceSnapshot = src.RunningServiceSnapshot

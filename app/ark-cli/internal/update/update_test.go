@@ -158,6 +158,37 @@ func TestRunUpdateMissingService(t *testing.T) {
 	})
 }
 
+// TestRunUpdateSkipsSchedulerService verifies --instance all never targets the scheduler and
+// naming it directly is rejected.
+func TestRunUpdateSkipsSchedulerService(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	writeUpdateComposeFixture(t, composePath, strings.Join([]string{
+		"name: test",
+		"services:",
+		"  asa1:",
+		"    image: ark-server:100",
+		"  ark-scheduler:",
+		"    image: ark-scheduler:abc",
+		"    labels:",
+		"      ark.role: scheduler",
+		"",
+	}, "\n"))
+	withLocalSteamCheck(t, "81.1", "100", "200", nil, func() {
+		out := captureStdout(t, func() {
+			if err := RunUpdate(core.CurrentAppDeps(), []string{"--check", "--compose-file", composePath}); err != nil {
+				t.Fatalf("runUpdate: %v", err)
+			}
+		})
+		if !strings.Contains(out, "asa1 | 81.1 |") || strings.Contains(out, "ark-scheduler") {
+			t.Fatalf("expected only the asa1 row:\n%s", out)
+		}
+		err := RunUpdate(core.CurrentAppDeps(), []string{"--check", "--compose-file", composePath, "--instance", "ark-scheduler"})
+		if err == nil || !strings.Contains(err.Error(), "is the scheduler service") {
+			t.Fatalf("expected scheduler error, got %v", err)
+		}
+	})
+}
+
 // TestRunUpdateCheckLocalImageReportsUpdateViaSteamAPI validates that local image
 // update detection queries the Steam API and compares build IDs.
 func TestRunUpdateCheckLocalImageReportsUpdateViaSteamAPI(t *testing.T) {

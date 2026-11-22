@@ -19,7 +19,7 @@ container/integration/slow:
   - test_dirty_stop
   - test_runtime_signal_shutdown
 
-cli/integration/docker/slow:
+app/ark_cli/integration/docker/slow:
   - test_manage_start_stop
   - test_manage_backup_restore
   - test_manage_restart_single_instance

@@ -48,13 +48,16 @@ func (h *RuntimeHelper) EnsureDockerGroup(stderr io.Writer) error {
 		return nil
 	}
 
-	targetUser := os.Getenv("SUDO_USER")
-	if targetUser == "" {
-		targetUser = os.Getenv("USER")
-	}
-	if targetUser == "" {
+	// Root reaches the socket without the group. Check the account running ark-cli, not SUDO_USER:
+	// under `sudo -iu ark` that is the admin, not ark.
+	if os.Geteuid() == 0 {
 		return nil
 	}
+	userInfo, err := user.Current()
+	if err != nil {
+		return nil
+	}
+	targetUser := userInfo.Username
 
 	dockerGroup, err := user.LookupGroup("docker")
 	if err != nil {
@@ -62,10 +65,6 @@ func (h *RuntimeHelper) EnsureDockerGroup(stderr io.Writer) error {
 		return nil
 	}
 
-	userInfo, err := user.Lookup(targetUser)
-	if err != nil {
-		return nil
-	}
 	groups, err := userInfo.GroupIds()
 	if err != nil {
 		return nil

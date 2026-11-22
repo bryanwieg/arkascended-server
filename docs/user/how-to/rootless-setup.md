@@ -23,12 +23,9 @@ sudo usermod -aG docker ark
 sudo -iu ark      # run all ark-cli commands as ark, from the compose directory
 ```
 
-Docker group check: with the Docker runtime, `ark-cli` checks that the user
-in `SUDO_USER` (else `USER`) is in the `docker` group, and if not runs
-`sudo usermod -aG docker <user>`. Under `sudo -u ark` / `sudo -iu ark`,
-`SUDO_USER` is your admin account, not `ark`. If that account is not in the
-`docker` group, the command tries `sudo` as `ark` and fails. Either add the
-admin account to `docker` or unset `SUDO_USER` in the `ark` shell.
+Docker group check: with the Docker runtime, `ark-cli` checks that the
+account running it (here `ark`) is in the `docker` group, and if not runs
+`sudo usermod -aG docker <user>`. Root is never checked.
 
 ## Option B: Rootless Docker
 

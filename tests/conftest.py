@@ -160,7 +160,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
         # Rule 3: CLI integration tests should use test_env fixture (native/ tests are exempt)
         fixture_names = getattr(item, "fixturenames", [])
-        if "cli" in Path(fspath).parts and not is_native:
+        if "ark_cli" in Path(fspath).parts and not is_native:
             has_tmp_path = "tmp_path" in fixture_names
             has_test_env = "test_env" in fixture_names
             if has_tmp_path and not has_test_env:

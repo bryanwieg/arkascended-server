@@ -23,6 +23,47 @@ services:
     volumes:
       - "ark-server-1-saved:/home/ark-user/ark-server/ShooterGame/Saved"
       - "ark-cluster-1:/home/ark-user/ark-server/ShooterGame/Saved/clusters"
+  # Scheduler service (backups on a schedule, health monitor on :8099), the same as `ark-cli enable scheduler`
+  # writes but built from ./app/ark-cli/ark-cli (run ./.github/build-cli.sh first) and with paths from ${PWD}:
+  # run docker compose and ark-cli from the repo root. On rootful Docker set ARK_UID, ARK_GID (id -u, id -g)
+  # and DOCKER_GID (the socket's group) in .env so files it writes are yours; the defaults suit rootless engines.
+  ark-scheduler:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM scratch
+        COPY app/ark-cli/ark-cli /ark-cli
+        ENTRYPOINT ["/ark-cli"]
+        CMD ["run", "scheduler"]
+    image: ark-scheduler:dev
+    restart: "no"
+    init: true
+    stop_grace_period: 8m
+    user: "${ARK_UID:-0}:${ARK_GID:-0}"
+    group_add: ["${DOCKER_GID:-0}"]
+    security_opt: ["label=disable"]
+    working_dir: "${PWD}"
+    environment:
+      - "TZ=America/Los_Angeles"
+      - "DOCKER_HOST=unix:///var/run/docker.sock"
+      - "ARK_CONTAINER_RUNTIME=docker"
+      - "PWD=${PWD}" # the scheduler reads this file too; ${PWD} must resolve the same inside
+      - "HOME=${PWD}/.ark-manage"
+      - "TMPDIR=${PWD}/.ark-tmp"
+      - "COMPOSE_FILE=${PWD}/docker-compose.dev.yaml"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "${PWD}:${PWD}"
+    ports:
+      - "8099:8099/tcp"
+    healthcheck:
+      test: ["CMD", "/ark-cli", "check", "scheduler"]
+      interval: 1m
+      timeout: 30s
+      retries: 1
+      start_period: 3m
+    labels:
+      ark.role: scheduler
   # asa-server-2:
   #   build:
   #     context: .

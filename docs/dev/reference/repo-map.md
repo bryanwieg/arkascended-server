@@ -211,7 +211,7 @@ See [image-build.md](image-build.md).
 - `.github/dependabot.yml` — Dependabot config
 - `release-please-config.json`, `.release-please-manifest.json` — release
   versioning for the CLI and container
-- `docker-compose.dev.yaml` — dev compose file building `container/dockerfile`
+- `docker-compose.dev.yaml` — dev compose file building `container/dockerfile`, plus an `ark-scheduler` service built from `app/ark-cli/ark-cli`
 - `clean-repo.sh` — remove generated temp data, logs and caches
   (`--dry-run`)
 

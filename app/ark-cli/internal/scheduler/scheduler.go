@@ -66,11 +66,10 @@ func RunRunScheduler(d *core.AppDeps, args []string) error {
 	go func() { served <- srv.Serve(ln); cancel() }()
 
 	var wg sync.WaitGroup
-	for _, loop := range []func(context.Context, <-chan time.Time){runner.Run, monitor.Run} {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		wg.Go(func() { loop(ctx, ticker.C) })
-	}
+	ticker := time.NewTicker(time.Minute) // the monitor needs no alignment
+	defer ticker.Stop()
+	wg.Go(func() { runner.Run(ctx, minuteTicks(ctx)) })
+	wg.Go(func() { monitor.Run(ctx, ticker.C) })
 	wg.Wait()
 
 	shutdownCtx, stop := context.WithTimeout(d.Ctx, 5*time.Second)
@@ -81,6 +80,34 @@ func RunRunScheduler(d *core.AppDeps, args []string) error {
 	}
 	core.Infoln("Scheduler stopped")
 	return nil
+}
+
+// minuteTicks ticks just after each wall-clock minute starts, so a schedule due at hh:mm runs then; a
+// time.Ticker counts from the scheduler's start and ran schedules up to a minute late. Like a Ticker, it
+// drops a tick the runner is too busy to take.
+func minuteTicks(ctx context.Context) <-chan time.Time {
+	c := make(chan time.Time, 1)
+	go func() {
+		for {
+			timer := time.NewTimer(untilNextMinute(time.Now()))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case t := <-timer.C:
+				select {
+				case c <- t:
+				default:
+				}
+			}
+		}
+	}()
+	return c
+}
+
+// untilNextMinute is the wait from now to the start of the next minute (a full minute when now is on one).
+func untilNextMinute(now time.Time) time.Duration {
+	return now.Truncate(time.Minute).Add(time.Minute).Sub(now)
 }
 
 // newMonitor wires the health monitor for composeFile; started is the scheduler's start time.

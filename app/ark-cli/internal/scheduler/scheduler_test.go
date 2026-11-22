@@ -210,3 +210,21 @@ func TestRunSchedulerSignalDoesNotCancelRunningBackup(t *testing.T) {
 		t.Fatalf("state = %+v, want success", state)
 	}
 }
+
+// TestUntilNextMinute verifies the schedule runner wakes on wall-clock minute starts.
+// - Expect: the wait ends at the next hh:mm:00, a full minute when already on one.
+func TestUntilNextMinute(t *testing.T) {
+	base := time.Date(2026, 11, 22, 3, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		now  time.Time
+		want time.Duration
+	}{
+		{base.Add(59 * time.Second), time.Second},
+		{base.Add(1500 * time.Millisecond), 58500 * time.Millisecond},
+		{base, time.Minute},
+	} {
+		if got := untilNextMinute(tc.now); got != tc.want {
+			t.Errorf("untilNextMinute(%s) = %s, want %s", tc.now.Format("15:04:05.000"), got, tc.want)
+		}
+	}
+}

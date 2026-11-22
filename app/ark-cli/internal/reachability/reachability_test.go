@@ -124,7 +124,7 @@ func withInstanceDeps(
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
 				return fakeProject(types.Services{
-					"asa1": {Name: "asa1", Ports: ports},
+					"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Ports: ports},
 				}), nil
 			},
 			RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {

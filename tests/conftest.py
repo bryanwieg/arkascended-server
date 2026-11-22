@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 from helpers.artifacts import (
+    artifacts_retention,
     ensure_cli_binary,
     prune_test_artifacts,
     test_node_dir_name,
@@ -46,9 +47,9 @@ if _ORDER_FILE.is_file():
     if isinstance(loaded, dict):
         _TEST_ORDER = loaded
 
-# Run-state directory for tracking test outcomes across invocations
-# Lives outside .tests/ to avoid being wiped by artifact retention logic
-_RUN_STATE_DIR = Path(__file__).parents[1] / ".tests" / ".run-state"
+# Run-state directory for tracking test outcomes across invocations; it sits in the artifacts dir
+# (ARK_TEST_ARTIFACTS_DIR, default .tests/) and the retention wipe keeps it.
+_RUN_STATE_DIR = tests_root(_repo_root()) / ".run-state"
 
 # Wipe state on explicit request (ARK_TEST_WIPE_STATE=1)
 if os.environ.get("ARK_TEST_WIPE_STATE", "").lower() in ("1", "true", "yes"):
@@ -104,7 +105,7 @@ def _is_integration_test(item: pytest.Item) -> bool:
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: PLR0912, PLR0915
     # Artifact retention: wipe for suite runs, prune for individual runs
     root = _repo_root()
-    retention = int(os.environ.get("ARK_TEST_ARTIFACTS_RETENTION", "7"))
+    retention = artifacts_retention()
     wipe_threshold = int(os.environ.get("ARK_TEST_ARTIFACTS_WIPE_THRESHOLD", "3"))
     if len(items) > wipe_threshold:
         wipe_test_artifacts(root, preserve_recent=retention)
@@ -160,7 +161,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
         # Rule 3: CLI integration tests should use test_env fixture (native/ tests are exempt)
         fixture_names = getattr(item, "fixturenames", [])
-        if "cli" in Path(fspath).parts and not is_native:
+        if "ark_cli" in Path(fspath).parts and not is_native:
             has_tmp_path = "tmp_path" in fixture_names
             has_test_env = "test_env" in fixture_names
             if has_tmp_path and not has_test_env:
@@ -547,7 +548,6 @@ def configure_test_artifacts(
         env["ARK_TEST_DOCKER_LOG"] = str(test_artifact_dir / "docker.log")
         env["ARK_TEST_COMMANDS_LOG"] = str(test_artifact_dir / "commands.log")
         env["ARK_TEST_FRAMEWORK_LOG"] = str(framework_log_path)
-        env["ARK_TEST_DEBUG"] = os.environ.get("ARK_TEST_DEBUG", "")
 
     # Store test_artifact_dir on the item for failure-diagnostics and snapshot capture
     request.node._ark_test_artifact_dir = test_artifact_dir

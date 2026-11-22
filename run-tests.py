@@ -8,15 +8,21 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "tests"))
-from helpers.artifacts import create_suite_run_dir, ensure_python, repo_root, tests_root, wipe_test_artifacts
+from helpers.artifacts import (
+    artifacts_retention,
+    create_suite_run_dir,
+    ensure_python,
+    repo_root,
+    tests_root,
+    wipe_test_artifacts,
+)
 from helpers.batch_runner import SUITE_TITLES, Batch, print_summary, run_batch
 
 REPO_ROOT = repo_root()
 DEFAULT_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
 
 ALL_BATCHES = (
-    Batch("unit", "unit-runtime-log-rotation", 120, ("tests/container/unit/test_log_rotation.py",)),
-    Batch("unit", "unit-rcon-client", 60, ("tests/container/unit/test_rcon_client.py",)),
+    Batch("unit", "container-unit", 300, ("tests/container/unit",)),
     Batch(
         "container-fast",
         "scripts-server-oom-report",
@@ -254,7 +260,7 @@ def main() -> int:
     args = parse_args()
     batches = selected_batches(args.suite)
     extra_pytest_args = normalize_pytest_args(args.pytest_args)
-    ensure_python(args.python_bin, REPO_ROOT)
+    args.python_bin = ensure_python(args.python_bin)
 
     if args.list:
         for batch in batches:
@@ -265,7 +271,7 @@ def main() -> int:
         print("No batches selected.")
         return 0
 
-    wipe_test_artifacts(REPO_ROOT)
+    wipe_test_artifacts(REPO_ROOT, preserve_recent=artifacts_retention())
     os.environ["ARK_TEST_WIPE_STATE"] = "1"
     title = SUITE_TITLES.get(args.suite, "All Tests") if args.suite != "all" else "All Tests"
     print(title, flush=True)

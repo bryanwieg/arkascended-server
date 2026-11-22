@@ -20,9 +20,8 @@ How to run tests: [Run tests](../how-to/run-tests.md). Log files and diagnostics
 | Domain service (Go) | `app/pkg/ark/*_test.go`, `app/pkg/ark/*/*_test.go` | Domain services against interface mocks; no runtime |
 | Backend conformance (Go) | `app/pkg/ark/conformance/` (suite), `app/pkg/ark/sdkbackend_test/` (runner) | Same suite against Docker and rootless Podman; `integration` build tag |
 
-Markers (`pytest.ini`): `unit`, `container`, `podman`, `fast`, `slow`, `sdk_backend`, `lite`,
-`real_server`. Only `unit`, `container`, `podman`, `lite` and `real_server` are applied;
-fast/slow behavior follows the directory.
+Markers (`pytest.ini`): `unit`, `container`, `podman`, `lite`, `real_server`. Fast/slow
+behavior follows the directory, not a marker.
 
 ### Fast vs slow tests
 
@@ -98,7 +97,7 @@ can't make it pass silently.
 
 `tests/.test-order.yaml` lists ordered groups (directory relative to `tests/` → test file
 stems). Listed files run in that order; if one fails, later ones in the group are skipped.
-Results persist in `.tests/.run-state/` across runs; `ARK_TEST_WIPE_STATE=1` clears them.
+Results persist in `.run-state/` in the artifacts dir (`ARK_TEST_ARTIFACTS_DIR`, default `.tests/`) across runs; `ARK_TEST_WIPE_STATE=1` clears them.
 
 ### Slow test protection
 

@@ -41,20 +41,27 @@ func (h *RuntimeHelper) RunWithPrivs(command []string) error {
 }
 
 // EnsureDockerGroup adds the current user to the docker group if needed.
-// Rootless Podman skips this check.
+// It applies only to the rootful daemon socket; rootless Docker and Podman skip it.
 func (h *RuntimeHelper) EnsureDockerGroup(stderr io.Writer) error {
-	// Rootless Podman needs no group membership.
 	if h.Runtime.ContainerRuntime == RuntimePodman {
 		return nil
 	}
-
-	targetUser := os.Getenv("SUDO_USER")
-	if targetUser == "" {
-		targetUser = os.Getenv("USER")
-	}
-	if targetUser == "" {
+	// The docker group grants the rootful socket (root-equivalent). Rootless Docker needs DOCKER_HOST
+	// pointing at the user's own socket, so any other endpoint needs no group.
+	if host := os.Getenv("DOCKER_HOST"); host != "" && host != "unix:///var/run/docker.sock" {
 		return nil
 	}
+
+	// Root reaches the socket without the group. Check the account running ark-cli, not SUDO_USER:
+	// under `sudo -iu ark` that is the admin, not ark.
+	if os.Geteuid() == 0 {
+		return nil
+	}
+	userInfo, err := user.Current()
+	if err != nil {
+		return nil
+	}
+	targetUser := userInfo.Username
 
 	dockerGroup, err := user.LookupGroup("docker")
 	if err != nil {
@@ -62,10 +69,6 @@ func (h *RuntimeHelper) EnsureDockerGroup(stderr io.Writer) error {
 		return nil
 	}
 
-	userInfo, err := user.Lookup(targetUser)
-	if err != nil {
-		return nil
-	}
 	groups, err := userInfo.GroupIds()
 	if err != nil {
 		return nil

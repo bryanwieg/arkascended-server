@@ -167,13 +167,11 @@ def stop_service_watcher(compose_file: Path, service: str) -> None:
 def stop_all_watchers() -> None:
     """Kill all watcher subprocesses. Called during fixture teardown."""
     with _WATCHER_LOCK:
-        keys = list(_WATCHERS.keys())
+        infos = list(_WATCHERS.values())
         _WATCHERS.clear()
         _EXPECTED_STOP.clear()
-    for key in keys:
-        info = _WATCHERS.get(key)
-        if info is not None:
-            _kill_proc(info["proc"])
+    for info in infos:
+        _kill_proc(info["proc"])
     log_framework("compose", "stopped all watchers")
 
 

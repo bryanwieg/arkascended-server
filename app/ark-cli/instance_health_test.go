@@ -43,6 +43,7 @@ func TestRunCheckInstanceReportsHealthy(t *testing.T) {
 		withInstanceHealthDeps(t, types.Services{
 			"asa1": {
 				Name:        "asa1",
+				Labels:      types.Labels{ark.PortASALabel: "27015"},
 				Image:       "ark-server:latest",
 				Ports:       testPorts("27015:27015/udp"),
 				Environment: testEnv("MAP_NAME=TheIsland_WP"),

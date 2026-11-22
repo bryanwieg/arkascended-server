@@ -41,7 +41,7 @@ var stopReasonExit = 0
 func runLocalUpdate(t *testing.T, args []string, startFails bool, extra ...func(*core.AppDeps)) (string, []string, *update.UpdateAttempt, error) {
 	t.Helper()
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    image: ark-server:100\n")
+	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n")
 	var calls []string
 	var runErr error
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
@@ -233,7 +233,7 @@ func TestRunUpdateLocalRolloutAlertsWebhookOnRollback(t *testing.T) {
 // any instance is stopped, so a failed build (SteamCMD 0x6, ...) leaves every instance running.
 func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:100\n  asa2:\n    image: ark-server:100\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n  asa2:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n"
 	writeUpdateComposeFixture(t, composePath, seed)
 	fakeBackups(t)
 	var calls []string

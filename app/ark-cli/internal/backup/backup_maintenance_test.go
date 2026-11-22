@@ -187,7 +187,7 @@ func TestRunPruneBackupsAllInstances(t *testing.T) {
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"a": {Name: "a"}, "b": {Name: "b"}}), nil
+				return fakeProject(types.Services{"a": {Name: "a", Labels: types.Labels{ark.PortASALabel: "27015"}}, "b": {Name: "b", Labels: types.Labels{ark.PortASALabel: "27015"}}}), nil
 			},
 		}
 		d.BackupService = bs
@@ -242,7 +242,7 @@ func TestRunPruneBackupsAllIncludesCluster(t *testing.T) {
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"a": {Name: "a"}}), nil
+				return fakeProject(types.Services{"a": {Name: "a", Labels: types.Labels{ark.PortASALabel: "27015"}}}), nil
 			},
 		}
 		d.BackupService = bs
@@ -269,7 +269,7 @@ func TestRunPruneBackupsDryRunAllWithoutClusterDir(t *testing.T) {
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"a": {Name: "a"}}), nil
+				return fakeProject(types.Services{"a": {Name: "a", Labels: types.Labels{ark.PortASALabel: "27015"}}}), nil
 			},
 		}
 	}, func() {

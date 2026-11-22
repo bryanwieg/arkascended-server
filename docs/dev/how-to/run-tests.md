@@ -31,7 +31,7 @@ the batches a suite selects.
 
 | Option | Effect |
 |---|---|
-| `--python PATH` | Interpreter for pytest. Default `TEST_BATCH_PYTHON`, else `./.venv/bin/python`. Relative paths resolve against the repo root, so pass an absolute path for a system Python (`--python "$(command -v python3)"`). |
+| `--python PATH` | Interpreter for pytest. Default `TEST_BATCH_PYTHON`, else `./.venv/bin/python`. Resolved as a shell would: a bare name (`python3`) from `PATH`, a relative path from the current directory. |
 | `--lite` | Run every container test on the lite image (fake ARK server, no ARK download); `real_server` tests skip. [Lite image](../reference/test-architecture.md#lite-image-no-ark-server) |
 | `--list` | Print selected batches, run nothing |
 | `-- ARGS` | Extra pytest args. Without `--`, flags such as `-v` are rejected. |
@@ -55,7 +55,7 @@ Use this for single files or tests, and for directories `run-tests.py` doesn't c
 .venv/bin/python -m pytest tests/app/ark_web/integration/
 ```
 
-Markers (`pytest.ini`): `unit`, `container`, `fast`, `slow`, `podman`, `sdk_backend`. Example:
+Markers (`pytest.ini`): `unit`, `container`, `lite`, `real_server`, `podman`. Example:
 `pytest -m unit tests/container/unit` (what CI runs).
 
 ## Layout

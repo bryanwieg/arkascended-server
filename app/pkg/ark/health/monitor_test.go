@@ -54,7 +54,7 @@ func newMonitorEnv(t *testing.T, instances map[string]*fakeInstance) (*monitorEn
 	env := &monitorEnv{now: probeNow, instances: instances}
 	services := types.Services{}
 	for name, inst := range instances {
-		svc := types.ServiceConfig{Name: name}
+		svc := types.ServiceConfig{Name: name, Labels: types.Labels{ark.PortASALabel: "7777"}}
 		if !inst.noUDP {
 			svc.Ports = []types.ServicePortConfig{{Target: 7777, Protocol: "udp"}}
 		}

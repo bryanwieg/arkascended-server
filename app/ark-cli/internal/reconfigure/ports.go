@@ -120,49 +120,27 @@ func setRCONHostIP(project *types.Project, serviceName, hostIP string) (bool, er
 	return changed, err
 }
 
-// upsertServiceASAPort updates the ASA game port in a service definition.
-//
-// New-scheme services (with ark.port.asa label): the port binding is 1:1
-// (published == target). Both the binding, the label, and the ASA_PORT env var
-// are kept in sync.
-//
-// Legacy services (no label): only the published side of the binding is
-// updated; the fixed container target (27015) is preserved unchanged.
+// upsertServiceASAPort moves the ASA game port: the binding stays 1:1 (published == target) and the
+// ark.port.asa label and ASA_PORT env var follow it.
 func upsertServiceASAPort(project *types.Project, serviceName string, newPort int) (bool, error) {
-	svc := project.Services[serviceName]
-	newScheme := svc.Labels[runtime.LabelPortASA] != ""
-
-	// Determine the target port to search for in existing bindings.
-	currentPort := uint32(arkContainerPortUDP)
-	if newScheme {
-		if raw := svc.Labels[runtime.LabelPortASA]; raw != "" {
-			if port, err := strconv.Atoi(raw); err == nil && port > 0 {
-				currentPort = uint32(port)
-			}
-		}
-	}
+	currentPort, _ := strconv.Atoi(project.Services[serviceName].Labels[runtime.LabelPortASA])
+	target := uint32(newPort) //nolint:gosec // runtime.ParsePort limits --asa-port to 1..65535
 
 	var updated bool
 	err := composeutil.MutateService(project, serviceName, func(s *types.ServiceConfig) {
 		found := false
 		for i, p := range s.Ports {
-			if host.NormalizePortProtocol(p.Protocol) != "udp" || p.Target != currentPort {
+			if host.NormalizePortProtocol(p.Protocol) != "udp" || int(p.Target) != currentPort {
 				continue
 			}
-			if newScheme {
-				s.Ports[i].Target = uint32(newPort)
-			}
-			s.Ports[i].Published = strconv.Itoa(newPort)
 			pub, _ := composeutil.PublishedPort(p)
-			updated = pub != newPort || (newScheme && p.Target != uint32(newPort))
+			updated = pub != newPort || p.Target != target
+			s.Ports[i].Target = target
+			s.Ports[i].Published = strconv.Itoa(newPort)
 			found = true
 			break
 		}
 		if !found {
-			target := uint32(arkContainerPortUDP)
-			if newScheme {
-				target = uint32(newPort)
-			}
 			s.Ports = append(s.Ports, types.ServicePortConfig{
 				Target:    target,
 				Published: strconv.Itoa(newPort),
@@ -170,16 +148,14 @@ func upsertServiceASAPort(project *types.Project, serviceName string, newPort in
 			})
 			updated = true
 		}
-		if newScheme {
-			if s.Labels == nil {
-				s.Labels = types.Labels{}
-			}
-			s.Labels[runtime.LabelPortASA] = strconv.Itoa(newPort)
-			if s.Environment == nil {
-				s.Environment = types.MappingWithEquals{}
-			}
-			composeutil.SetEnv(s.Environment, "ASA_PORT", strconv.Itoa(newPort))
+		if s.Labels == nil {
+			s.Labels = types.Labels{}
 		}
+		s.Labels[runtime.LabelPortASA] = strconv.Itoa(newPort)
+		if s.Environment == nil {
+			s.Environment = types.MappingWithEquals{}
+		}
+		composeutil.SetEnv(s.Environment, "ASA_PORT", strconv.Itoa(newPort))
 	})
 	return updated, err
 }

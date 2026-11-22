@@ -26,7 +26,14 @@ Common flags:
 - `--compose-file <path>`: compose file to use. Default `./docker-compose.yaml`,
   or `COMPOSE_FILE` if set. Accepted by every command that reads compose,
   except `validate backup` and `show backup` (see below).
-- `--instance all`: where accepted, targets every service in the compose file.
+- Instances: the compose services with an `ark.port.asa` label, which
+  `create instance` always sets. Other services in the file (the scheduler, a
+  web UI, …) are left alone; naming one with `--instance` fails with
+  "not an ARK instance". An older instance without the label (game port
+  published as `<port>:27015/udp`) must be moved to the current layout by
+  hand: publish `<port>:<port>/udp`, set `ASA_PORT=<port>`, and add the
+  label `ark.port.asa: "<port>"`.
+- `--instance all`: where accepted, targets every instance in the compose file.
 - Backup root: `<compose-dir>/backups/`, or `ARK_BACKUP_DIR`. Archives for an
   instance go in `<backup-root>/<instance>/`.
 
@@ -552,7 +559,8 @@ exclusive). Unset flags keep their current value.
 The `ark-scheduler` compose service runs `ark-cli run scheduler`: enabled
 backup schedules when due, and a health monitor that checks every instance and
 schedule once a minute and restarts hung instances. It is marked with the
-label `ark.role: scheduler` and is not an instance: `list instances`,
+label `ark.role: scheduler` and, having no `ark.port.asa` label, is not an
+instance: `list instances`,
 `--instance all` and the other instance commands ignore it, and
 `ark-scheduler` cannot be used as an instance name. Behaviour, health checks
 and restart rules: [Schedule automatic backups](../how-to/schedule-backups.md).
@@ -671,7 +679,7 @@ ark-cli check scheduler --json
 Two modes; `--port` and `--instance` are mutually exclusive.
 
 - Instance mode (`--instance`): checks the game UDP port (from the
-  `ark.port.asa` label or port binding) and the host port published for the
+  `ark.port.asa` label) and the host port published for the
   RCON container port (`RCON_PORT`, default 27020/tcp). The instance must be running unless `--listen`. If
   RCON is published on `127.0.0.1` only, a note says CLOSED from remote is
   expected.

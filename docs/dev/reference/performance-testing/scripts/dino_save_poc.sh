@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
+ROOT_DIR=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$ROOT_DIR"
+# Temp files and output go to the project temp dir (gitignored), like the CLI.
+tmp_dir=${ARK_TMP_DIR:-.ark-tmp}
+mkdir -p "$tmp_dir"
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || { echo "missing required command: $1" >&2; exit 1; }; }
 need_cmd docker
@@ -16,7 +19,7 @@ RCON_HOST=${5:-localhost:27020}
 DINO_CMD=${6:-"cheat Summon Dodo_Character_BP_C"}
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-out_dir="codex/benchmarks"
+out_dir="$tmp_dir/benchmarks"
 results_csv="$out_dir/dino-save-poc-$stamp.csv"
 log_file="$out_dir/dino-save-poc-$stamp.log"
 report_md="$out_dir/dino-save-poc-$stamp-report.md"
@@ -74,7 +77,7 @@ cpu_window() {
     append_row "$(ts_utc)" "$phase" 0 cpu_sample "$pct" percent "sample=$i/$samples"
     [ "$i" -lt "$samples" ] && sleep "$interval"
   done
-  tmpf=$(mktemp)
+  tmpf=$(mktemp -p "$tmp_dir")
   printf '%s\n' "${vals[@]}" | rg '^[0-9]+(\.[0-9]+)?$' > "$tmpf" || true
   count=$(wc -l < "$tmpf" | tr -d ' ')
   if [ "$count" -gt 0 ]; then

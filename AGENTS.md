@@ -40,8 +40,8 @@ Run through this every time you start a task:
 - **Always check `./.tests/` for detailed test logs before diagnosing test
   failures.** The artifacts contain the actual failure context (exit codes,
   stdout, compose state) that test runner output alone doesn't show.
-- **Follow existing patterns — don't hand-roll alternatives.** Use
-  `run_cmd`/`wait_for` helpers instead of raw subprocess calls. Use
+- **Follow existing patterns — don't hand-roll alternatives.** In tests, use
+  the `run_cmd`/`wait_for` fixtures instead of raw subprocess calls. Use
   `ComposeService.LoadProject`/`SaveProject` instead of direct file I/O. Use
   `emit_event`/`emit_warning`/`emit_error` instead of `print()` in container scripts. Place
   tests in the correct directory structure. If a framework function exists for
@@ -138,7 +138,11 @@ of regenerating from a template. All compose reads go through
 files directly. The `LoadProject` → mutate → `SaveProject` round-trip is
 the only sanctioned compose I/O path. Direct file I/O bypasses the project
 name derivation (causing "project name must not be empty" on Docker Compose
-v5) and loses the AST-preservation logic.
+v5) and loses the AST-preservation logic. The one exception is adding or
+removing a service, which `SaveProject` refuses: edit the text with the
+`runtime` helpers (`InsertService`, `RemoveServiceBlock`, …) and write it
+with `compose.WriteComposeText`, which replaces the file only if the edit
+loads.
 
 ### Seam dependency injection (Go CLI)
 
@@ -173,7 +177,7 @@ testutil.WithPatchedAppDeps(t, testutil.TestDepsConfig{}, func(d *core.AppDeps) 
 
 These are settled architectural decisions. Improvements within these patterns are welcome; but changes to these design boundaries should not be executed without first understanding why the principle exists, and discussing your observations with the user.
 
-See [design-decisions.md](docs/dev/explanation/design-decisions.md) for detailed rationale on: Proton/Wine choice, outcome-driven tests over mock-heavy tests, three-layer isolation principles, RCON over process signals, YAML AST editing, backup retention floor, and the baked default GameUserSettings.ini.
+See [design-decisions.md](docs/dev/explanation/design-decisions.md) for detailed rationale on: Proton/Wine choice, outcome-driven tests over mock-heavy tests, the two-layer host CLI/container split, RCON over process signals, YAML AST editing, backup retention floor, and the baked default GameUserSettings.ini.
 
 ## Adding a CLI command
 
@@ -182,7 +186,7 @@ See [add-cli-command.md](docs/dev/how-to/add-cli-command.md) for the full tutori
 
 **Quick reference:**
 
-1. **Register the route** — Add an entry to `CommandRegistry` in `app/ark-cli/internal/cmd/registry_entries.go` with `Verb`, `Object`, `Route`, `Handler`, and `TopLevelHelp`. Routes use `verb_object` form when the verb spans multiple objects (the common case); bare verb when unique.
+1. **Register the route** — Add an entry to `CommandRegistry` in `app/ark-cli/internal/cmd/registry_entries.go` with `Verb`, `Object`, `Route`, `Handler`, and `TopLevelHelp`. `Route` is an internal unique key: use `verb_object` (some older entries keep a bare verb such as `create` or `start`; don't copy them).
 2. **Write the handler** — Add a `Run*` function in `app/ark-cli/internal/`. Use `core.NewCommandFlagSet` for flags and `core.ParseNoPositionalArgs`; targets are flags (`--instance`, `--name`), never positional. Access Docker/filesystem/external state only through `d.*` seams. Keep handlers to ~10–20 lines; extract domain logic into `app/pkg/ark/` services.
 3. **Write tests** — Contract test: use `testutil.WithPatchedAppDeps` to swap seams. Integration tests: test against real containers using the test framework in `tests/`. See [test-architecture.md](docs/dev/reference/test-architecture.md) for placement rules.
 4. **Update docs** — Add to `docs/user/reference/cli-commands.md` with examples. If user-facing, add a how-to under `docs/user/how-to/`.

@@ -12,11 +12,13 @@ func projectWith(services types.Services) *ComposeProject {
 	return &ComposeProject{Project: &types.Project{Services: services}}
 }
 
-// TestSchedulerServiceIsNotAnInstance verifies the labelled scheduler is hidden from instance enumeration.
-func TestSchedulerServiceIsNotAnInstance(t *testing.T) {
+// TestOnlyLabelledServicesAreInstances verifies instances are the services with the ark.port.asa label.
+// - Expect: the scheduler and an unlabelled service (such as ark-web) are not listed and EnsureService refuses them.
+func TestOnlyLabelledServicesAreInstances(t *testing.T) {
 	p := projectWith(types.Services{
-		"asa2":           {Name: "asa2"},
-		"asa1":           {Name: "asa1", Labels: types.Labels{RoleLabel: "other"}},
+		"asa2":           {Name: "asa2", Labels: types.Labels{PortASALabel: "7778"}},
+		"asa1":           {Name: "asa1", Labels: types.Labels{PortASALabel: "7777"}},
+		"ark-web":        {Name: "ark-web"},
 		SchedulerService: {Name: SchedulerService, Labels: types.Labels{RoleLabel: SchedulerRole}},
 	})
 	if got := p.ServiceNames(); !reflect.DeepEqual(got, []string{"asa1", "asa2"}) {
@@ -32,6 +34,10 @@ func TestSchedulerServiceIsNotAnInstance(t *testing.T) {
 	if err == nil || err.Error() != "Error: ark-scheduler is the scheduler service, not an ARK instance" {
 		t.Fatalf("EnsureService(scheduler) = %v", err)
 	}
+	err = p.EnsureService("ark-web")
+	if err == nil || err.Error() != "Error: ark-web is not an ARK instance (no ark.port.asa label)" {
+		t.Fatalf("EnsureService(ark-web) = %v", err)
+	}
 	if err := p.EnsureService("nope"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("EnsureService(nope) = %v", err)
 	}
@@ -42,8 +48,5 @@ func TestHasSchedulerFalseWithoutLabel(t *testing.T) {
 	p := projectWith(types.Services{SchedulerService: {Name: SchedulerService}})
 	if p.HasScheduler() {
 		t.Fatal("HasScheduler = true")
-	}
-	if got := p.ServiceNames(); !reflect.DeepEqual(got, []string{SchedulerService}) {
-		t.Fatalf("ServiceNames = %v", got)
 	}
 }

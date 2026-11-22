@@ -104,8 +104,10 @@ func TestRunUpdateCheckDefaultsToAllTarget(t *testing.T) {
 		"name: test",
 		"services:",
 		"  asa1:",
+		"    labels: {ark.port.asa: '27015'}",
 		"    image: ark-server:100",
 		"  asa2:",
+		"    labels: {ark.port.asa: '27015'}",
 		"    image: ark-server:100",
 		"",
 	}, "\n")
@@ -135,7 +137,7 @@ func TestRunUpdateCheckDefaultsToAllTarget(t *testing.T) {
 
 func TestRunUpdateWarnsOnNonLocalImage(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    image: example/ark-server:81.1\n")
+	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: example/ark-server:81.1\n")
 	withLocalSteamCheck(t, "81.1", "100", "200", nil, func() {
 		out := captureStdout(t, func() {
 			if err := RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--rollout"}); err != nil {
@@ -150,7 +152,7 @@ func TestRunUpdateWarnsOnNonLocalImage(t *testing.T) {
 
 func TestRunUpdateMissingService(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    image: ark-server:100\n")
+	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n")
 	withLocalSteamCheck(t, "81.1", "100", "200", nil, func() {
 		if err := RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--instance", "asa2"}); err == nil {
 			t.Fatal("expected missing service error")
@@ -166,6 +168,7 @@ func TestRunUpdateSkipsSchedulerService(t *testing.T) {
 		"name: test",
 		"services:",
 		"  asa1:",
+		"    labels: {ark.port.asa: '27015'}",
 		"    image: ark-server:100",
 		"  ark-scheduler:",
 		"    image: ark-scheduler:abc",
@@ -193,7 +196,7 @@ func TestRunUpdateSkipsSchedulerService(t *testing.T) {
 // update detection queries the Steam API and compares build IDs.
 func TestRunUpdateCheckLocalImageReportsUpdateViaSteamAPI(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	writeUpdateComposeFixture(t, composePath, seed)
 
 	withLocalSteamCheck(t, "81.1", "100", "200", nil, func() {
@@ -213,7 +216,7 @@ func TestRunUpdateCheckLocalImageReportsUpdateViaSteamAPI(t *testing.T) {
 // build IDs result in a skip action.
 func TestRunUpdateCheckLocalImageNoUpdateWhenBuildIDMatches(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n"
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"
 	writeUpdateComposeFixture(t, composePath, seed)
 
 	withLocalSteamCheck(t, "81.1", "100", "100", nil, func() {
@@ -237,8 +240,10 @@ func TestRunUpdateRebuildsLocalImageOncePerUniqueImage(t *testing.T) {
 		"name: test",
 		"services:",
 		"  asa1:",
+		"    labels: {ark.port.asa: '27015'}",
 		"    image: ark-server:latest",
 		"  asa2:",
+		"    labels: {ark.port.asa: '27015'}",
 		"    image: ark-server:latest",
 		"",
 	}, "\n")
@@ -306,8 +311,10 @@ func TestRunUpdateRestartModes(t *testing.T) {
 				"name: test",
 				"services:",
 				"  asa2:",
+				"    labels: {ark.port.asa: '27015'}",
 				"    image: ark-server:100",
 				"  asa1:",
+				"    labels: {ark.port.asa: '27015'}",
 				"    image: ark-server:100",
 				"",
 			}, "\n"),
@@ -317,7 +324,7 @@ func TestRunUpdateRestartModes(t *testing.T) {
 		},
 		{
 			name:             "rollout alias triggers restart",
-			seed:             "name: test\nservices:\n  asa1:\n    image: ark-server:100\n",
+			seed:             "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n",
 			modeArg:          "--rollout",
 			wantRestartOrder: []string{"asa1"},
 			wantUpdatedCount: 1,

@@ -65,8 +65,8 @@ func TestRunShowComposeOutputsSummary(t *testing.T) {
 				LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
 					return fakeProjectWithVolumes(
 						types.Services{
-							"b": {Name: "b", Image: "img-b"},
-							"a": {Name: "a", Image: "img-a"},
+							"b": {Name: "b", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "img-b"},
+							"a": {Name: "a", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "img-a"},
 						},
 						types.Volumes{
 							"va": types.VolumeConfig{},
@@ -104,7 +104,8 @@ func TestRunShowVolumePathsOutputsResolvedMountpoints(t *testing.T) {
 					return fakeProjectWithVolumes(
 						types.Services{
 							"asa1": {
-								Name: "asa1",
+								Name:   "asa1",
+								Labels: types.Labels{ark.PortASALabel: "27015"},
 								Volumes: []types.ServiceVolumeConfig{
 									{Source: "asa1-saved", Target: "/home/ark-user/ark-server/ShooterGame/Saved", Type: "volume"},
 									{Source: "ark-cluster-1", Target: "/home/ark-user/ark-server/ShooterGame/Saved/clusters", Type: "volume"},
@@ -188,6 +189,7 @@ func TestRunShowInstanceOutputsDetails(t *testing.T) {
 					return fakeProject(types.Services{
 						"asa1": {
 							Name:        "asa1",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27015:27015/udp"),
 							Environment: testEnv("MAP_NAME=TheIsland_WP", "SESSION_NAME=MySession"),
@@ -244,9 +246,10 @@ func TestRunShowInstanceStopped(t *testing.T) {
 				LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
 					return fakeProject(types.Services{
 						"asa1": {
-							Name:  "asa1",
-							Image: "ark-server:latest",
-							Ports: testPorts("27015:27015/udp"),
+							Name:   "asa1",
+							Labels: types.Labels{ark.PortASALabel: "27015"},
+							Image:  "ark-server:latest",
+							Ports:  testPorts("27015:27015/udp"),
 						},
 					}), nil
 				},
@@ -284,6 +287,7 @@ func TestRunShowInstanceJSON(t *testing.T) {
 					return fakeProject(types.Services{
 						"asa1": {
 							Name:        "asa1",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27015:27015/udp"),
 							Environment: testEnv("MAP_NAME=TheIsland_WP", "SESSION_NAME=MyServer"),
@@ -329,12 +333,14 @@ func TestRunListInstancesOutputsSortedSummary(t *testing.T) {
 					return fakeProject(types.Services{
 						"b": {
 							Name:        "b",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27016:27015/udp"),
 							Environment: testEnv("MAP_NAME=ScorchedEarth"),
 						},
 						"a": {
 							Name:        "a",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27015:27015/udp"),
 							Environment: testEnv("MAP_NAME=TheIsland_WP"),
@@ -382,12 +388,14 @@ func TestRunListInstancesJSON(t *testing.T) {
 					return fakeProject(types.Services{
 						"a": {
 							Name:        "a",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27015:27015/udp"),
 							Environment: testEnv("MAP_NAME=TheIsland_WP"),
 						},
 						"b": {
 							Name:        "b",
+							Labels:      types.Labels{ark.PortASALabel: "27015"},
 							Image:       "ark-server:latest",
 							Ports:       testPorts("27016:27015/udp"),
 							Environment: testEnv("MAP_NAME=ScorchedEarth"),
@@ -461,8 +469,8 @@ func TestRunShowComposeReportsSummary(t *testing.T) {
 				LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
 					return fakeProjectWithVolumes(
 						types.Services{
-							"svc2": {Name: "svc2", Image: "img-2"},
-							"svc1": {Name: "svc1", Image: "img-1"},
+							"svc2": {Name: "svc2", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "img-2"},
+							"svc1": {Name: "svc1", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "img-1"},
 						},
 						types.Volumes{},
 					), nil
@@ -498,7 +506,8 @@ func TestRunShowVolumePathsOutputsMountPaths(t *testing.T) {
 					return fakeProjectWithVolumes(
 						types.Services{
 							"asa1": {
-								Name: "asa1",
+								Name:   "asa1",
+								Labels: types.Labels{ark.PortASALabel: "27015"},
 								Volumes: []types.ServiceVolumeConfig{
 									{Source: "asa1-saved", Target: "/home/ark-user/ark-server/ShooterGame/Saved", Type: "volume"},
 								},
@@ -548,7 +557,7 @@ func TestRunShowInstancePrintsIniContentOrError(t *testing.T) {
 		withPatchedAppDeps(t, func(d *core.AppDeps) {
 			d.ComposeService = &arktest.MockCompose{
 				LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-					return fakeProject(types.Services{"asa1": {Name: "asa1", Image: "ark-server:latest"}}), nil
+					return fakeProject(types.Services{"asa1": {Name: "asa1", Labels: types.Labels{ark.PortASALabel: "27015"}, Image: "ark-server:latest"}}), nil
 				},
 				RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
 					return map[string]struct{}{"asa1": {}}, nil

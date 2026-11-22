@@ -24,6 +24,7 @@ import (
 const instanceCompose = `# my ark servers
 services:
   asa1:
+    labels: {ark.port.asa: '27015'}
     image: ark-server:abc123 # pinned
     environment:
       - TZ=Europe/Berlin
@@ -172,7 +173,7 @@ func TestEnableSchedulerInsertsServiceAndIsIdempotent(t *testing.T) {
 	if n := strings.Count(got, "  "+ark.SchedulerService+":"); n != 1 {
 		t.Fatalf("%d scheduler blocks:\n%s", n, got)
 	}
-	if !strings.HasPrefix(got, "# my ark servers\nservices:\n  asa1:\n    image: ark-server:abc123 # pinned\n    environment:\n      - TZ=Europe/Berlin\n") {
+	if !strings.HasPrefix(got, "# my ark servers\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:abc123 # pinned\n    environment:\n      - TZ=Europe/Berlin\n") {
 		t.Fatalf("instance text changed:\n%s", got)
 	}
 	project := f.loaded(t)
@@ -270,7 +271,7 @@ func TestDisableSchedulerRemovesBlockWithGraceTimeout(t *testing.T) {
 	if f.loaded(t).HasScheduler() {
 		t.Fatalf("scheduler still in compose file:\n%s", f.text(t))
 	}
-	if got := f.text(t); !strings.HasPrefix(got, "# my ark servers\nservices:\n  asa1:\n    image: ark-server:abc123 # pinned\n    environment:\n      - TZ=Europe/Berlin\n") {
+	if got := f.text(t); !strings.HasPrefix(got, "# my ark servers\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:abc123 # pinned\n    environment:\n      - TZ=Europe/Berlin\n") {
 		t.Fatalf("instance text changed:\n%s", got)
 	}
 }

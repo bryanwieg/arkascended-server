@@ -23,7 +23,7 @@ func clusterProject(mounts map[string]string) *ark.ComposeProject {
 		if source != "" {
 			volumes = append(volumes, types.ServiceVolumeConfig{Type: "volume", Source: source, Target: ClusterMountPath})
 		}
-		services[name] = types.ServiceConfig{Name: name, Volumes: volumes}
+		services[name] = types.ServiceConfig{Name: name, Volumes: volumes, Labels: types.Labels{ark.PortASALabel: "7777"}}
 	}
 	return &ark.ComposeProject{Project: &types.Project{Services: services}}
 }
@@ -49,7 +49,7 @@ func TestResolveClusterVolume(t *testing.T) {
 	}
 
 	bind := &ark.ComposeProject{Project: &types.Project{Services: types.Services{
-		"a": {Name: "a", Volumes: []types.ServiceVolumeConfig{{Type: "bind", Source: "/srv/cluster", Target: ClusterMountPath}}},
+		"a": {Name: "a", Labels: types.Labels{ark.PortASALabel: "7777"}, Volumes: []types.ServiceVolumeConfig{{Type: "bind", Source: "/srv/cluster", Target: ClusterMountPath}}},
 	}}}
 	if cv, err := ResolveClusterVolume(bind); err != nil || cv.Source != "/srv/cluster" {
 		t.Fatalf("bind mount: got %+v, %v", cv, err)

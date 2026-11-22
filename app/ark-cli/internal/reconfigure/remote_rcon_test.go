@@ -17,7 +17,7 @@ func writeRemoteRCONCompose(t *testing.T, rconLine string) string {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n    ports:\n" +
 		"      - \"27015:27015/udp\"\n" + rconLine +
-		"    labels:\n      ark.port.rcon: \"28020\"\n"
+		"    labels:\n      ark.port.asa: \"27015\"\n      ark.port.rcon: \"28020\"\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestRemoteRCONNoChangeWhenAlreadySet(t *testing.T) {
 
 func TestRemoteRCONErrorsWithoutRCONBinding(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
-	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n    ports:\n      - \"27015:27015/udp\"\n"
+	seed := "name: test\nservices:\n  asa1:\n    image: ark-server:latest\n    labels: {ark.port.asa: \"27015\"}\n    ports:\n      - \"27015:27015/udp\"\n"
 	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
 		t.Fatalf("write compose: %v", err)
 	}

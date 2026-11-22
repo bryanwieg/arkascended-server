@@ -261,8 +261,8 @@ func RunCreate(d *core.AppDeps, args []string) error {
 		return err
 	}
 
-	if err := os.WriteFile(composeFile, []byte(updated), 0o644); err != nil {
-		return err
+	if err := compose.WriteComposeText(core.CurrentAppDeps(), composeFile, updated, nil); err != nil {
+		return fmt.Errorf("Error: %s left unchanged, the edited file does not load: %w", composeFile, err)
 	}
 	core.Infof("Wrote compose file: %s\n", composeFile)
 	return nil

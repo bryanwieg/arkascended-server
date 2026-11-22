@@ -23,12 +23,9 @@ sudo usermod -aG docker ark
 sudo -iu ark      # run all ark-cli commands as ark, from the compose directory
 ```
 
-Docker group check: with the Docker runtime, `ark-cli` checks that the user
-in `SUDO_USER` (else `USER`) is in the `docker` group, and if not runs
-`sudo usermod -aG docker <user>`. Under `sudo -u ark` / `sudo -iu ark`,
-`SUDO_USER` is your admin account, not `ark`. If that account is not in the
-`docker` group, the command tries `sudo` as `ark` and fails. Either add the
-admin account to `docker` or unset `SUDO_USER` in the `ark` shell.
+Docker group check: with the Docker runtime, `ark-cli` checks that the
+account running it (here `ark`) is in the `docker` group, and if not runs
+`sudo usermod -aG docker <user>`. Root is never checked.
 
 ## Option B: Rootless Docker
 
@@ -47,11 +44,9 @@ Project-specific requirements:
   export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
   ```
 
-- **Docker group.** The group check from Option A also runs here. If the
-  host has a `docker` group (for example, the rootful package is also
-  installed) and your user is not in it, `ark-cli` adds your user with
-  `sudo usermod`. That grants rootful daemon access, which rootless setups
-  usually want to avoid.
+- **Docker group.** The group check from Option A is skipped when
+  `DOCKER_HOST` points anywhere but `/var/run/docker.sock`, so `ark-cli`
+  never adds a rootless user to the rootful `docker` group.
 - **Ports.** Defaults (game 27015/UDP and up, RCON from 27020 bound to
   127.0.0.1) are above 1024. Ports below 1024 need
   `net.ipv4.ip_unprivileged_port_start` (see Docker's docs).

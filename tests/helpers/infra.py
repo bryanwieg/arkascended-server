@@ -158,8 +158,6 @@ def prepare_test_env(
     env["ARK_TEST_IMAGE"] = image
     env["SHUTDOWN_WARNING_MINUTES"] = "0"
     env["ARK_PULL_POLICY"] = "never"
-    env["ARK_TEST_CLI_LOG"] = str(compose_file.with_suffix(".cli.log"))
-    env["ARK_TEST_DOCKER_LOG"] = str(compose_file.with_suffix(".docker.log"))
 
     # Remove stale test resources before creating fresh ones
     prune_orphaned_test_resources(dc)

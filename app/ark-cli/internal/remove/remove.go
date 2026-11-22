@@ -122,8 +122,8 @@ func runRemoveImpl(args []string) error {
 		return fmt.Errorf("Error: service not found in compose file: %s", instance)
 	}
 	updated, _ = runtime.RemoveVolumeEntry(updated, fmt.Sprintf("%s-saved", instance))
-	if err := os.WriteFile(composeFile, []byte(updated), 0o644); err != nil {
-		return err
+	if err := compose.WriteComposeText(d, composeFile, updated, nil); err != nil {
+		return fmt.Errorf("Error: %s left unchanged, the edited file does not load: %w", composeFile, err)
 	}
 
 	if err := removeVolume(fmt.Sprintf("%s-saved", instance), composeFile); err != nil {

@@ -22,6 +22,7 @@ import (
 
 func patchRestoreBaseDeps(d *core.AppDeps, instance string, svcConfig types.ServiceConfig) {
 	svcConfig.Name = instance
+	svcConfig.Labels = types.Labels{ark.PortASALabel: "27015"}
 	d.ComposeService = &arktest.MockCompose{
 		LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
 			return fakeProject(types.Services{instance: svcConfig}), nil

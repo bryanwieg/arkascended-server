@@ -239,6 +239,20 @@ func TestRemoveServiceBlockRemovesService(t *testing.T) {
 	}
 }
 
+// TestRemoveServiceBlockLastServiceLeavesEmptyMapping keeps the file loadable after the last service goes.
+// - Expect: `services: {}` (block and inline forms), never `services: null`, which compose refuses.
+func TestRemoveServiceBlockLastServiceLeavesEmptyMapping(t *testing.T) {
+	for _, composeText := range []string{
+		"services:\n  asa1:\n    image: ark-server:latest\nvolumes:\n  ark-cluster-1:\n",
+		"services: {asa1: {image: ark-server:latest}}\n",
+	} {
+		updated, removed := RemoveServiceBlock(composeText, "asa1")
+		if !removed || !strings.Contains(updated, "services: {}") {
+			t.Fatalf("removed=%v, got:\n%s", removed, updated)
+		}
+	}
+}
+
 // TestRemoveServiceBlockMissingIsNoop ensures RemoveServiceBlock is a no-op when service is absent.
 // - Expect: RemoveServiceBlock returns false without altering compose.
 func TestRemoveServiceBlockMissingIsNoop(t *testing.T) {

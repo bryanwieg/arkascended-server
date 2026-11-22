@@ -176,44 +176,22 @@ func writeSchedulerService(d *core.AppDeps, composeFile string, s ServiceSetting
 	return replaceComposeChecked(d, composeFile, runtime.InsertService(without, block), true)
 }
 
-// replaceComposeChecked writes text next to composeFile, renames it over the file only when it loads and
-// has (or lacks) the scheduler as wanted, and leaves the file unchanged otherwise.
+// replaceComposeChecked writes text over composeFile only when it loads and has (or lacks) the scheduler as
+// wanted, and leaves the file unchanged otherwise.
 func replaceComposeChecked(d *core.AppDeps, composeFile, text string, wantScheduler bool) error {
-	// Write through a symlinked compose file; renaming over the link would replace it with a copy.
-	if target, err := filepath.EvalSymlinks(composeFile); err == nil {
-		composeFile = target
-	}
-	info, err := os.Stat(composeFile)
-	if err != nil {
-		return err
-	}
-	tmp := filepath.Join(filepath.Dir(composeFile), "."+filepath.Base(composeFile)+".ark-save.tmp")
-	err = os.WriteFile(tmp, []byte(text), info.Mode().Perm()) //nolint:gosec // G703: tmp sits next to the user's own compose file
-	if err == nil {
-		err = checkSchedulerLoads(d, tmp, wantScheduler)
-	}
-	if err == nil {
-		err = os.Rename(tmp, composeFile)
-	}
-	if err != nil {
-		_ = os.Remove(tmp)
-		if wantScheduler {
-			return fmt.Errorf("Error: the scheduler service did not load, %s left unchanged: %w", composeFile, err)
+	err := compose.WriteComposeText(d, composeFile, text, func(project *ark.ComposeProject) error {
+		if project.HasScheduler() != wantScheduler {
+			return fmt.Errorf("scheduler service present = %v after the edit", !wantScheduler)
 		}
-		return fmt.Errorf("Error: %s did not load without the scheduler service, left unchanged: %w", composeFile, err)
+		return nil
+	})
+	if err == nil {
+		return nil
 	}
-	return nil
-}
-
-func checkSchedulerLoads(d *core.AppDeps, file string, want bool) error {
-	project, err := d.ComposeService.LoadProject(d.Context(), file)
-	if err != nil {
-		return err
+	if wantScheduler {
+		return fmt.Errorf("Error: the scheduler service did not load, %s left unchanged: %w", composeFile, err)
 	}
-	if project.HasScheduler() != want {
-		return fmt.Errorf("scheduler service present = %v after the edit", !want)
-	}
-	return nil
+	return fmt.Errorf("Error: %s did not load without the scheduler service, left unchanged: %w", composeFile, err)
 }
 
 // startScheduler creates the dirs the scratch image cannot, ups the service, then removes old images and

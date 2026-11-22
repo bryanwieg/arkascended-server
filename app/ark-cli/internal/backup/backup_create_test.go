@@ -28,7 +28,7 @@ func TestRunBackupParsesFlagsAndCallsCreateForTarget(t *testing.T) {
 	var execCalled bool
 	composeMock := &arktest.MockCompose{
 		LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-			return fakeProject(types.Services{instance: {Name: instance}}), nil
+			return fakeProject(types.Services{instance: {Name: instance, Labels: types.Labels{ark.PortASALabel: "27015"}}}), nil
 		},
 		RunningServicesFn: func(_ context.Context, _ string) (map[string]struct{}, error) {
 			return map[string]struct{}{instance: {}}, nil
@@ -73,7 +73,7 @@ func TestRunBackupMissingInstance(t *testing.T) {
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
 		d.ComposeService = &arktest.MockCompose{
 			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(types.Services{"other": {Name: "other"}}), nil
+				return fakeProject(types.Services{"other": {Name: "other", Labels: types.Labels{ark.PortASALabel: "27015"}}}), nil
 			},
 		}
 	}, func() {
@@ -111,7 +111,7 @@ func TestRunBackupInvalidFormat(t *testing.T) {
 func clusterServices(withCluster bool, names ...string) types.Services {
 	services := types.Services{}
 	for _, name := range names {
-		svc := types.ServiceConfig{Name: name}
+		svc := types.ServiceConfig{Name: name, Labels: types.Labels{ark.PortASALabel: "27015"}}
 		if withCluster {
 			svc.Volumes = []types.ServiceVolumeConfig{{Type: "volume", Source: "ark-cluster-1", Target: pkgbackup.ClusterMountPath}}
 		}

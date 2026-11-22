@@ -112,8 +112,14 @@ crontab with `apply schedules` instead. That was dropped because:
 
 Why a compose service: Komodo and `docker compose ps` show it with the
 instances, it restarts with the engine (`restart: unless-stopped`), and its
-health is a Docker healthcheck. The label `ark.role: scheduler` keeps it out of
-every instance path (`ComposeProject.ServiceNames()`).
+health is a Docker healthcheck. It has no `ark.port.asa` label, which keeps it
+out of every instance path (`ComposeProject.ServiceNames()`).
+
+Why instances are identified by the `ark.port.asa` label: every
+`create instance` service has it, so other services in the same compose file
+(the scheduler, a web UI, a database) are never taken for ARK servers. The
+older rule, every service but the scheduler, made `--instance all` and the
+health monitor act on any sidecar.
 
 Why a local `FROM scratch` image of the running binary
 (`ark-scheduler:<sha256 prefix>`): the scheduler is always the same build as

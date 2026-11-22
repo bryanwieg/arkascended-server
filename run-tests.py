@@ -8,7 +8,14 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "tests"))
-from helpers.artifacts import create_suite_run_dir, ensure_python, repo_root, tests_root, wipe_test_artifacts
+from helpers.artifacts import (
+    artifacts_retention,
+    create_suite_run_dir,
+    ensure_python,
+    repo_root,
+    tests_root,
+    wipe_test_artifacts,
+)
 from helpers.batch_runner import SUITE_TITLES, Batch, print_summary, run_batch
 
 REPO_ROOT = repo_root()
@@ -264,7 +271,7 @@ def main() -> int:
         print("No batches selected.")
         return 0
 
-    wipe_test_artifacts(REPO_ROOT)
+    wipe_test_artifacts(REPO_ROOT, preserve_recent=artifacts_retention())
     os.environ["ARK_TEST_WIPE_STATE"] = "1"
     title = SUITE_TITLES.get(args.suite, "All Tests") if args.suite != "all" else "All Tests"
     print(title, flush=True)

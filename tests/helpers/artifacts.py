@@ -122,6 +122,11 @@ def write_pytest_report_artifact(item: pytest.Item, artifact_dir: Path) -> None:
     report_path.write_text("\n".join(sections) + "\n", encoding="utf-8")
 
 
+def artifacts_retention() -> int:
+    """Number of recent run directories to keep: ARK_TEST_ARTIFACTS_RETENTION, default 7."""
+    return int(os.environ.get("ARK_TEST_ARTIFACTS_RETENTION", "7"))
+
+
 def wipe_test_artifacts(root: Path, preserve_recent: int = 7) -> None:
     """Delete test artifacts but preserve the N most recent run directories."""
     artifacts_dir = _artifacts_dir(root)

@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 from helpers.artifacts import (
+    artifacts_retention,
     ensure_cli_binary,
     prune_test_artifacts,
     test_node_dir_name,
@@ -104,7 +105,7 @@ def _is_integration_test(item: pytest.Item) -> bool:
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:  # noqa: PLR0912, PLR0915
     # Artifact retention: wipe for suite runs, prune for individual runs
     root = _repo_root()
-    retention = int(os.environ.get("ARK_TEST_ARTIFACTS_RETENTION", "7"))
+    retention = artifacts_retention()
     wipe_threshold = int(os.environ.get("ARK_TEST_ARTIFACTS_WIPE_THRESHOLD", "3"))
     if len(items) > wipe_threshold:
         wipe_test_artifacts(root, preserve_recent=retention)

@@ -548,7 +548,6 @@ def configure_test_artifacts(
         env["ARK_TEST_DOCKER_LOG"] = str(test_artifact_dir / "docker.log")
         env["ARK_TEST_COMMANDS_LOG"] = str(test_artifact_dir / "commands.log")
         env["ARK_TEST_FRAMEWORK_LOG"] = str(framework_log_path)
-        env["ARK_TEST_DEBUG"] = os.environ.get("ARK_TEST_DEBUG", "")
 
     # Store test_artifact_dir on the item for failure-diagnostics and snapshot capture
     request.node._ark_test_artifact_dir = test_artifact_dir

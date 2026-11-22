@@ -20,9 +20,8 @@ How to run tests: [Run tests](../how-to/run-tests.md). Log files and diagnostics
 | Domain service (Go) | `app/pkg/ark/*_test.go`, `app/pkg/ark/*/*_test.go` | Domain services against interface mocks; no runtime |
 | Backend conformance (Go) | `app/pkg/ark/conformance/` (suite), `app/pkg/ark/sdkbackend_test/` (runner) | Same suite against Docker and rootless Podman; `integration` build tag |
 
-Markers (`pytest.ini`): `unit`, `container`, `podman`, `fast`, `slow`, `sdk_backend`, `lite`,
-`real_server`. Only `unit`, `container`, `podman`, `lite` and `real_server` are applied;
-fast/slow behavior follows the directory.
+Markers (`pytest.ini`): `unit`, `container`, `podman`, `lite`, `real_server`. Fast/slow
+behavior follows the directory, not a marker.
 
 ### Fast vs slow tests
 

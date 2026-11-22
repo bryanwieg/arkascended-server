@@ -55,7 +55,7 @@ Use this for single files or tests, and for directories `run-tests.py` doesn't c
 .venv/bin/python -m pytest tests/app/ark_web/integration/
 ```
 
-Markers (`pytest.ini`): `unit`, `container`, `fast`, `slow`, `podman`, `sdk_backend`. Example:
+Markers (`pytest.ini`): `unit`, `container`, `lite`, `real_server`, `podman`. Example:
 `pytest -m unit tests/container/unit` (what CI runs).
 
 ## Layout

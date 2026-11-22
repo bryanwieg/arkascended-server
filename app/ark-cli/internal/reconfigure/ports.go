@@ -124,6 +124,7 @@ func setRCONHostIP(project *types.Project, serviceName, hostIP string) (bool, er
 // ark.port.asa label and ASA_PORT env var follow it.
 func upsertServiceASAPort(project *types.Project, serviceName string, newPort int) (bool, error) {
 	currentPort, _ := strconv.Atoi(project.Services[serviceName].Labels[runtime.LabelPortASA])
+	target := uint32(newPort) //nolint:gosec // runtime.ParsePort limits --asa-port to 1..65535
 
 	var updated bool
 	err := composeutil.MutateService(project, serviceName, func(s *types.ServiceConfig) {
@@ -133,15 +134,15 @@ func upsertServiceASAPort(project *types.Project, serviceName string, newPort in
 				continue
 			}
 			pub, _ := composeutil.PublishedPort(p)
-			updated = pub != newPort || p.Target != uint32(newPort)
-			s.Ports[i].Target = uint32(newPort)
+			updated = pub != newPort || p.Target != target
+			s.Ports[i].Target = target
 			s.Ports[i].Published = strconv.Itoa(newPort)
 			found = true
 			break
 		}
 		if !found {
 			s.Ports = append(s.Ports, types.ServicePortConfig{
-				Target:    uint32(newPort),
+				Target:    target,
 				Published: strconv.Itoa(newPort),
 				Protocol:  "udp",
 			})

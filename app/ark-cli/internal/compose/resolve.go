@@ -74,7 +74,7 @@ func WriteComposeText(d *core.AppDeps, composeFile, text string, check func(*ark
 		return err
 	}
 	tmp := filepath.Join(filepath.Dir(composeFile), "."+filepath.Base(composeFile)+".ark-save.tmp")
-	err := os.WriteFile(tmp, []byte(text), mode) //nolint:gosec // G703: tmp sits next to the user's own compose file
+	err := os.WriteFile(tmp, []byte(text), mode)
 	if err == nil {
 		var project *ark.ComposeProject
 		if project, err = d.ComposeService.LoadProject(d.Context(), tmp); err == nil && check != nil {

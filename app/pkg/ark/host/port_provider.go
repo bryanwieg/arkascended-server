@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-// FetchTextImpl fetches a URL and returns the trimmed response body.
+// FetchTextImpl fetches a URL and returns the trimmed response body. A non-2xx
+// status is an error, so callers never parse an error page as data.
 func FetchTextImpl(url string) (string, error) {
 	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
@@ -19,6 +20,9 @@ func FetchTextImpl(url string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", fmt.Errorf("GET %s: HTTP %s", url, resp.Status)
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err

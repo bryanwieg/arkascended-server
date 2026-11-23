@@ -8,7 +8,7 @@
 # (.github/workflows/base-refresh.yml does it monthly).
 # refresh: 2026-11
 
-ARG PROTON_VERSION=11-12
+ARG PROTON_VERSION=11-14
 # Build-only stages are pinned so a new Ubuntu release can't invalidate their cached
 # downloads. The final stage tracks ubuntu:24.04 so it picks up security updates
 # whenever the base is rebuilt. Bump the digest deliberately.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.7.0...cli-v0.7.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **cli:** treat non-2xx HTTP responses as errors in FetchTextImpl ([#47](https://github.com/bryanwieg/arkascended-server/issues/47)) ([fa88d1a](https://github.com/bryanwieg/arkascended-server/commit/fa88d1af0ba5ece7c4b18bf9242f949b4b4022ef))
+
 ## [0.7.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.6.0...cli-v0.7.0) (2026-11-22)
 
 

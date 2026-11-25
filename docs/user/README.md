@@ -21,6 +21,7 @@ For ARK server admins.
 
 - [CLI commands](reference/cli-commands.md): every `ark-cli` command and flag
 - [Configuration variables](reference/configuration.md): container and CLI environment variables
+- [Server INI settings](reference/server-ini-settings.md): every `GameUserSettings.ini` and `Game.ini` server setting, with defaults
 
 ## Explanation
 

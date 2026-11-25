@@ -17,6 +17,9 @@ ark-cli edit ini --instance my-server --file game               # Game.ini
   that would block the defaults.
 - `Game.ini` is created on first edit; ARK never creates it.
 - Changes apply on the next start.
+- Which keys exist and their defaults:
+  [Server INI settings](../reference/server-ini-settings.md). ARK writes
+  only some of them; add the others yourself.
 
 ## Read or change one key
 

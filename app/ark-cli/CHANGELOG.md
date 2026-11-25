@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.7.1...cli-v0.7.2) (2026-11-25)
+
+
+### Dependencies
+
+* bump the go group across 2 directories with 3 updates ([#50](https://github.com/bryanwieg/arkascended-server/issues/50)) ([cf81ee6](https://github.com/bryanwieg/arkascended-server/commit/cf81ee6a378877baaf6093830e14158f7b4ab1b2))
+
 ## [0.7.1](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.7.0...cli-v0.7.1) (2026-11-22)
 
 

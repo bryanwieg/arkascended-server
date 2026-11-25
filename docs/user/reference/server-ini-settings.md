@@ -33,6 +33,9 @@ How to change a setting: [Edit server INI files](../how-to/edit-ini.md).
   direction. For rows not marked ✔, this text is based on the key's name.
 - **Notes**: special values (for example "0 = no limit"), inverted switches
   and other details.
+- **Load test**: every number and on/off key was set to a non-default value
+  on a test server and confirmed to load from the file and section shown,
+  unless its Notes say otherwise. Strings and lists were not tested.
 - "(also GUS)" marks Game.ini keys that are also read from GUS
   `[ServerSettings]`. The GUS value always wins: if the key is missing from
   `GameUserSettings.ini`, its GUS default replaces the Game.ini value. Set
@@ -105,7 +108,7 @@ take one `Key=(...)` line per entry.
 | `ActiveMods` |  | string = (empty) |  |  |  |  |  |
 | `ActiveTotalConversion` |  | string = (empty) |  |  |  |  |  |
 | `AdminListURL` |  | string = (empty) |  |  |  |  |  |
-| `AutoRestartIntervalSeconds` | ✗ | float = 0 |  | ↑ auto restart interval seconds | Longer | Shorter |  |
+| `AutoRestartIntervalSeconds` | ✗ | float = 0 |  | ↑ auto restart interval seconds | Longer | Shorter | Counts down from server start (seconds). |
 | `BadWordListURL` |  | string = (empty) |  |  |  |  |  |
 | `BadWordWhiteListURL` |  | string = (empty) |  |  |  |  |  |
 | `BanListURL` |  | string = (empty) |  |  |  |  |  |
@@ -143,7 +146,7 @@ take one `Key=(...)` line per entry.
 | `CryopodFridgeCooldownTime` | ✔ | float = 90 |  | ↑ cryopod fridge cooldown time | Longer | Shorter | Seconds before a cryopod can be taken out of a Cryofridge again. |
 | `CryopodNerfDamageMult` | ✔ | float = 0 |  | ↑ damage dealt after uncryo | Freshly released creatures deal more damage (milder nerf) | Deal less damage (harsher nerf) | Damage multiplier during the cryopod nerf. |
 | `CryopodNerfDuration` | ✔ | float = 0 |  | ↑ nerf duration | The post-cryo nerf lasts longer | Shorter | Duration of the cryopod nerf (seconds). |
-| `CryopodNerfIncomingDamageMult` | ✗ | float = 0 |  | ↑ damage taken after uncryo | Freshly released creatures take more damage | Take less damage |  |
+| `CryopodNerfIncomingDamageMult` | ✗ | float = 0 |  | ↑ damage taken after uncryo | Freshly released creatures take more damage | Take less damage | Load not confirmed. |
 | `CryopodNerfIncomingDamageMultPercent` | ✔ | float = 0 |  | ↑ damage taken after uncryo | Freshly released creatures take more damage | Take less damage | Incoming-damage multiplier during the cryopod nerf. |
 | `DisableCryopodEnemyCheck` | ✔ | bool = False |  | switch | Cryopod enemy check off | Cryopod enemy check on | When on, the 'enemies nearby' check is skipped. |
 | `DisableCryopodFridgeRequirement` | ✔ | bool = False |  | switch | Cryopod fridge requirement off | Cryopod fridge requirement on | When on, cryopods don't need a Cryofridge/powered storage. |
@@ -176,7 +179,7 @@ take one `Key=(...)` line per entry.
 | `AllowAnyoneBabyImprintCuddle` | ✔ | bool = False |  | switch | Anyone baby imprint cuddle allowed | Anyone baby imprint cuddle not allowed | When on, anyone may do imprint cuddles, not just the imprinter. |
 | `DisableGeneTraits` | ✔ | bool = False |  | switch | Gene traits off | Gene traits on | When on, wild creatures spawn without gene traits. Can also be toggled at runtime by an admin command. |
 | `DisableImprintDinoBuff` | ✔ | bool = False |  | switch | Imprint dino buff off | Imprint dino buff on | When on, the imprint damage bonus is not applied. |
-| `FreezeReaperPregnancy` | ✗ | bool = False |  | switch | On: freeze reaper pregnancy | Off |  |
+| `FreezeReaperPregnancy` | ✗ | bool = False |  | switch | On: freeze reaper pregnancy | Off | Load not confirmed. |
 | `PreventMateBoost` | ✔ | bool = False |  | switch | Mate boost blocked | Mate boost allowed | When on, the mate-boost stack timer is skipped: no mate boost. |
 | `PreventTekChemBenchBabies` | ✔ | bool = False |  | switch | Tek chem bench babies blocked | Tek chem bench babies allowed | Tek chemistry bench: when on, its 'babyfy creature' option is refused. |
 
@@ -344,7 +347,7 @@ take one `Key=(...)` line per entry.
 | `FastDecayUnsnappedCoreStructures` | ✔ | bool = False |  | switch | On: fast decay unsnapped core structures | Off | When on, unsnapped core structures decay after FastDecayInterval. |
 | `OnlyAutoDestroyCoreStructures` | ✔ | bool = False |  | switch | Only auto destroy core structures | Not restricted | When on, auto-destroy only targets core structures (foundations, pillars). |
 | `OnlyDecayUnsnappedCoreStructures` | ✔ | bool = False |  | switch | Only decay unsnapped core structures | Not restricted | When on, only unsnapped core structures (foundations, pillars) auto-decay. |
-| `PreventPlannedStructureDecayReset` | ✗ | bool = False |  | switch | Planned structure decay reset blocked | Planned structure decay reset allowed |  |
+| `PreventPlannedStructureDecayReset` | ✗ | bool = False |  | switch | Planned structure decay reset blocked | Planned structure decay reset allowed | Load not confirmed. |
 
 **Game.ini `[/Script/ShooterGame.ShooterGameMode]`**
 
@@ -365,16 +368,16 @@ take one `Key=(...)` line per entry.
 | `AllowBunkerModulesInPreventionZones` | ✔ | bool = False |  | switch | Bunker modules in prevention zones allowed | Bunker modules in prevention zones not allowed | When off, bunker modules are refused inside prevention zones. |
 | `AllowBunkersInPreventionZones` | ✔ | bool = False |  | switch | Bunkers in prevention zones allowed | Bunkers in prevention zones not allowed | When off, bunkers are refused inside prevention zones. |
 | `AllowCrateSpawnsOnTopOfStructures` | ✔ | bool = False |  | switch | Crate spawns on top of structures allowed | Crate spawns on top of structures not allowed | When on, crates may land on structures. |
-| `AllowDeprecatedStructures` | ✗ | bool = False |  | switch | Deprecated structures allowed | Deprecated structures not allowed |  |
+| `AllowDeprecatedStructures` | ✗ | bool = False |  | switch | Deprecated structures allowed | Deprecated structures not allowed | Load not confirmed. |
 | `AllowDinoAIInsideBunkers` | ✔ | bool = True | yes | switch | Dino AI inside bunkers allowed | Dino AI inside bunkers not allowed | When off, creature AI stops inside bunkers. |
 | `AllowMultipleAttachedC4` | ✔ | bool = False |  | switch | Multiple attached c 4 allowed | Multiple attached c 4 not allowed | When off, C4 can't be stuck onto a creature/player that already has one. |
 | `AllowRidingDinosInsideBunkers` | ✔ | bool = True | yes | switch | Riding dinos inside bunkers allowed | Riding dinos inside bunkers not allowed | Whether creatures can be ridden inside bunkers. |
 | `AlwaysAllowStructurePickup` | ✔ | bool = True | yes | switch | On: always allow structure pickup | Off | When on, the pickup check skips the 'recently placed' window (StructurePickupTimeAfterPlacement): structures can always be picked up. |
-| `AnchoredVesselCheckRadius` | ✗ | int = 0 |  | ↑ anchored vessel check radius | Larger area | Smaller area |  |
+| `AnchoredVesselCheckRadius` | ✗ | int = 30000 |  | ↑ anchored vessel check radius | Larger area | Smaller area | Values below 5000 are raised to 5000. |
 | `BunkerUnderHPThresholdDmgMultiplier` | ✔ | float = 0.05 | yes | ↑ damage to weakened bunkers | Bunkers under the threshold take more damage | Take less damage | Incoming damage × this once the bunker is under EnemyAccessBunkerHPThreshold. |
 | `DestroyUnconnectedWaterPipes` | ✔ | bool = False |  | switch | On: destroy unconnected water pipes | Off | When on, unconnected water pipes are destroyed after their timer. |
 | `EnableExtraStructurePreventionVolumes` | ✔ | bool = False |  | switch | Extra structure prevention volumes on | Extra structure prevention volumes off | When on, extra structure-prevention volumes are applied. |
-| `EnableMeshBitingProtection` | ✔ | bool = True |  | switch | Mesh biting protection on | Mesh biting protection off | When on, creature bites through meshes are blocked. |
+| `EnableMeshBitingProtection` | ✔ | bool = True |  | switch | Mesh biting protection on | Mesh biting protection off | When on, creature bites through meshes are blocked. Setting it to False has no effect; the server keeps it on. |
 | `EnableStructureComponentMemOpt` | ✗ | bool = False |  | switch | Structure component mem opt on | Structure component mem opt off |  |
 | `EnemyAccessBunkerHPThreshold` | ✔ | float = 0.25 | yes | ↑ HP fraction for enemy access | Enemies can enter bunkers at higher remaining HP | Bunker must be more damaged first | Enemies can access when health / max health ≤ this (fraction 0–1). |
 | `ForceAllowCaveFlyers` | ✔ | bool = False |  | switch | Allow cave flyers forced | Not forced | When on, flyers are allowed in caves. |
@@ -383,7 +386,7 @@ take one `Key=(...)` line per entry.
 | `IgnoreLimitMaxStructuresInRangeTypeFlag` | ✔ | bool = False |  | switch | On: ignore limit max structures in range type flag | Off | When on, the build-limit count skips the per-structure-type exemption check. |
 | `LimitBunkersPerTribe` | ✔ | bool = True | yes | switch | Bunkers per tribe limit on | No bunkers per tribe limit | When on, LimitBunkersPerTribeNum applies. |
 | `LimitBunkersPerTribeNum` | ✔ | int = 3 | yes | ↑ limit bunkers per tribe num | Higher limit | Lower limit | Max bunkers per tribe (with LimitBunkersPerTribe). |
-| `MaxAnchoredVesselsInRange` | ✗ | int = 0 |  | ↑ max anchored vessels in range | Larger area | Smaller area |  |
+| `MaxAnchoredVesselsInRange` | ✗ | int = 0 |  | ↑ max anchored vessels in range | Larger area | Smaller area | Load not confirmed. |
 | `MaxGateFrameOnSaddles` | ✔ | int = -1 |  | ↑ max gate frame on saddles | Higher limit | Lower limit | Negative = no limit; 0 = none allowed; otherwise max gateways per platform saddle. |
 | `MaxStructuresInSmallRadius` | ✔ | float = 0 |  | ↑ max structures in small radius | Larger area | Smaller area | If > 0, max structures within RadiusStructuresInSmallRadius. |
 | `MinDistanceBetweenBunkers` | ✔ | float = 3000 | yes | ↑ min distance between bunkers | Larger area | Smaller area | If > 0, bunkers must be at least this far apart. |
@@ -394,7 +397,7 @@ take one `Key=(...)` line per entry.
 | `PreventStructurePainting` | ✔ | bool = False |  | switch | Structure painting blocked | Structure painting allowed | When on, structures can't be painted. |
 | `PreventTemplateOnSaddle` | ✔ | bool = False |  | switch | Template on saddle blocked | Template on saddle allowed | When on, structure templates can't be placed on saddles. |
 | `RadiusStructuresInSmallRadius` | ✔ | float = 0 |  | ↑ radius structures in small radius | Larger area | Smaller area | Radius for MaxStructuresInSmallRadius. |
-| `ServerEnableMeshChecking` | ✗ | bool = False |  | switch | On: server enable mesh checking | Off |  |
+| `ServerEnableMeshChecking` | ✗ | bool = False |  | switch | On: server enable mesh checking | Off | Load not confirmed. |
 | `StructureDamageMultiplier` | ✔ | float = 1 |  | ↑ damage dealt | More damage | Less damage | Damage dealt by structures (turrets, traps) x this. |
 | `StructurePickupHoldDuration` | ✗ | float = 0.5 | yes | ↑ hold time to pick up | Must hold the pickup key longer | Shorter hold |  |
 | `StructurePickupTimeAfterPlacement` | ✗ | float = 30 | yes | ↑ pickup window | Structures can be picked up longer after placing | Shorter window |  |
@@ -424,7 +427,7 @@ take one `Key=(...)` line per entry.
 | `bForceGachaUnhappyInCaves` (also GUS) | ✔ | bool = True | switch | Gacha unhappy in caves forced | Not forced | When on, gachas are unhappy in caves. |
 | `bGenesisUseStructuresPreventionVolumes` | ✗ | bool = False | switch | On: genesis use structures prevention volumes | Off |  |
 | `bHardLimitTurretsInRange` | ✔ | bool = False | switch | On: hard limit turrets in range | Off | Turret hard-limit checks (turrets, Spindles): when on, turrets over the limit stop working. |
-| `bIgnoreStructuresPreventionVolumes` | ✔ | bool = False | switch | On: ignore structures prevention volumes | Off | When on, structure-prevention volumes are ignored. |
+| `bIgnoreStructuresPreventionVolumes` | ✔ | bool = False | switch | On: ignore structures prevention volumes | Off | When on, structure-prevention volumes are ignored. Not applied when set in Game.ini. |
 | `bLimitBunkersPerTribe` (also GUS) | ✔ | bool = True | switch | Bunkers per tribe limit on | No bunkers per tribe limit | When on, LimitBunkersPerTribeNum applies. |
 | `LimitBunkersPerTribeNum` (also GUS) | ✔ | int = 3 | ↑ limit bunkers per tribe num | Higher limit | Lower limit | Max bunkers per tribe (with LimitBunkersPerTribe). |
 | `LimitCloningChambersInRangeNum` | ✔ | int = 10 | ↑ limit cloning chambers in range num | Larger area | Smaller area | If ≥ 0, max chambers within LimitCloningChambersRange. |
@@ -571,7 +574,7 @@ take one `Key=(...)` line per entry.
 | `DinoCharacterFoodDrainMultiplier` | ✔ | float = 1 |  | ↑ drain rate | Drains faster | Drains slower | Creature food drain x this. |
 | `DinoCharacterHealthRecoveryMultiplier` | ✔ | float = 1 |  | ↑ recovery speed | Recovers faster | Recovers slower | Creature health recovery x this. |
 | `DinoCharacterStaminaDrainMultiplier` | ✔ | float = 1 |  | ↑ drain rate | Drains faster | Drains slower | Creature stamina drain x this. |
-| `DinoCountMultiplier` | ✔ | float = 1 |  | ↑ wild creature count | More wild creatures | Fewer wild creatures; ~0 disables some spawners | Clamped and used in the wild spawn-count formula; ~0 also switches a spawner flag off. |
+| `DinoCountMultiplier` | ✔ | float = 1 |  | ↑ wild creature count | More wild creatures | Fewer wild creatures; ~0 disables some spawners | Clamped and used in the wild spawn-count formula; ~0 also switches a spawner flag off. Load not confirmed. |
 | `DinoDamageMultiplier` | ✔ | float = 1 |  | ↑ damage dealt | More damage | Less damage | In this build it only affects the crab's attack; it has no effect on other creatures. |
 | `DinoResistanceMultiplier` | ✔ × | float = 1 |  | ↑ damage creatures take | Creatures take more damage | Creatures take less damage (tougher) |  |
 | `DisableTekLegsBoost` | ✔ | bool = False |  | switch | Tek legs boost off | Tek legs boost on | When on, the Tek run boost is blocked. |
@@ -698,14 +701,14 @@ take one `Key=(...)` line per entry.
 | `AdminLogging` | ✔ | bool = False |  | switch | On: admin logging | Off | When on, admin commands are logged. |
 | `AllowHideDamageSourceFromLogs` | ✔ | bool = True | yes | switch | Hide damage source from logs allowed | Hide damage source from logs not allowed | When on, the damage source can be hidden. |
 | `AllowHitMarkers` | ✔ | bool = True | yes | switch | Hit markers allowed | Hit markers not allowed | When on, hit markers are sent to the attacker. |
-| `AllowSharedConnections` | ✗ | bool = True |  | switch | Shared connections allowed | Shared connections not allowed |  |
+| `AllowSharedConnections` | ✗ | bool = True |  | switch | Shared connections allowed | Shared connections not allowed | Load not confirmed. |
 | `AllowThirdPersonPlayer` | ✔ | bool = True | yes | switch | Third person player allowed | Third person player not allowed | Off restricts players to first-person view. |
 | `AlwaysNotifyPlayerLeft` | ✗ | bool = False |  | switch | On: always notify player left | Off |  |
 | `AutoSavePeriodMinutes` | ✔ | float = 15 | yes | ↑ time between saves | Saves less often (more progress lost on crash) | Saves more often | World save when elapsed minutes reach this. |
 | `ChatLogFileSplitIntervalSeconds` | ✗ | int = 45 |  | ↑ chat log file split interval seconds | Longer | Shorter |  |
 | `ChatLogFlushIntervalSeconds` | ✗ | int = 15 |  | ↑ chat log flush interval seconds | Longer | Shorter |  |
 | `ChatLogMaxAgeInDays` | ✗ | int = 5 |  | ↑ chat log max age in days | Longer | Shorter |  |
-| `DontAlwaysNotifyPlayerJoined` | ✗ | bool = False |  | switch | Don't always notify player joined | Always notify player joined |  |
+| `DontAlwaysNotifyPlayerJoined` | ✗ | bool = False |  | switch | Don't always notify player joined | Always notify player joined | Load not confirmed. |
 | `DontRestoreBackup` | ✗ | bool = False |  | switch | Don't restore backup | Restore backup |  |
 | `bFilterChat` | ✔ | bool = False |  | switch | On: filter chat | Off | When on, chat is filtered for bad words. |
 | `GlobalVoiceChat` | ✔ | bool = False |  | switch | Voice heard server-wide | Proximity voice chat | True = voice is heard server-wide, False = proximity voice. |
@@ -731,7 +734,7 @@ take one `Key=(...)` line per entry.
 | `CheatTeleportLocations` |  | list = (TeleportName="testpoi1",TeleportLocation=(X=42069.0,Y=42069.0,Z=42069.0)) |  |  |  |  |
 | `bDisableBuffSavePlayerDataOnSaveWorld` | ✔ | bool = False | switch | Buff save player data on save world off | Buff save player data on save world on | Companion buffs: when on, buff data isn't saved with the player on world save. |
 | `bDisablePhotoMode` | ✔ | bool = False | switch | Photo mode off | Photo mode on | When on, photo mode is off. |
-| `bDoAutomatedModValidationModeration` | ✗ | bool = False | switch | On: do automated mod validation moderation | Off |  |
+| `bDoAutomatedModValidationModeration` | ✗ | bool = False | switch | On: do automated mod validation moderation | Off | Not applied when set in Game.ini. |
 | `bFailedWaterDinoSpawnLogEnabled` | ✔ | bool = False | switch | On: failed water dino spawn log enabled | Off | When on, failed water-creature spawns are logged. |
 | `bGameplayLogEnabled` | ✗ | bool = False | switch | On: gameplay log enabled | Off |  |
 | `ModValidationFailureWarnings` | ✗ | int = 1 | ↑ warnings before action | More warnings before mod-validation action | Fewer |  |
@@ -751,7 +754,7 @@ take one `Key=(...)` line per entry.
 | `DayTimeSpeedScale` | ✔ | float = 1 |  | ↑ daytime speed | Daytime passes faster (shorter days) | Longer days | Daytime speed = map's DayTimeSpeedScale × this (× DayCycleSpeedScale). Maps such as The Center set their own factor. |
 | `DisableWeatherFog` | ✗ | bool = False |  | switch | Weather fog off | Weather fog on |  |
 | `ElementalIslandShutdownFrequencyMultiplier` | ✗ | float = 1 | yes | ↑ elemental island shutdown frequency | More / stronger | Less / weaker |  |
-| `ExtinctionEventTimeInterval` | ✔ ÷ | float = 0 |  | ↑ extinction event time interval | Longer | Shorter |  |
+| `ExtinctionEventTimeInterval` | ✔ ÷ | float = 0 |  | ↑ extinction event time interval | Longer | Shorter | Managed by the game together with NextExtinctionEventUTC; don't set by hand. |
 | `NightTimeSpeedScale` | ✔ | float = 1 |  | ↑ night speed | Night passes faster (shorter nights) | Longer nights | Night speed = map's NightTimeSpeedScale × this (× DayCycleSpeedScale). Maps such as Scorched Earth set their own factor. |
 | `OverrideStartTime` | ✔ | bool = False |  | switch | Server starts at StartTimeHour | Map default start time | When on, StartTimeHour is used as the starting hour; when off it is ignored. |
 | `StartTimeHour` | ✔ | int = -1 | yes | ↑ starting hour | Server starts later in the day (with OverrideStartTime) | Earlier | Only applies when OverrideStartTime is on; otherwise the map's start time is used. |
@@ -762,8 +765,8 @@ take one `Key=(...)` line per entry.
 |---|---|---|---|---|---|---|
 | `bDisableWorldBuffs` | ✗ | bool = False | switch | World buffs off | World buffs on |  |
 | `bEnableWorldBuffScaling` | ✔ | bool = False | switch | World buff scaling on | World buff scaling off | When on, world buff scaling (WorldBuffScalingEfficacy) is applied; off = 0. |
-| `ExtinctionEventTimeInterval` (also GUS) | ✔ ÷ | float = 0 | ↑ extinction event time interval | Longer | Shorter |  |
-| `NextExtinctionEventUTC` | ✗ | int = 0 | timestamp | Next Extinction event time (UTC, set by the game) | — |  |
+| `ExtinctionEventTimeInterval` (also GUS) | ✔ ÷ | float = 0 | ↑ extinction event time interval | Longer | Shorter | Managed by the game together with NextExtinctionEventUTC; don't set by hand. |
+| `NextExtinctionEventUTC` | ✗ | int = 0 | timestamp | Next Extinction event time (UTC, set by the game) | — | Don't set by hand: a time in the past starts an extinction event at once and shuts the server down. |
 | `ValgueroMemorialEntries` |  | string = — |  |  |  |  |
 | `WorldBuffScalingEfficacy` | ✔ × | float = 0 | ↑ world buff strength | World buffs scale more strongly | Weaker |  |
 

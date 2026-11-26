@@ -344,7 +344,7 @@ the command is called:
   listed with its origin from the [INI history](#ini-history): some ARK keys
   (engram and item overrides in `Game.ini`, for example) are lists with one line
   per entry. Use `edit ini` to change one line, or `--replace-all` to replace
-  them all with one; the previous file is kept as `<file>.bak`.
+  them all with one.
 - `GameUserSettings.ini` must exist (it is created on the first start);
   `Game.ini` is created if missing.
 
@@ -364,6 +364,30 @@ ark-cli set ini --instance asa1 --file gus --section ServerSettings --key MaxPla
 | `--restart` | `false` | On a running instance: stop, apply, start. |
 | `--compose-file` | | |
 
+### unset ini
+
+Remove one key without an editor; the inverse of [`set ini`](#set-ini), with
+the same checks: a running instance is refused unless `--restart`, and the
+keys set from the instance's environment are refused. A key that appears more
+than once is refused, with each line listed with its origin, unless `--all`
+removes every line (use `edit ini` to remove one of them). The previous file
+stays in the [INI history](#ini-history). A key that is not set is not an error.
+
+```sh
+ark-cli unset ini --instance asa1 --file gus --section ServerSettings --key MaxPlayers
+# GameUserSettings.ini [ServerSettings] MaxPlayers: removed "70"
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game`, `gameusersettings` or `gus`. |
+| `--section` | required | Section name, with or without brackets. Matched case-insensitively. |
+| `--key` | required | Key name. Matched case-insensitively. |
+| `--all` | `false` | Remove every line for a repeated key. |
+| `--restart` | `false` | On a running instance: stop, apply, start. |
+| `--compose-file` | | |
+
 ### INI history
 
 Each instance keeps a git history of `Game.ini` and `GameUserSettings.ini`, in
@@ -376,22 +400,80 @@ under its own author, which `get ini` and `set ini` show per line (`git blame`):
 | `written by ARK <when>` | `ARK server` | the image default (ARK generated it at image build), installed on the first start; the server's own writes, after it exits |
 | `set from instance env <when>` | `instance env` | the RCON and password settings, applied on every start |
 | `set with ark-cli <when>` | `ark-cli set ini` | `set ini` |
+| `unset with ark-cli <when>` | `ark-cli unset ini` | `unset ini` (shown in the file's last change; a removed key has no line left to label) |
 | `edited with ark-cli <when>` | `ark-cli edit ini` | `edit ini`, when the editor exits |
-| `changed outside ark-cli <when>` | `outside ark-cli` | changes nobody recorded (a hand edit on the volume, a restored file), found at the next start or before `set`/`edit` |
+| `restored with ark-cli <when>` | `ark-cli restore ini` | `restore ini` |
+| `changed outside ark-cli <when>` | `outside ark-cli` | changes nobody recorded (a hand edit on the volume, a restored file), found at the next start or before `set`/`unset`/`edit` |
 | `changed outside ark-cli (not yet recorded)` | | such a change, before it is found |
 | `origin unknown (present <when>)` | `unknown origin` | the files as first seen, on a volume from before the history existed |
 
-`<when>` is the commit time in UTC. To read the full history on the host, run
-git against that directory in the volume, e.g.
-`git -C <saved volume path>/Config/WindowsServer log -p` (`show volume-paths`
-prints the path).
+`<when>` is the commit time in UTC. [`list ini-history`](#list-ini-history)
+shows the revisions (`--patch` for the diffs) and
+[`restore ini`](#restore-ini) brings a file back to one.
+
+The history is packed as it grows, so a revision costs about 0.3 KB on the save
+volume. No revision is ever dropped.
 
 The history lives in the image's scripts, so an existing instance starts it on
 its first start with an image built by an ark-cli that has it. After upgrading
 ark-cli, rebuild with `ark-cli update instance --instance <name>` (it rebuilds
 when the image recipe changed) and restart; the lines already in the files then
 show `origin unknown (present <first start>)`. Until the rebuild, `get ini`,
-`set ini`, `show ini` and `show instance` say the image needs rebuilding.
+`set ini`, `unset ini`, `show ini` and `show instance` say the image needs rebuilding.
+
+### list ini-history
+
+List the revisions of the [INI history](#ini-history), newest first: who
+changed the INI files, how and when. ARK's own writes are included unless
+`--user-only`. Read-only, so it works whether the instance is running or not.
+
+```sh
+ark-cli list ini-history --instance asa1 --user-only
+# REVISION  DATE                     BY    HOW                    FILES                 MESSAGE
+# 3f9c2ab   2026-11-26 14:02:11 UTC  user  restored with ark-cli  GameUserSettings.ini  restored GameUserSettings.ini from 8d41e07
+# 5b7e610   2026-11-26 13:58:40 UTC  user  set with ark-cli       GameUserSettings.ini  [ServerSettings] MaxPlayers=20
+```
+
+`BY` is `ARK`, `user` or `unknown`; `HOW` is the origin from the
+[INI history](#ini-history) table. Without `--user-only`, a note after the
+table says ARK's writes are included; another says when older revisions exist
+beyond `--limit`.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | both | Only revisions that changed this file: `game`, `gameusersettings` or `gus`. |
+| `--user-only` | `false` | Hide the ARK server's own writes. |
+| `--limit` | `20` | How many revisions to show; `0` for all. |
+| `--since` | | Only revisions on or after this UTC date (`YYYY-MM-DD`). |
+| `--patch` | `false` | Show each revision's diff instead of the table. |
+| `--json` | `false` | `{revisions: [{revision, date, by, how, author, files, message, patch}], more}`; `patch` only with `--patch`, `more` is true when older revisions exist beyond `--limit`. |
+| `--compose-file` | | |
+
+### restore ini
+
+Bring one INI file back to exactly what it was at a revision from
+[`list ini-history`](#list-ini-history). The restore is recorded as a new
+revision (author `ark-cli restore ini`), so nothing is lost and a restore can
+itself be undone. A running instance is refused unless `--restart`, as with
+[`set ini`](#set-ini); an unknown revision is refused before the instance is
+stopped. A file that already matches the revision is left alone (exit 0).
+
+```sh
+ark-cli restore ini --instance asa1 --file gus --revision 8d41e07
+# GameUserSettings.ini restored from 8d41e07.
+```
+
+The keys set from the instance's environment (RCON and passwords) are applied
+again on the next start, whatever the restored file holds.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game`, `gameusersettings` or `gus`. |
+| `--revision` | required | Revision from `list ini-history`. |
+| `--restart` | `false` | On a running instance: stop, restore, start. |
+| `--compose-file` | | |
 
 ### show ini
 

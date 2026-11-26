@@ -118,7 +118,6 @@ def test_set_reports_change_as_json_and_keeps_mode(ark_ini, capsys, tmp_path: Pa
         "old": ["70"],
         "changed": True,
         "removed": 0,
-        "backup": None,
     }
     assert gus.read_text() == "[ServerSettings]\nMaxPlayers=20\n"
     assert gus.stat().st_mode & 0o777 == 0o640
@@ -201,9 +200,7 @@ def test_replace_all_on_game_ini_collapses_list_lines(ark_ini, capsys, tmp_path:
     )
     assert (code, json.loads(out)["removed"]) == (0, 1)
     assert game.read_text() == "[S]\nOverrideNamedEngramEntries=c\n"
-    assert (
-        tmp_path / "Game.ini.bak"
-    ).read_text() == "[S]\nOverrideNamedEngramEntries=a\nOverrideNamedEngramEntries=b\n"
+    assert not (tmp_path / "Game.ini.bak").exists()
 
 
 def test_get_key_works_while_server_runs_and_needs_both_names(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:
@@ -237,8 +234,8 @@ def test_duplicates_refused_with_origin_then_replace_all(ark_ini, capsys, tmp_pa
     result = json.loads(out)
     assert (code, result["removed"], result["old"]) == (0, 1, ["ark", "restored"])
     assert gus.read_text() == "[ServerSettings]\nK=new\n"
-    assert Path(result["backup"]).read_text() == "[ServerSettings]\nK=ark\nK=restored\n"
-    # The hand edit is committed as such before set's own write; the .bak isn't tracked.
+    # The hand edit is committed as such before set's own write, so the history holds the previous file.
+    assert ih._git(tmp_path, "show", "HEAD~1:GameUserSettings.ini") == "[ServerSettings]\nK=ark\nK=restored\n"
     assert log(tmp_path) == [
         "ark-cli set ini: [ServerSettings] K=new",
         "outside ark-cli: changed outside ark-cli; found before set ini",
@@ -389,3 +386,203 @@ def test_history_without_git_or_files(tmp_path: Path, monkeypatch) -> None:
     with pytest.raises(ih.HistoryError, match="git init failed"):
         ih.commit(tmp_path, ih.ARK, "x")
     assert ih.origins(tmp_path, "Game.ini") == {1: "origin unknown", 2: "origin unknown"}
+
+
+_UNSET = ("unset", "--file", "gameusersettings", "--section", "ServerSettings", "--key")
+
+
+def test_unset_removes_key_and_commits(ark_ini, capsys, tmp_path: Path) -> None:
+    gus = tmp_path / "GameUserSettings.ini"
+    before = b"[ServerSettings]\r\n; note\r\nA=1\r\nMaxPlayers=70\r\nB=2\r\n[T]\r\nMaxPlayers=5\r\n"
+    gus.write_bytes(before)
+    ih.commit(tmp_path, ih.ARK, "image default")
+    gus.write_bytes(before + b"C=3\r\n")  # a hand edit, not recorded yet
+    code, out, err = run(ark_ini, capsys, *_UNSET, "maxplayers")
+    assert (code, err) == (0, "")
+    assert json.loads(out) == {
+        "file": "GameUserSettings.ini",
+        "section": "ServerSettings",
+        "key": "maxplayers",
+        "old": ["70"],
+        "changed": True,
+    }
+    assert gus.read_bytes() == b"[ServerSettings]\r\n; note\r\nA=1\r\nB=2\r\n[T]\r\nMaxPlayers=5\r\nC=3\r\n"
+    assert not (tmp_path / "GameUserSettings.ini.bak").exists()
+    assert log(tmp_path) == [
+        "ark-cli unset ini: [ServerSettings] maxplayers",
+        "outside ark-cli: changed outside ark-cli; found before unset ini",
+        "ARK server: image default",
+    ]
+
+
+def test_unset_missing_key_is_no_change(ark_ini, capsys, tmp_path: Path) -> None:
+    code, _out, err = run(ark_ini, capsys, *_UNSET, "K")
+    assert code == 1
+    assert "GameUserSettings.ini doesn't exist yet" in err
+
+    gus = tmp_path / "GameUserSettings.ini"
+    gus.write_text("[ServerSettings]\nA=1\n")
+    for args in (
+        (*_UNSET, "K"),  # missing key
+        ("unset", "--file", "gameusersettings", "--section", "Other", "--key", "A"),  # missing section
+        ("unset", "--file", "game", "--section", "S", "--key", "K"),  # missing Game.ini
+    ):
+        code, out, _err = run(ark_ini, capsys, *args)
+        reply = json.loads(out)
+        assert (code, reply["old"], reply["changed"]) == (0, [], False)
+    assert gus.read_text() == "[ServerSettings]\nA=1\n"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["GameUserSettings.ini"]  # no Game.ini or .git
+
+
+def test_unset_refuses_env_keys_duplicates_and_running_server(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:
+    gus = tmp_path / "GameUserSettings.ini"
+    content = "[ServerSettings]\nRCONPort=27020\nK=ark\nK=restored\n"
+    gus.write_text(content)
+    ih.commit(tmp_path, ih.ARK, "written by the server during its run (exit code 0)")
+
+    code, out, err = run(ark_ini, capsys, *_UNSET, "rconPORT")
+    assert (code, out) == (1, "")
+    assert "set from the instance's environment" in err
+    assert "ark-cli reconfigure instance --rcon-port" in err
+
+    code, out, err = run(ark_ini, capsys, *_UNSET, "K")
+    assert (code, out) == (1, "")
+    assert "K appears 2 times" in err
+    assert f"line 3: K=ark  (written by ARK {_WHEN})" in err
+    assert f"line 4: K=restored  (written by ARK {_WHEN})" in err
+    assert f"Last change to GameUserSettings.ini: written by ARK {_WHEN}" in err
+    assert "--all" in err
+
+    monkeypatch.setattr(ark_ini, "ark_server_running", lambda: True)
+    code, _out, err = run(ark_ini, capsys, *_UNSET, "K", "--all")
+    assert code == 1
+    assert "ark-cli unset ini --restart" in err
+    assert gus.read_text() == content
+
+    monkeypatch.setattr(ark_ini, "ark_server_running", lambda: False)
+    code, out, _err = run(ark_ini, capsys, *_UNSET, "K", "--all")
+    result = json.loads(out)
+    assert (code, result["old"]) == (0, ["ark", "restored"])
+    assert gus.read_text() == "[ServerSettings]\nRCONPort=27020\n"
+    assert ih._git(tmp_path, "show", "HEAD~1:GameUserSettings.ini") == content
+
+
+def test_history_stays_packed(ark_ini, capsys, tmp_path: Path) -> None:
+    """A few hundred `set ini` runs leave a small packed .git that still holds every revision unchanged."""
+    (tmp_path / "GameUserSettings.ini").write_text("[ServerSettings]\nK=ark\n" + "Filler=some value\n" * 300)
+    ih.commit(tmp_path, ih.ARK, "image default")
+    fmt = "--format=%H %an %at %s"
+    seen = [ih._git(tmp_path, "log", "-1", fmt).strip()]
+    section = ("--file", "gameusersettings", "--section", "ServerSettings")
+    for n in range(300):
+        code, _out, err = run(ark_ini, capsys, "set", *section, "--key", "MaxPlayers", "--value", str(n))
+        assert (code, err) == (0, "")
+        seen.append(ih._git(tmp_path, "log", "-1", fmt).strip())
+
+    git_dir = tmp_path / ".git"
+    assert ih._git(tmp_path, "log", fmt).splitlines() == seen[::-1]
+    assert len(set(seen)) == 301
+    revs, more = ih.revisions(tmp_path, None, user_only=False, limit=0, since=None, patch=False)
+    assert (len(revs), more) == (301, False)
+    assert (revs[-1]["by"], revs[-1]["message"]) == ("ARK", "image default")
+    assert sum(f.stat().st_size for f in git_dir.rglob("*") if f.is_file()) < 512 * 1024
+    assert list(git_dir.glob("objects/pack/*.pack"))
+    assert int(ih._git(tmp_path, "count-objects").split()[0]) <= ih._PACK_AFTER
+    assert not (git_dir / "logs").exists()
+    assert not (git_dir / "hooks").exists()
+    ih._git(tmp_path, "fsck", "--strict")
+    for key, line, value, origin in (("K", 2, "ark", "written by ARK"), ("MaxPlayers", 303, "299", "set with ark-cli")):
+        code, out, _err = run(ark_ini, capsys, "get", *section, "--key", key)
+        assert (code, json.loads(out)["lines"]) == (0, [{"line": line, "value": value, "origin": f"{origin} {_WHEN}"}])
+
+
+def test_restore_writes_revision_and_commits(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:
+    gus = tmp_path / "GameUserSettings.ini"
+    first = b"\xef\xbb\xbf[ServerSettings]\r\nName=caf\xe9\r\nK=1\r\n"
+    gus.write_bytes(first)
+    ih.commit(tmp_path, ih.ARK, "image default")
+    rev = ih._git(tmp_path, "log", "-1", "--format=%h").strip()
+    gus.write_bytes(first.replace(b"K=1", b"K=2"))
+    ih.commit(tmp_path, ih.CLI_SET, "[ServerSettings] K=2")
+    hand_edit = first.replace(b"K=1", b"K=3")  # not recorded yet
+    gus.write_bytes(hand_edit)
+    args = ("restore", "--file", "gameusersettings", "--revision")
+
+    monkeypatch.setattr(ark_ini, "ark_server_running", lambda: True)
+    code, out, err = run(ark_ini, capsys, *args, rev)
+    assert (code, out) == (1, "")
+    assert err.startswith("Error:")
+    assert "ark-cli restore ini --restart" in err
+    monkeypatch.setattr(ark_ini, "ark_server_running", lambda: False)
+
+    code, out, err = run(ark_ini, capsys, *args, "HEAD")
+    assert (code, out, err) == (1, "", "Error: --revision must be a revision from list ini-history\n")
+    code, out, err = run(ark_ini, capsys, *args, "deadbeef")
+    assert (code, out) == (1, "")
+    assert err.startswith("Error: the INI history has no GameUserSettings.ini at revision 'deadbeef'")
+    code, out, err = run(ark_ini, capsys, "restore", "--file", "game", "--revision", rev)  # absent at rev
+    assert (code, out) == (1, "")
+    assert err.startswith("Error: the INI history has no Game.ini at revision")
+    assert gus.read_bytes() == hand_edit
+    assert not (tmp_path / "Game.ini").exists()
+    assert len(log(tmp_path)) == 2
+
+    code, out, err = run(ark_ini, capsys, *args, rev)
+    assert (code, err) == (0, "")
+    assert json.loads(out) == {"file": "GameUserSettings.ini", "revision": rev, "changed": True}
+    assert gus.read_bytes() == first
+    wanted_log = [
+        f"ark-cli restore ini: restored GameUserSettings.ini from {rev}",
+        "outside ark-cli: changed outside ark-cli; found before restore ini",
+        "ark-cli set ini: [ServerSettings] K=2",
+        "ARK server: image default",
+    ]
+    assert log(tmp_path) == wanted_log
+
+    before = gus.stat().st_mtime_ns
+    code, out, _err = run(ark_ini, capsys, *args, rev)
+    assert (code, json.loads(out)["changed"]) == (0, False)
+    assert gus.stat().st_mtime_ns == before
+    assert log(tmp_path) == wanted_log
+
+
+def test_history_reply_and_usage_errors(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(ark_ini, "ark_server_running", lambda: True)  # read-only: allowed while running
+    gus = tmp_path / "GameUserSettings.ini"
+    gus.write_text("[ServerSettings]\nK=1\n")
+    ih.commit(tmp_path, ih.ARK, "image default")
+    gus.write_text("[ServerSettings]\nK=2\n")
+    ih.commit(tmp_path, ih.CLI_SET, "[ServerSettings] K=2")
+
+    code, out, err = run(ark_ini, capsys, "history")
+    assert (code, err, out.count("\n")) == (0, "", 1)
+    reply = json.loads(out)
+    assert (len(reply["revisions"]), reply["more"]) == (2, False)
+    assert reply["revisions"][0] == {
+        "revision": ih._git(tmp_path, "log", "-1", "--format=%h").strip(),
+        "date": _WHEN,
+        "by": "user",
+        "how": "set with ark-cli",
+        "author": "ark-cli set ini",
+        "files": ["GameUserSettings.ini"],
+        "message": "[ServerSettings] K=2",
+    }
+    code, out, _err = run(ark_ini, capsys, "history", "--user-only", "--limit", "1", "--patch")
+    reply = json.loads(out)
+    assert (code, len(reply["revisions"]), reply["more"]) == (0, 1, False)
+    assert "+K=2" in reply["revisions"][0]["patch"]
+
+    calls = []
+    monkeypatch.setattr(ih, "revisions", lambda *a, **k: calls.append((a, k)) or ([], True))
+    assert run(ark_ini, capsys, "history") == (0, '{"revisions": [], "more": true}\n', "")
+    run(ark_ini, capsys, "history", "--file", "game", "--user-only", "--limit", "0", "--since", "2026-11-26", "--patch")
+    assert calls == [
+        ((tmp_path, None), {"user_only": False, "limit": 20, "since": None, "patch": False}),
+        ((tmp_path, "Game.ini"), {"user_only": True, "limit": 0, "since": "2026-11-26", "patch": True}),
+    ]
+
+    for bad in (("--since", "yesterday"), ("--since", "26-11-2026"), ("--limit", "-1"), ("--limit", "x")):
+        with pytest.raises(SystemExit) as usage:
+            ark_ini.main(["history", *bad])
+        assert usage.value.code == 2
+        assert f"argument {bad[0]}" in capsys.readouterr().err

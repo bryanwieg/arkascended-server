@@ -4,13 +4,23 @@
 Usage:
   ark-ini.py get --file <game|gameusersettings> [--section <s> --key <k>]
   ark-ini.py set --file <game|gameusersettings> --section <s> --key <k> --value <v> [--replace-all]
+  ark-ini.py unset --file <game|gameusersettings> --section <s> --key <k> [--all]
   ark-ini.py track --by <edit|outside>
+  ark-ini.py history [--file <game|gameusersettings>] [--user-only] [--limit N] [--since YYYY-MM-DD] [--patch]
+  ark-ini.py restore --file <game|gameusersettings> --revision <rev>
 
 get prints the file; with --section and --key, one JSON object instead:
   {"file", "section", "key", "lines": [{"line", "value", "origin"}, ...], "history": str}
   (lines is empty when the key isn't set; origin and history as in set's refusal below).
 set prints one JSON object on stdout:
-  {"file", "section", "key", "value", "old": [...], "changed": bool, "removed": int, "backup": str|null}
+  {"file", "section", "key", "value", "old": [...], "changed": bool, "removed": int}
+unset removes every line of the key under set's rules (--all where set has --replace-all) and
+prints one JSON object on stdout:
+  {"file", "section", "key", "old": [...], "changed": bool}
+history prints the files' recorded revisions, newest first (--limit 0: all; --since is a UTC date):
+  {"revisions": [{"revision", "date", "by", "how", "author", "files", "message", "patch"?}, ...], "more": bool}
+restore brings one file back to a revision's exact bytes, under set's running rule, and prints:
+  {"file", "revision", "changed": bool}
 Errors go to stderr as one "Error: ..." message. Exit codes: 0 ok, 1 refused or failed, 2 usage.
 
 set refuses while the server runs (ARK rewrites GameUserSettings.ini when it stops), refuses the
@@ -26,9 +36,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
+import re
 import sys
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -223,18 +234,43 @@ def cmd_set(file_key: str, section: str, key: str, value: str, *, replace_all: b
         "old": old,
         "changed": updated != original,
         "removed": max(len(old) - 1, 0),
-        "backup": None,
     }
     if not result["changed"]:
         return result
     # Changes nobody recorded (hand edits, restores) get their own commit, so they aren't blamed on us.
     ini_history.commit_outside_changes(path.parent, "changed outside ark-cli; found before set ini")
-    if result["removed"]:
-        backup = path.with_name(path.name + ".bak")
-        shutil.copy2(path, backup)
-        result["backup"] = str(backup)
     write_atomic(path, updated)
     ini_history.commit(path.parent, ini_history.CLI_SET, f"[{section}] {key}={value}")
+    return result
+
+
+def cmd_unset(file_key: str, section: str, key: str, *, remove_all: bool) -> dict:
+    section, key = validate(file_key, section, key, "")
+    if ark_server_running():
+        raise IniError("Error: the server is running; stop it first (ark-cli unset ini --restart does this for you).")
+    path = FILES[file_key]
+    if file_key == "gameusersettings" and not path.is_file():
+        raise IniError(missing_message(file_key))
+    # surrogateescape: bytes that aren't valid UTF-8 are written back unchanged.
+    original = path.read_text(encoding="utf-8", errors="surrogateescape", newline="") if path.is_file() else ""
+    lines = original.splitlines(keepends=True)
+    _s, _e, _l, matches = find_key(lines, section, key)
+    if len(matches) > 1 and not remove_all:
+        entries, history = key_lines(path, lines, matches)
+        listing = "\n".join(f"  line {e['line']}: {key}={e['value']}  ({e['origin']})" for e in entries)
+        raise IniError(
+            f"Error: {key} appears {len(matches)} times in [{section}] of {path.name}:\n{listing}\n{history}\n"
+            "Some ARK keys are lists with one line per entry, and unset would delete them all. "
+            "Use 'edit ini' to remove one line, or rerun with --all to remove every line."
+        )
+    old = [_entry(lines[i])[1] for i in matches]  # type: ignore[index]
+    result = {"file": path.name, "section": section, "key": key, "old": old, "changed": bool(matches)}
+    if not matches:
+        return result
+    # Changes nobody recorded (hand edits, restores) get their own commit, so they aren't blamed on us.
+    ini_history.commit_outside_changes(path.parent, "changed outside ark-cli; found before unset ini")
+    write_atomic(path, "".join(line for i, line in enumerate(lines) if i not in matches))
+    ini_history.commit(path.parent, ini_history.CLI_UNSET, f"[{section}] {key}")
     return result
 
 
@@ -245,6 +281,47 @@ def cmd_track(by: str) -> None:
         ini_history.commit(config_dir, ini_history.CLI_EDIT, "edited with ark-cli edit ini")
     else:
         ini_history.commit_outside_changes(config_dir, "changed outside ark-cli; found before edit ini")
+
+
+def cmd_history(file_key: str | None, *, user_only: bool, limit: int, since: str | None, patch: bool) -> dict:
+    """The recorded revisions. Reading is safe while the server runs."""
+    filename = FILES[file_key].name if file_key else None
+    found, more = ini_history.revisions(
+        FILES["gameusersettings"].parent, filename, user_only=user_only, limit=limit, since=since, patch=patch
+    )
+    return {"revisions": found, "more": more}
+
+
+def cmd_restore(file_key: str, revision: str) -> dict:
+    # Checked before any git call: only a hash may reach git's command line.
+    if not re.fullmatch(r"[0-9a-fA-F]{4,40}", revision):
+        raise IniError("Error: --revision must be a revision from list ini-history")
+    if ark_server_running():
+        raise IniError("Error: the server is running; stop it first (ark-cli restore ini --restart does this for you).")
+    path = FILES[file_key]
+    wanted = ini_history.file_at(path.parent, revision, path.name)
+    changed = not path.is_file() or path.read_bytes() != wanted
+    result = {"file": path.name, "revision": revision, "changed": changed}
+    if not changed:
+        return result
+    # Changes nobody recorded (hand edits, restores) get their own commit, so they aren't blamed on us.
+    ini_history.commit_outside_changes(path.parent, "changed outside ark-cli; found before restore ini")
+    # surrogateescape: bytes that aren't valid UTF-8 are written back unchanged.
+    write_atomic(path, wanted.decode("utf-8", errors="surrogateescape"))
+    ini_history.commit(path.parent, ini_history.CLI_RESTORE, f"restored {path.name} from {revision}")
+    return result
+
+
+def _since(text: str) -> str:
+    datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=UTC)  # ValueError = argparse usage error
+    return text
+
+
+def _limit(text: str) -> int:
+    limit = int(text)
+    if limit < 0:
+        raise ValueError(text)
+    return limit
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -260,8 +337,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     put.add_argument("--key", required=True)
     put.add_argument("--value", required=True)
     put.add_argument("--replace-all", action="store_true")
+    unset = sub.add_parser("unset")
+    unset.add_argument("--file", required=True, choices=FILES)
+    unset.add_argument("--section", required=True)
+    unset.add_argument("--key", required=True)
+    unset.add_argument("--all", action="store_true")
     track = sub.add_parser("track")
     track.add_argument("--by", required=True, choices=("edit", "outside"))
+    history = sub.add_parser("history")
+    history.add_argument("--file", choices=FILES)
+    history.add_argument("--user-only", action="store_true")
+    history.add_argument("--limit", type=_limit, default=20)
+    history.add_argument("--since", type=_since)
+    history.add_argument("--patch", action="store_true")
+    restore = sub.add_parser("restore")
+    restore.add_argument("--file", required=True, choices=FILES)
+    restore.add_argument("--revision", required=True)
     args = parser.parse_args(argv)
     if args.command == "get" and (args.section is None) != (args.key is None):
         parser.error("get needs both --section and --key, or neither")
@@ -277,6 +368,16 @@ def main(argv: list[str]) -> int:
             sys.stdout.write(cmd_get(args.file))
         elif args.command == "track":
             cmd_track(args.by)
+        elif args.command == "history":
+            result = cmd_history(
+                args.file, user_only=args.user_only, limit=args.limit, since=args.since, patch=args.patch
+            )
+            sys.stdout.write(json.dumps(result) + "\n")
+        elif args.command == "restore":
+            sys.stdout.write(json.dumps(cmd_restore(args.file, args.revision)) + "\n")
+        elif args.command == "unset":
+            result = cmd_unset(args.file, args.section, args.key, remove_all=args.all)
+            sys.stdout.write(json.dumps(result) + "\n")
         else:
             result = cmd_set(args.file, args.section, args.key, args.value, replace_all=args.replace_all)
             sys.stdout.write(json.dumps(result) + "\n")

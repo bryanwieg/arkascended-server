@@ -33,13 +33,37 @@ ark-cli set ini --instance my-server --file gus --section ServerSettings --key M
 
 If the key appears more than once, `set ini` stops and lists the lines, marking
 which ones ARK wrote (`get ini` shows the same list without changing anything). Some keys are lists (one engram or item per line), so check
-before rerunning with `--replace-all`, which keeps one line and saves the old
-file as `GameUserSettings.ini.bak`. Details:
+before rerunning with `--replace-all`, which keeps one line. Details:
 [set ini](../reference/cli-commands.md#set-ini).
+
+`unset ini` removes a key the same way, so ARK falls back to its default; a
+repeated key needs `--all`. Details:
+[unset ini](../reference/cli-commands.md#unset-ini).
+
+```sh
+ark-cli unset ini --instance my-server --file gus --section ServerSettings --key MaxPlayers
+```
+
+## See and undo a change
+
+Every change to the INI files is recorded, ARK's own writes included.
+`list ini-history` shows the recent ones (`--patch` for what changed) and
+`restore ini` brings a file back to a revision:
+
+```sh
+ark-cli list ini-history --instance my-server --user-only
+ark-cli list ini-history --instance my-server --file gus --patch --limit 3
+ark-cli restore ini --instance my-server --file gus --revision 8d41e07
+```
+
+To undo a change, restore the revision listed just below it. The restore is
+itself a new revision, so it can be undone the same way. Details:
+[list ini-history](../reference/cli-commands.md#list-ini-history),
+[restore ini](../reference/cli-commands.md#restore-ini).
 
 ## Running server
 
-`edit ini` and `set ini` refuse while the instance runs: ARK rewrites its INI
+`edit ini`, `set ini`, `unset ini` and `restore ini` refuse while the instance runs: ARK rewrites its INI
 files when it stops, which would undo a change made while it ran. `--restart`
 stops the instance (saving the world), makes the change and starts it again:
 

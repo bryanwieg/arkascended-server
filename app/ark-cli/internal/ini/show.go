@@ -82,6 +82,10 @@ func runIniScript(d *core.AppDeps, composeFile, instance string, running bool, a
 		if strings.Contains(msg, "can't open file") && strings.Contains(msg, "ark-ini.py") {
 			return "", fmt.Errorf("Error: %s runs an image built before ark-cli managed its INI files; rebuild it with: ark-cli update instance --instance %s", instance, instance)
 		}
+		// An older image's script doesn't know a newer subcommand (argparse: invalid choice).
+		if len(args) > 0 && strings.Contains(msg, "invalid choice: '"+args[0]+"'") {
+			return "", fmt.Errorf("Error: %s runs an image built before this ark-cli command existed; rebuild it with: ark-cli update instance --instance %s", instance, instance)
+		}
 		if !strings.HasPrefix(msg, "Error:") {
 			msg = fmt.Sprintf("Error: ark-ini.py exited %d in %s: %s", result.ExitCode, instance, msg)
 		}

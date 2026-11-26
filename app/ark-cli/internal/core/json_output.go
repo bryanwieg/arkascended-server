@@ -142,5 +142,23 @@ type IniKeyJSON struct {
 	History string           `json:"history"`
 }
 
+// IniRevisionJSON is one revision of an instance's INI history (ark-ini.py history's revision).
+type IniRevisionJSON struct {
+	Revision string   `json:"revision"`
+	Date     string   `json:"date"`
+	By       string   `json:"by"`
+	How      string   `json:"how"`
+	Author   string   `json:"author"`
+	Files    []string `json:"files"`
+	Message  string   `json:"message"`
+	Patch    string   `json:"patch,omitempty"`
+}
+
+// IniHistoryJSON is `list ini-history --json` output (ark-ini.py history's reply), newest first.
+type IniHistoryJSON struct {
+	Revisions []IniRevisionJSON `json:"revisions"`
+	More      bool              `json:"more"`
+}
+
 // SchedulerHealthJSON is `check scheduler --json` output: the monitor's report as written to health.json.
 type SchedulerHealthJSON = health.Report

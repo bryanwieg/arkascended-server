@@ -119,11 +119,12 @@ func RunValidateSchedule(d *core.AppDeps, args []string) error {
 		"Validate one schedule (or all schedules) and report configuration problems.",
 	)
 	nameFlag := fs.String("name", "", "Schedule name (optional; validates all if omitted).")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
 	target := *nameFlag
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	file, err := svc.LoadScheduleFile(d.Context(), d.ComposeService, composeFile)
 	if err != nil {
 		return err

@@ -172,10 +172,11 @@ func addSchedule(composeFileFlag string, s schedule.BackupSchedule) error {
 func RunListSchedules(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet("list schedules", []string{"list schedules"}, "List configured schedules.")
 	jsonFlag := fs.Bool("json", false, "Output as JSON.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	file, err := svc.LoadScheduleFile(d.Context(), d.ComposeService, composeFile)
 	if err != nil {
 		return err
@@ -222,6 +223,7 @@ func RunRemoveSchedule(d *core.AppDeps, args []string) error {
 		"Remove a configured schedule from the compose file.",
 	)
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -229,7 +231,7 @@ func RunRemoveSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	file, err := svc.LoadScheduleFile(d.Context(), d.ComposeService, composeFile)
 	if err != nil {
 		return err

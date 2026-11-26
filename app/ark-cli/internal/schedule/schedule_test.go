@@ -887,7 +887,7 @@ func TestCreateScheduleBackupForCluster(t *testing.T) {
 }
 
 // TestScheduleCommandsWarnWithoutScheduler pins the warnings schedule commands print after saving: no scheduler
-// service in the schedule's project, and a working directory other than the compose directory.
+// service in the schedule's project.
 func TestScheduleCommandsWarnWithoutScheduler(t *testing.T) {
 	const notEnabled = "the scheduler service is not enabled"
 	withScheduler := types.Services{ark.SchedulerService: {Name: ark.SchedulerService, Labels: types.Labels{ark.RoleLabel: ark.SchedulerRole}}}
@@ -1227,4 +1227,99 @@ func TestValidateScheduleActionTypes(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestScheduleCommandsUseComposeFileFlag runs every schedule command from an unrelated directory with
+// --compose-file naming a second compose file: each reads (and writes) only that file, and run state lands
+// under its .ark-manage.
+func TestScheduleCommandsUseComposeFileFlag(t *testing.T) {
+	tmp := t.TempDir()
+	overrideSchedulePathsForTest(t, tmp) // COMPOSE_FILE: the default file, which no command may touch
+	other := filepath.Join(tmp, "other", "other.yaml")
+	if err := os.MkdirAll(filepath.Dir(other), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	writeScheduleFixture(t, "x-ark-schedules:\n  - name: nightly\n    enabled: true\n    type: backup\n    instance: all\n    cron: \"0 3 * * *\"\n")
+	var wrongFiles []string
+	var backupArgs []string
+	onlyOther := func(file string) error {
+		if file != other {
+			wrongFiles = append(wrongFiles, file)
+			return fmt.Errorf("wrong compose file %s", file)
+		}
+		return nil
+	}
+	cf := []string{"--compose-file", other}
+	commands := []struct {
+		name string
+		run  func(d *core.AppDeps) error
+	}{
+		{"create", func(*core.AppDeps) error {
+			return runCreateScheduleBackup(append([]string{"--instance", "all", "--name", "extra", "--cron", "0 4 * * *"}, cf...))
+		}},
+		{"update", func(d *core.AppDeps) error {
+			return RunUpdateSchedule(d, append([]string{"--name", "nightly", "--cron", "0 5 * * *"}, cf...))
+		}},
+		{"list", func(d *core.AppDeps) error { return RunListSchedules(d, cf) }},
+		{"show", func(d *core.AppDeps) error { return RunShowSchedule(d, append([]string{"--name", "nightly"}, cf...)) }},
+		{"run", func(d *core.AppDeps) error { return RunRunSchedule(d, append([]string{"--name", "nightly"}, cf...)) }},
+		{"check", func(d *core.AppDeps) error { return RunCheckSchedule(d, append([]string{"--name", "nightly"}, cf...)) }},
+		{"disable", func(d *core.AppDeps) error {
+			return RunDisableSchedule(d, append([]string{"--name", "nightly"}, cf...))
+		}},
+		{"enable", func(d *core.AppDeps) error { return RunEnableSchedule(d, append([]string{"--name", "nightly"}, cf...)) }},
+		{"validate", func(d *core.AppDeps) error { return RunValidateSchedule(d, cf) }},
+		{"remove", func(d *core.AppDeps) error { return RunRemoveSchedule(d, append([]string{"--name", "extra"}, cf...)) }},
+	}
+	outputs := map[string]string{}
+	withScheduleComposeDeps(t, emptyServices("asa1"), func(d *core.AppDeps) {
+		mock := d.ComposeService.(*arktest.MockCompose)
+		load, save := mock.LoadProjectFn, mock.SaveProjectFn
+		mock.LoadProjectFn = func(ctx context.Context, file string) (*ark.ComposeProject, error) {
+			if err := onlyOther(file); err != nil {
+				return nil, err
+			}
+			return load(ctx, file)
+		}
+		mock.SaveProjectFn = func(ctx context.Context, file string, project *ark.ComposeProject) error {
+			if err := onlyOther(file); err != nil {
+				return err
+			}
+			return save(ctx, file, project)
+		}
+		d.RunBackupFromSchedule = func(_ string, args []string) error {
+			backupArgs = args
+			return nil
+		}
+	}, func() {
+		for _, c := range commands {
+			var err error
+			outputs[c.name] = captureStdout(t, func() { err = c.run(core.CurrentAppDeps()) })
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+		}
+	})
+	if len(wrongFiles) != 0 {
+		t.Fatalf("commands touched other compose files: %v", wrongFiles)
+	}
+	if !strings.Contains(outputs["list"], "nightly") || !strings.Contains(outputs["list"], "extra") {
+		t.Fatalf("list did not show other.yaml's schedules:\n%s", outputs["list"])
+	}
+	if !strings.Contains(outputs["show"], "compose_file: "+other) || strings.Contains(outputs["show"], "config_path") {
+		t.Fatalf("show output:\n%s", outputs["show"])
+	}
+	if !strings.Contains(strings.Join(backupArgs, " "), "--compose-file "+other) {
+		t.Fatalf("backup args = %v, want --compose-file %s", backupArgs, other)
+	}
+	if !strings.Contains(outputs["check"], "last_status:      success") {
+		t.Fatalf("check did not see the run's state:\n%s", outputs["check"])
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(other), ".ark-manage")); err != nil {
+		t.Fatalf("run state not under the compose file's .ark-manage: %v", err)
+	}
 }

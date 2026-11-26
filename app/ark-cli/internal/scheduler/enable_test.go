@@ -1,12 +1,14 @@
 package scheduler
 
 // Tests: enable scheduler inserts/refreshes one service block and ups it, keeps the health port, refuses a
-// dynamic binary, a bad port or another working directory before any change; disable removes the block
-// with the stop_grace_period timeout and is a no-op when absent.
+// dynamic binary or a bad port before any change, works from another working directory, warns about a
+// leftover schedules.yaml; disable removes the block with the stop_grace_period timeout and is a no-op when
+// absent.
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -230,7 +232,7 @@ func TestEnableSchedulerFailsBeforeAnyChange(t *testing.T) {
 		{"dynamic binary", "is dynamically linked", func(*testing.T) string { return dynamic }, false, nil},
 		{"port out of range", "Error: --health-port must be between 0 and 65535", staticBinary, false, []string{"--health-port", "70000"}},
 		{"negative port", "Error: --health-port must be between 0 and 65535", staticBinary, false, []string{"--health-port", "-1"}},
-		{"other working dir", "Error: run 'ark-cli enable scheduler' from ", staticBinary, true, nil},
+		{"other working dir", "", staticBinary, true, nil}, // succeeds: schedules and state follow the compose file
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -241,6 +243,12 @@ func TestEnableSchedulerFailsBeforeAnyChange(t *testing.T) {
 				args = []string{"--compose-file", f.file}
 			}
 			err := f.run(t, RunEnableScheduler, args...)
+			if tc.wantErr == "" {
+				if err != nil || !f.loaded(t).HasScheduler() || len(f.ups) != 1 {
+					t.Fatalf("err = %v, ups = %v, want the scheduler enabled\n%s", err, f.ups, f.text(t))
+				}
+				return
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("err = %v, want %q", err, tc.wantErr)
 			}
@@ -304,5 +312,37 @@ func TestEnableSchedulerRefusesComposeLinkOutsideDir(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(outside); string(got) != instanceCompose || f.builds != 0 || len(f.ups) != 0 {
 		t.Fatalf("changed something: builds=%d ups=%v\n%s", f.builds, f.ups, got)
+	}
+}
+
+func TestEnableSchedulerWarnsAboutOldSchedulesFile(t *testing.T) {
+	const warning = "Warning: .ark-manage/schedules.yaml is no longer read; schedules live in docker-compose.yaml under x-ark-schedules. Recreate them with 'ark-cli create schedule' and delete the file."
+	binary := staticBinary(t)
+	for _, leftover := range []bool{true, false} {
+		t.Run(fmt.Sprintf("leftover=%v", leftover), func(t *testing.T) {
+			f := newEnableFixture(t, binary)
+			old := filepath.Join(f.dir, ".ark-manage", "schedules.yaml")
+			if leftover {
+				if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(old, []byte("schedules: []\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var warns strings.Builder
+			origWarnf := core.Warnf
+			core.Warnf = func(format string, args ...any) { fmt.Fprintf(&warns, format, args...) }
+			t.Cleanup(func() { core.Warnf = origWarnf })
+			if err := f.run(t, RunEnableScheduler); err != nil {
+				t.Fatalf("enable: %v", err)
+			}
+			if got := strings.Contains(warns.String(), warning); got != leftover {
+				t.Fatalf("warned = %v, want %v:\n%s", got, leftover, warns.String())
+			}
+			if data, err := os.ReadFile(old); leftover && (err != nil || string(data) != "schedules: []\n") {
+				t.Fatalf("old file changed: %q, %v", data, err)
+			}
+		})
 	}
 }

@@ -15,6 +15,7 @@ import (
 func RunCheckSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet("check schedule", []string{"check schedule --name <name>"}, "Check schedule running status and last result.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -22,7 +23,7 @@ func RunCheckSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	_, s, _, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
@@ -63,6 +64,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet("show schedule", []string{"show schedule --name <name>"}, "Show schedule configuration details.")
 	jsonFlag := fs.Bool("json", false, "Output as JSON.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -70,7 +72,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	_, s, _, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
@@ -128,7 +130,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 		core.Infof("last_started_at: -\n")
 		core.Infof("last_finished_at: -\n")
 	}
-	core.Infof("config_path: %s\n", composeFile)
+	core.Infof("compose_file: %s\n", composeFile)
 	return nil
 }
 
@@ -147,6 +149,7 @@ func setScheduleEnabled(d *core.AppDeps, args []string, command string, enabled 
 	}
 	fs := core.NewCommandFlagSet(command, []string{command + " --name <name>"}, verb+" a managed schedule.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -154,7 +157,7 @@ func setScheduleEnabled(d *core.AppDeps, args []string, command string, enabled 
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	file, s, idx, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err

@@ -22,6 +22,7 @@ func runBackupFromSchedule(d *core.AppDeps, name string, args []string) error {
 func RunRunSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet("run schedule", []string{"run schedule --name <name>"}, "Run a configured schedule immediately.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -29,7 +30,7 @@ func RunRunSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	composeFile, svc := scheduleStore(d, "")
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
 	_, s, _, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err

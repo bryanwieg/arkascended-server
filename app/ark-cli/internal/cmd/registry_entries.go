@@ -40,6 +40,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "set", Object: "ini", Route: "set_ini", Handler: ini.RunSetIni, TopLevelHelp: []string{"set ini --instance <inst> --file <ini> --section <s> --key <k> --value <v>  Set one INI key without an editor"}},
 	{Verb: "show", Object: "ini", Route: "show_ini", Handler: ini.RunShowIni, TopLevelHelp: []string{"show ini --instance <inst> --file <ini>     Print Game.ini or GameUserSettings.ini to the terminal"}},
 	{Verb: "reconfigure", Object: "instance", Route: "reconfigure", Handler: reconfigure.RunReconfigure, TopLevelHelp: []string{"reconfigure instance --instance <inst>      Update selected instance compose settings"}},
+	{Verb: "unset", Object: "ini", Route: "unset_ini", Handler: ini.RunUnsetIni, TopLevelHelp: []string{"unset ini --instance <inst> --file <ini> --section <s> --key <k>  Remove one INI key without an editor"}},
 	{Verb: "update", Object: "instance", Route: "update", Handler: update.RunUpdate, TopLevelHelp: []string{"update instance [--instance <inst|all>]     Check/apply ARK image updates (local or remote)"}},
 	{Verb: "update", Object: "schedule", Route: "update_schedule", Handler: schedule.RunUpdateSchedule, TopLevelHelp: []string{"update schedule --name <name>               Update a managed schedule"}},
 	{Verb: "enable", Object: "schedule", Route: "enable_schedule", Handler: schedule.RunEnableSchedule, TopLevelHelp: []string{"enable schedule --name <name>               Enable a managed schedule"}},

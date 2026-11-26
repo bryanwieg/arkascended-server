@@ -37,9 +37,17 @@ before rerunning with `--replace-all`, which keeps one line and saves the old
 file as `GameUserSettings.ini.bak`. Details:
 [set ini](../reference/cli-commands.md#set-ini).
 
+`unset ini` removes a key the same way, so ARK falls back to its default; a
+repeated key needs `--all`. Details:
+[unset ini](../reference/cli-commands.md#unset-ini).
+
+```sh
+ark-cli unset ini --instance my-server --file gus --section ServerSettings --key MaxPlayers
+```
+
 ## Running server
 
-`edit ini` and `set ini` refuse while the instance runs: ARK rewrites its INI
+`edit ini`, `set ini` and `unset ini` refuse while the instance runs: ARK rewrites its INI
 files when it stops, which would undo a change made while it ran. `--restart`
 stops the instance (saving the world), makes the change and starts it again:
 

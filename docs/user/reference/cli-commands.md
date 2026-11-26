@@ -364,6 +364,31 @@ ark-cli set ini --instance asa1 --file gus --section ServerSettings --key MaxPla
 | `--restart` | `false` | On a running instance: stop, apply, start. |
 | `--compose-file` | | |
 
+### unset ini
+
+Remove one key without an editor; the inverse of [`set ini`](#set-ini), with
+the same checks: a running instance is refused unless `--restart`, and the
+keys set from the instance's environment are refused. A key that appears more
+than once is refused, with each line listed with its origin, unless `--all`
+removes every line (use `edit ini` to remove one of them). The previous file
+is always kept as `<file>.bak`. A key that is not set is not an error.
+
+```sh
+ark-cli unset ini --instance asa1 --file gus --section ServerSettings --key MaxPlayers
+# GameUserSettings.ini [ServerSettings] MaxPlayers: removed "70"
+# The previous file is saved as .../GameUserSettings.ini.bak.
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--instance` | required | |
+| `--file` | required | `game`, `gameusersettings` or `gus`. |
+| `--section` | required | Section name, with or without brackets. Matched case-insensitively. |
+| `--key` | required | Key name. Matched case-insensitively. |
+| `--all` | `false` | Remove every line for a repeated key. |
+| `--restart` | `false` | On a running instance: stop, apply, start. |
+| `--compose-file` | | |
+
 ### INI history
 
 Each instance keeps a git history of `Game.ini` and `GameUserSettings.ini`, in
@@ -376,8 +401,9 @@ under its own author, which `get ini` and `set ini` show per line (`git blame`):
 | `written by ARK <when>` | `ARK server` | the image default (ARK generated it at image build), installed on the first start; the server's own writes, after it exits |
 | `set from instance env <when>` | `instance env` | the RCON and password settings, applied on every start |
 | `set with ark-cli <when>` | `ark-cli set ini` | `set ini` |
+| `unset with ark-cli <when>` | `ark-cli unset ini` | `unset ini` (shown in the file's last change; a removed key has no line left to label) |
 | `edited with ark-cli <when>` | `ark-cli edit ini` | `edit ini`, when the editor exits |
-| `changed outside ark-cli <when>` | `outside ark-cli` | changes nobody recorded (a hand edit on the volume, a restored file), found at the next start or before `set`/`edit` |
+| `changed outside ark-cli <when>` | `outside ark-cli` | changes nobody recorded (a hand edit on the volume, a restored file), found at the next start or before `set`/`unset`/`edit` |
 | `changed outside ark-cli (not yet recorded)` | | such a change, before it is found |
 | `origin unknown (present <when>)` | `unknown origin` | the files as first seen, on a volume from before the history existed |
 
@@ -391,7 +417,7 @@ its first start with an image built by an ark-cli that has it. After upgrading
 ark-cli, rebuild with `ark-cli update instance --instance <name>` (it rebuilds
 when the image recipe changed) and restart; the lines already in the files then
 show `origin unknown (present <first start>)`. Until the rebuild, `get ini`,
-`set ini`, `show ini` and `show instance` say the image needs rebuilding.
+`set ini`, `unset ini`, `show ini` and `show instance` say the image needs rebuilding.
 
 ### show ini
 

@@ -62,3 +62,53 @@ def test_set_ini_restart_applies_change_and_explains_ark_duplicates(
     assert dup.stderr.count("(written by ARK 20") == 2, dup.stderr
     assert "Last change to GameUserSettings.ini: written by ARK 20" in dup.stderr
     assert container_running(compose_client, instance)
+
+
+def test_unset_ini_removes_keys_with_restart_and_all(
+    test_env: dict[str, str],
+    repo_root: Path,
+    cli_path: Path,
+    run_cmd: Callable[..., object],
+    compose_client: DockerClient,
+) -> None:
+    """unset ini needs --restart on a running instance, removes the key across stop/start, and needs --all for repeats.
+
+    Scenario:
+        A lite instance whose fake server writes DupKey twice on every shutdown is started.
+        unset ini runs on MaxPlayers without --restart, then with it; then on DupKey with
+        --restart, without and with --all.
+
+    Expected:
+        - Without --restart: refused, pointing at --restart; MaxPlayers is still 70.
+        - With --restart: "70" reported as removed, instance running again, MaxPlayers has no line.
+        - DupKey without --all: refused, pointing at --all, instance running again.
+        - DupKey with --all: both values reported as removed, instance running again, no DupKey line.
+    """
+    cfg = build_container_instance_config(test_env, extra_env={"FAKE_ARK_INI_DUPLICATE": "DupKey"})
+    instance = cfg["instance"]
+    start_container_instance(dc=compose_client, test_env=test_env, repo_root=repo_root, **cfg)
+
+    def cli(*args: str, check: bool = True):
+        base = [str(cli_path), *args[:2], "--instance", instance, "--file", "gus", "--section", "ServerSettings"]
+        return run_cmd([*base, *args[2:]], env=test_env, cwd=repo_root, check=check, capture_output=True)
+
+    def values(key: str) -> list[str]:
+        return [line["value"] for line in json.loads(cli("get", "ini", "--json", "--key", key).stdout)["lines"]]
+
+    refused = cli("unset", "ini", "--key", "MaxPlayers", check=False)
+    assert refused.returncode != 0
+    assert "--restart" in refused.stderr
+    assert values("MaxPlayers") == ["70"]
+
+    assert 'MaxPlayers: removed "70"' in cli("unset", "ini", "--key", "MaxPlayers", "--restart").stdout
+    assert container_running(compose_client, instance)
+    assert values("MaxPlayers") == []
+
+    dup = cli("unset", "ini", "--key", "DupKey", "--restart", check=False)
+    assert dup.returncode != 0
+    assert "--all" in dup.stderr
+    assert container_running(compose_client, instance)
+
+    assert 'DupKey: removed "ark-a", "ark-b"' in cli("unset", "ini", "--key", "DupKey", "--restart", "--all").stdout
+    assert container_running(compose_client, instance)
+    assert values("DupKey") == []

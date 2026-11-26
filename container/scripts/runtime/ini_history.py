@@ -216,8 +216,10 @@ def revisions(
     if not (config_dir / ".git").is_dir():
         return [], False
     since_epoch = 0 if since is None else datetime.strptime(since, "%Y-%m-%d").replace(tzinfo=UTC).timestamp()
-    out = _git(config_dir, "log", "--name-only", "--format=%x1e%h%x00%an%x00%at%x00%s%x00")
-    rows = [chunk.split("\0", 4) for chunk in out.split("\x1e")[1:]]
+    # NUL is the only byte git keeps out of names and subjects, so it alone separates the fields.
+    out = _git(config_dir, "log", "--name-only", "--format=%x00%h%x00%an%x00%at%x00%s%x00")
+    fields = out.split("\0")[1:]
+    rows = [fields[i : i + 5] for i in range(0, len(fields), 5)]
     found = [
         {
             "revision": revision,

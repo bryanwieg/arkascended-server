@@ -234,7 +234,7 @@ come from hand edits and restored backups. `set ini` must not collapse lines
 ARK wrote on purpose, so it needs to know who wrote each line, not just the
 file's current content. A per-instance git repository next to the files
 (`Saved/Config/WindowsServer/.git`) answers that per line with `git blame`, and
-gives a full log and diff for free.
+gives a full log and diff for free (`list ini-history`, `restore ini`).
 
 - **Authors, not heuristics.** Each writer commits under its own author name
   (`ini_history.py`). The start script commits whatever changed during a run as
@@ -249,3 +249,10 @@ gives a full log and diff for free.
   ark-cli on the host ([container script boundary](architecture.md#container-script-boundary)).
 - **Never blocks.** A git failure warns and the server starts anyway; the
   history is informational.
+- **Packed, never capped.** ARK rewrites its INI files on every stop, so the
+  history grows with every run. Unpacked, a revision costs about 18 KB (whole
+  file copies); `commit` packs the repository once enough objects are loose
+  and keeps no reflog or hooks, which brings it to about 0.3 KB per revision.
+  At that size a cap on revisions or bytes would save nothing worth having,
+  and dropping revisions would rewrite history: `git blame` origins would lose
+  their dates and `restore ini` its targets. So no revision is ever dropped.

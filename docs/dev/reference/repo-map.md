@@ -131,17 +131,22 @@ Commands use `docker-compose.yaml` in the current directory; override with
 - `container/scripts/runtime/ini_history.py` — git history of `Game.ini` and
   `GameUserSettings.ini` (`Saved/Config/WindowsServer/.git`): each writer
   commits under its own author (`ARK server`, `instance env`, `ark-cli set ini`,
-  `ark-cli unset ini`, `ark-cli edit ini`, `outside ark-cli`, `unknown origin`); `origins` turns
-  `git blame` into a label per line. Commits come from the entrypoint (files as
+  `ark-cli unset ini`, `ark-cli edit ini`, `ark-cli restore ini`, `outside ark-cli`, `unknown origin`); `origins` turns
+  `git blame` into a label per line, `revisions` lists the commits and `file_at`
+  reads a file as a revision had it. `commit` packs the repository (no reflog,
+  no hooks, `git gc` once enough objects are loose); no revision is dropped. Commits come from the entrypoint (files as
   found, the image default, the env settings), the start script (the server's
-  writes, after it exits) and `ark-ini.py` (`set`, `unset`, `track`)
-- `container/scripts/runtime/ark-ini.py` — `get`/`set`/`unset` for `Game.ini` and
+  writes, after it exits) and `ark-ini.py` (`set`, `unset`, `restore`, `track`)
+- `container/scripts/runtime/ark-ini.py` — `get`/`set`/`unset`/`history`/`restore` for `Game.ini` and
   `GameUserSettings.ini`; the CLI's only way into them (`show ini`, `get ini`,
-  `set ini`, `unset ini`, `show instance`). `get` with `--section`/`--key` lists a key's lines
+  `set ini`, `unset ini`, `list ini-history`, `restore ini`, `show instance`). `get` with `--section`/`--key` lists a key's lines
   with their origin. `set` refuses while the server runs, refuses env-managed
   keys, and refuses repeated keys unless `--replace-all`, listing each line's
   origin. `unset` removes a key under the same rules (`--all` for repeated
-  keys). `track --by edit|outside` records `edit ini`'s changes
+  keys). `history` lists the recorded revisions as JSON (`--file`,
+  `--user-only`, `--limit`, `--since`, `--patch`). `restore` writes a file's
+  bytes from a revision and commits that as a new revision; it refuses while
+  the server runs. `track --by edit|outside` records `edit ini`'s changes
 - `container/scripts/runtime/_logging.py` — canonical container logging
   (`emit_event`, `emit_warning`, `emit_error`)
 - `container/scripts/installer/generate-default-ini.py` — image build only:

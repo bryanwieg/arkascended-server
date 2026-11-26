@@ -268,17 +268,17 @@ flowchart TD
 
 ## Schedule Call Graph
 
-`app/ark-cli/internal/schedule/` → `app/pkg/ark/schedule/`. Files under
-`.ark-manage/` in the current directory (the compose dir, where the scheduler
-reads them).
+`app/ark-cli/internal/schedule/` → `app/pkg/ark/schedule/`. Schedules are
+read from and written to the compose file's `x-ark-schedules` block; run state,
+logs and locks are under `.ark-manage/` in the compose file's directory.
 
 ```mermaid
 flowchart TD
     A[ark-cli schedule command] --> B{Verb?}
 
     B -->|"create/update/enable/disable/remove"| C[Parse + validate cron, format, target]
-    C --> E[SaveScheduleFile: write schedules.yaml]
-    E --> E1[warnIfSchedulerDisabled: no ark-scheduler service, or cwd is not the compose dir]
+    C --> E[SaveScheduleFile: write x-ark-schedules in the compose file]
+    E --> E1[warnIfSchedulerDisabled: no ark-scheduler service]
 
     B -->|"check"| K[LoadScheduleByName]
     K --> L[Lock file held? + LoadRunState]

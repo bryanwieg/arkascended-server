@@ -6,9 +6,9 @@ import tarfile
 from pathlib import Path
 
 
-def write_schedule_file(path: Path, schedules_yaml: str) -> None:
+def write_schedule_file(path: Path, compose_yaml: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(schedules_yaml, encoding="utf-8")
+    path.write_text(compose_yaml, encoding="utf-8")
 
 
 def write_run_state(
@@ -54,18 +54,30 @@ def create_backup_archive(
     return archive_path
 
 
-SCHEDULE_TWO_ENTRIES = """\
-version: 1
-schedules:
+# Block-style service the schedule fixtures share; schedules go under x-ark-schedules.
+SCHEDULE_COMPOSE_BASE = """\
+services:
+  testinst:
+    image: ark-server:latest
+"""
+
+SCHEDULE_NIGHTLY = """\
   - name: nightly
     type: backup
     instance: testinst
-    enabled: true
+    enabled: {enabled}
     cron: "0 3 * * *"
     format: tar.gz
     retain_count: 5
     retain_days: 30
     retain_size_gb: 10
+"""
+
+SCHEDULE_TWO_ENTRIES = (
+    SCHEDULE_COMPOSE_BASE
+    + "x-ark-schedules:\n"
+    + SCHEDULE_NIGHTLY.format(enabled="true")
+    + """\
   - name: weekly
     type: backup
     instance: testinst2
@@ -76,34 +88,11 @@ schedules:
     retain_days: 14
     retain_size_gb: 5
 """
+)
 
-SCHEDULE_SINGLE_ENABLED = """\
-version: 1
-schedules:
-  - name: nightly
-    type: backup
-    instance: testinst
-    enabled: true
-    cron: "0 3 * * *"
-    format: tar.gz
-    retain_count: 5
-    retain_days: 30
-    retain_size_gb: 10
-"""
+SCHEDULE_SINGLE_ENABLED = SCHEDULE_COMPOSE_BASE + "x-ark-schedules:\n" + SCHEDULE_NIGHTLY.format(enabled="true")
 
-SCHEDULE_SINGLE_DISABLED = """\
-version: 1
-schedules:
-  - name: nightly
-    type: backup
-    instance: testinst
-    enabled: false
-    cron: "0 3 * * *"
-    format: tar.gz
-    retain_count: 5
-    retain_days: 30
-    retain_size_gb: 10
-"""
+SCHEDULE_SINGLE_DISABLED = SCHEDULE_COMPOSE_BASE + "x-ark-schedules:\n" + SCHEDULE_NIGHTLY.format(enabled="false")
 
 
 def write_minimal_compose(path: Path, instance_name: str) -> None:

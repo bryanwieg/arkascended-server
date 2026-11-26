@@ -25,7 +25,7 @@ def test_list_schedules_with_entries(run_cli, sched_path: Path) -> None:
     """list schedules displays all configured schedule names and cron expressions.
 
     Scenario:
-        A schedule file with two entries (nightly, weekly) exists. list
+        A compose file with two entries (nightly, weekly) exists. list
         schedules is invoked.
 
     Expected:
@@ -45,7 +45,7 @@ def test_list_schedules_json(run_cli, sched_path: Path) -> None:
     """list schedules --json returns a list of schedule objects.
 
     Scenario:
-        A schedule file with two entries exists. list schedules is invoked
+        A compose file with two entries exists. list schedules is invoked
         with --json.
 
     Expected:
@@ -71,7 +71,7 @@ def test_show_schedule_details(run_cli, sched_path: Path) -> None:
     """show schedule displays instance, cron, and enabled status.
 
     Scenario:
-        A schedule file with two entries exists. show schedule is invoked
+        A compose file with two entries exists. show schedule is invoked
         for 'nightly'.
 
     Expected:
@@ -91,7 +91,7 @@ def test_show_schedule_json(run_cli, sched_path: Path) -> None:
     """show schedule --json returns a JSON object with full schedule details.
 
     Scenario:
-        A schedule file with two entries exists. show schedule is invoked
+        A compose file with two entries exists. show schedule is invoked
         for 'nightly' with --json.
 
     Expected:
@@ -111,7 +111,7 @@ def test_show_schedule_json(run_cli, sched_path: Path) -> None:
     assert "retain_count" in parsed
 
 
-def test_show_schedule_not_found(run_cli) -> None:
+def test_show_schedule_not_found(run_cli, schedule_workdir: Path) -> None:
     """show schedule for a non-existent entry exits non-zero.
 
     Scenario:

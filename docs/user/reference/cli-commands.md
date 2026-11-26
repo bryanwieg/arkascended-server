@@ -581,17 +581,30 @@ Apply retention without creating a backup.
 ## Schedules
 
 Managed schedules: backups and the `rcon`, `save` and `restart` actions. The `ark-scheduler` service runs them (see
-[Scheduler](#scheduler)); schedule commands only edit
-`.ark-manage/schedules.yaml`, and the scheduler rereads it every minute. Run
-schedule commands from the compose file's directory: files are relative to the
-current directory, and the scheduler reads the ones in the compose directory.
-Every change warns when the scheduler service is not enabled
-(`Warning: the scheduler service is not enabled, so schedules will not run.`)
-or when the current directory is not the compose directory.
+[Scheduler](#scheduler)); schedule commands only edit the `x-ark-schedules:`
+block of the compose file, and the scheduler rereads it every minute. Every
+schedule command takes `--compose-file <path>` (default `./docker-compose.yaml`
+or `COMPOSE_FILE`): the compose file that holds the schedules. The rest of the
+file is left unchanged; a `$` in a value is written as `$$` (compose
+interpolation) and read back as `$`. Run state, logs and locks are under the
+compose file's directory, whatever the current directory. A relative
+`ARK_BACKUP_DIR` is resolved against the compose directory by `enable scheduler`
+but against the current directory by host commands such as `run schedule`, so
+set it absolute or run from the compose directory. Every change warns
+when the scheduler service is not enabled
+(`Warning: the scheduler service is not enabled, so schedules will not run.`).
 
-| Path | Content |
+```yaml
+x-ark-schedules:
+  - cron: "0 3 * * *"
+    enabled: true
+    instance: asa1
+    name: nightly
+    type: backup
+```
+
+| Path (under the compose file's directory) | Content |
 |---|---|
-| `.ark-manage/schedules.yaml` | Schedule config |
 | `.ark-manage/logs/schedules/<name>.log` | Run log |
 | `.ark-manage/state/schedules/<name>.last.json` | Last run result |
 | `.ark-manage/locks/schedule-<name>.lock` | Run lock |
@@ -611,7 +624,7 @@ scheduler's `TZ`. `TZ=`/`CRON_TZ=` prefixes and `@every` are refused.
 | `--retain-days` | `7` | |
 | `--retain-size-gb` | `5` | |
 | `--disabled` | `false` | Create disabled. |
-| `--compose-file` | | Compose file the scheduled run uses. |
+| `--compose-file` | | Compose file that holds the schedule. |
 
 ```sh
 ark-cli create schedule backup --instance asa-server-1 --name nightly-asa1 --cron "0 3 * * *"
@@ -634,7 +647,7 @@ Action schedules for running instances:
 | `--cron` | required | Cron expression (see above). |
 | `--command` | | `rcon` only, required there. |
 | `--disabled` | `false` | Create disabled. |
-| `--compose-file` | | Compose file the scheduled run uses. |
+| `--compose-file` | | Compose file that holds the schedule. |
 
 Targets run one after another. A stopped target is skipped with
 `Warning: <instance> is stopped; <type> command unsuccessful`; a `restart`
@@ -651,24 +664,27 @@ ark-cli create schedule restart --instance asa-server-1 --name nightly-restart -
 ### update schedule
 
 `--name` (required) plus at least one of: `--cron`, `--instance`,
-`--compose-file`, `--format`, `--retain-count`, `--retain-days`,
+`--format`, `--retain-count`, `--retain-days`,
 `--retain-size-gb`, `--command`, `--enabled`, `--disabled` (the last two are
 mutually exclusive). Unset flags keep their current value. `--command` applies
 to `rcon` schedules only; `--format` and `--retain-*` to `backup` schedules
 only; `--instance cluster` is refused on non-backup schedules. A flag that does
 not fit the schedule's type exits 1 with an error naming the flag and the type.
+`--compose-file` names the compose file that holds the schedule.
 
 ### Other schedule commands
 
 | Command | Flags | Description |
 |---|---|---|
 | `list schedules` | `--json` | Schedules with last status, exit code and finish time. |
-| `show schedule` | `--name` (required), `--json` | Schedule details. |
+| `show schedule` | `--name` (required), `--json` | Schedule details, with `compose_file: <path>`. |
 | `enable schedule` / `disable schedule` | `--name` (required) | Toggle without removing. |
 | `check schedule` | `--name` (required) | Running status and last result; non-zero exit if the last run failed. |
 | `run schedule` | `--name` (required) | Run now, in this shell (same lock, state and log as a scheduled run). |
 | `validate schedule` | `--name` (optional; all if omitted) | Report config problems. |
 | `remove schedule` | `--name` (required) | Delete the schedule. |
+
+Each also takes `--compose-file`.
 
 ## Scheduler
 
@@ -697,7 +713,6 @@ to your crontab, when a `crontab` binary exists; other crontab entries stay.
 | `--compose-file` | | |
 
 ```sh
-cd ~/ark                                   # the compose file's directory
 ark-cli enable scheduler
 ark-cli enable scheduler --health-port 18099
 ark-cli enable scheduler --health-port 0   # no host port
@@ -709,8 +724,6 @@ Output: `Built scheduler image ark-scheduler:<hash>` (or `... is up to date`),
 
 Requirements, each refused with an error:
 
-- Run it from the compose file's directory (schedules are read from
-  `.ark-manage/` there).
 - The compose file must be a regular file in the compose directory; a symlink
   to a file elsewhere is refused (the scheduler mounts only the compose
   directory).
@@ -752,7 +765,7 @@ Do not edit the block by hand; `enable scheduler` replaces it.
 
 Stop the `ark-scheduler` container (within its `stop_grace_period`, so a
 running backup can finish), remove it and its block from the compose file.
-Images and `schedules.yaml` stay. Prints `Scheduler removed`, or
+Images and the `x-ark-schedules` block stay. Prints `Scheduler removed`, or
 `Scheduler is not enabled` when there is nothing to remove.
 
 Flags: `--compose-file`.

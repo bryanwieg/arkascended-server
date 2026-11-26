@@ -47,7 +47,8 @@ container, image or volume) and `ErrConflict` (in use).
 | Copy | `CopyFromService` |
 
 `SaveProject` writes only changes to a service's image, environment, labels
-and ports, as line edits that keep the rest of the file byte for byte, and
+and ports, and the top-level `x-ark-schedules` block (replaced whole, or
+appended at the end of the file when absent, `$` written as `$$`), as line edits that keep the rest of the file byte for byte, and
 refuses anything else (see
 [design decisions](../explanation/design-decisions.md#why-yaml-ast-editing-instead-of-template-replacement)).
 New services are added with `runtime.InsertService` on the raw YAML instead.

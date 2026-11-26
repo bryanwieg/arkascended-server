@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytestmark = [pytest.mark.container]
 
@@ -21,17 +22,18 @@ def test_manage_schedule_backup_lifecycle(
 
     Scenario:
         A backup schedule is created for a running instance using a temporary
-        working directory so the schedule config files do not pollute the repo.
+        working directory that is not the compose file's directory.
         The schedule is run immediately to produce an actual backup, then
         inspected via list and show. Finally the schedule is removed and list
         schedules confirms it is gone.
 
     Expected:
         - create schedule exits zero and output contains "Created schedule <name>".
-        - schedules.yaml exists on disk after creation.
+        - The schedule is under x-ark-schedules in the compose file.
         - validate schedule exits zero with "Validated schedule <name>".
         - run schedule exits zero with "Ran schedule <name>" and produces a
-          backup archive in the instance backup directory.
+          backup archive in the instance backup directory; its run state is under
+          the compose dir's .ark-manage/state/schedules/, not the working directory's.
         - list schedules output contains the schedule name, "LAST_STATUS" header,
           and "success".
         - show schedule output contains name, instance, type, last_status, and
@@ -63,8 +65,9 @@ def test_manage_schedule_backup_lifecycle(
     )
     assert f"Created schedule {schedule_name}" in create_result.stdout
 
-    schedules_yaml = workdir / ".ark-manage" / "schedules.yaml"
-    assert schedules_yaml.is_file()
+    compose_file = Path(test_env["COMPOSE_FILE"])
+    schedules = yaml.safe_load(compose_file.read_text())["x-ark-schedules"]
+    assert [s["name"] for s in schedules] == [schedule_name]
 
     validate_result = run_cmd(
         [str(cli_path), "validate", "schedule", "--name", schedule_name],
@@ -81,6 +84,9 @@ def test_manage_schedule_backup_lifecycle(
         capture_output=True,
     )
     assert f"Ran schedule {schedule_name}" in run_result.stdout
+    state_file = Path(".ark-manage") / "state" / "schedules" / f"{schedule_name}.last.json"
+    assert (compose_file.parent / state_file).is_file()
+    assert not (workdir / state_file).exists()
 
     list_result = run_cmd(
         [str(cli_path), "list", "schedules"],

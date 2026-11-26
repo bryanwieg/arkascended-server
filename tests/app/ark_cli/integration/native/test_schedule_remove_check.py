@@ -9,7 +9,7 @@ def test_remove_schedule(run_cli, sched_path: Path) -> None:
     """remove schedule deletes a named entry; other entries remain.
 
     Scenario:
-        A schedule file with two entries (nightly, weekly) exists. remove
+        A compose file with two entries (nightly, weekly) exists. remove
         schedule is invoked for 'nightly'. The remaining entries are
         verified via list schedules.
 
@@ -32,7 +32,7 @@ def test_remove_schedule_not_found(run_cli) -> None:
 
     Scenario:
         remove schedule is invoked for a name that does not exist in the
-        schedules file.
+        compose file.
 
     Expected:
         - The command exits non-zero.
@@ -83,7 +83,7 @@ def test_check_schedule_not_found(run_cli) -> None:
 
     Scenario:
         check schedule is invoked for a name that does not exist in the
-        schedules file.
+        compose file.
 
     Expected:
         - The command exits non-zero.

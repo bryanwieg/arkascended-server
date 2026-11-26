@@ -53,7 +53,7 @@ def env(test_env: dict[str, str], scheduler_socket_env: dict[str, str]) -> dict[
 
 @pytest.fixture
 def compose_dir(env: dict[str, str]) -> Path:
-    """ark-cli runs from the compose dir: enable scheduler refuses any other cwd."""
+    """The compose file's directory; the cli fixture runs ark-cli from there."""
     return Path(env["COMPOSE_FILE"]).parent
 
 

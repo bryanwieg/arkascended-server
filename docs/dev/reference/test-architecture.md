@@ -267,7 +267,7 @@ Shared infrastructure in `tests/helpers/`:
 | `lite_image` | `ensure_lite_image`, `image_for_test`: the [lite image](#lite-image-no-ark-server) for `lite` tests |
 | `framework_logger` | Per-test `framework.log` |
 | `infra` | `wait_for`, `prepare_test_env`, `cleanup_test_env`, `build_container_instance_config`, orphan pruning, lock functions |
-| `native_fixtures` | File fixtures for `native/` tests (schedules, run state, backup archives, minimal compose) |
+| `native_fixtures` | File fixtures for `native/` tests (`SCHEDULE_*` compose files with `x-ark-schedules`, written by `write_schedule_file` to the `sched_path` fixture, the `schedule_workdir` compose file; run state, backup archives, minimal compose) |
 | `web_client` | stdlib HTTP client for `ark-web` tests |
 
 Key fixtures (`tests/container/integration/conftest.py`, re-exported to CLI tests; `tests/conftest.py`

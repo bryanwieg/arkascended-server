@@ -37,7 +37,9 @@ Project-specific coding rules. Rationale lives in
   only through `ComposeService.SaveProject` (`app/pkg/ark/compose_service.go`).
   Direct file I/O skips project-name derivation ("project name must not be
   empty" on Compose v5) and the `goccy/go-yaml` AST edits that keep user
-  comments and custom fields.
+  comments and custom fields. That includes the schedules: change
+  `Project.Extensions["x-ark-schedules"]` and `SaveProject` rewrites only that
+  block; no other extension change is written.
 - Exception: adding or removing a service (`create instance`, `remove
   instance`, `restore backup --new-instance`, `enable`/`disable scheduler`).
   `SaveProject` refuses those, so edit the text with the `runtime` helpers

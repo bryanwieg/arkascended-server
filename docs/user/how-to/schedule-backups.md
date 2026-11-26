@@ -1,10 +1,11 @@
 # Schedule Automatic Backups
 
-Schedules live in `.ark-manage/schedules.yaml` next to your
-`docker-compose.yaml`. The `ark-scheduler` compose service runs them and
-watches the health of your instances. Run every command in this guide from
-the directory that holds `docker-compose.yaml`: the scheduler reads its
-schedules from there.
+Schedules live in `docker-compose.yaml`, under its `x-ark-schedules:` block;
+the schedule commands edit that block and leave the rest of the file alone.
+The `ark-scheduler` compose service runs them and watches the health of your
+instances. The commands use `./docker-compose.yaml` (or `COMPOSE_FILE`); pass
+`--compose-file <path>` for another one. Run state, logs and locks are under
+`.ark-manage/` in the compose file's directory.
 
 ## Enable the scheduler
 
@@ -26,6 +27,10 @@ Upgrading from an `ark-cli` that used `apply schedules`: that command is gone.
 `enable scheduler` removes the schedule block the old `ark-cli` wrote to your
 crontab and leaves your other crontab entries alone.
 
+Upgrading from an `ark-cli` that kept schedules in `.ark-manage/schedules.yaml`:
+that file is no longer read, and `enable scheduler` warns while it exists.
+Recreate each schedule with `ark-cli create schedule`, then delete the file.
+
 Before enabling, check two things:
 
 - Every `${VAR}` that `docker-compose.yaml` uses must be set in `.env` next to
@@ -38,7 +43,7 @@ Before enabling, check two things:
   to a file elsewhere: the scheduler mounts only the compose directory.
 
 To remove the service: `ark-cli disable scheduler`. Schedules stay in
-`schedules.yaml` but do not run.
+`docker-compose.yaml` but do not run.
 
 ## Create
 
@@ -93,7 +98,7 @@ successful run, so a stopped instance does not make the schedule fail.
 
 ## When schedules run
 
-- The scheduler rereads `schedules.yaml` every minute, so a new or changed
+- The scheduler rereads `docker-compose.yaml` every minute, so a new or changed
   schedule applies within a minute. Nothing else to run.
 - Times are in the scheduler's `TZ`: the `TZ` of the instance whose name
   sorts first in `docker-compose.yaml` when you ran `enable scheduler`, else
@@ -246,7 +251,10 @@ restarts. The restart is a stop and a start:
 ## Storage
 
 Default `<compose-dir>/backups/<instance>/`. Override with `ARK_BACKUP_DIR`
-(set it before `enable scheduler`; the scheduler mounts that directory).
+(set it before `enable scheduler`; the scheduler mounts that directory). A
+relative `ARK_BACKUP_DIR` is resolved against the compose directory by
+`enable scheduler` but against the current directory by host commands such as
+`run schedule`; set it absolute to avoid the difference.
 
 ## Related
 

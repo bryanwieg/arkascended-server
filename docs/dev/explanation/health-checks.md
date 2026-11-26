@@ -187,11 +187,11 @@ are not fixed by a restart.
 ### Schedule health
 
 `schedule.Service.Health` (`app/pkg/ark/schedule/health.go`), per enabled
-backup schedule: a held schedule lock is `ok` (running); a last run left
+schedule of any type: a held schedule lock is `ok` (running); a last run left
 `running` with the lock free, a `failed` last run, or an invalid cron is
 `fail`; otherwise `fail` when more than `OverdueGrace` (1h) past the next run
 after the latest of the last start, the scheduler's start and the
-`schedules.yaml` modification time (so a schedule enabled or edited after a
+compose file's modification time (so a schedule enabled or edited after a
 long pause is not overdue).
 
 ### Report, HTTP endpoint and healthcheck

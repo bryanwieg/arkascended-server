@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from helpers.artifacts import ensure_cli_binary
+from helpers.native_fixtures import SCHEDULE_COMPOSE_BASE
 
 
 @pytest.fixture(scope="session")
@@ -54,7 +55,7 @@ def schedule_workdir(native_workdir: Path) -> Path:
     (manage_dir / "logs" / "schedules").mkdir(parents=True, exist_ok=True)
     (manage_dir / "locks").mkdir(parents=True, exist_ok=True)
     (manage_dir / "generated").mkdir(parents=True, exist_ok=True)
-    (manage_dir / "schedules.yaml").write_text("version: 1\nschedules: []\n")
+    (native_workdir / "docker-compose.yaml").write_text(SCHEDULE_COMPOSE_BASE)
     return native_workdir
 
 
@@ -68,7 +69,7 @@ def backup_workdir(native_workdir: Path) -> Path:
 
 @pytest.fixture
 def sched_path(schedule_workdir: Path) -> Path:
-    return schedule_workdir / ".ark-manage" / "schedules.yaml"
+    return schedule_workdir / "docker-compose.yaml"
 
 
 @pytest.fixture

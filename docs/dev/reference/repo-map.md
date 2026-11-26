@@ -230,10 +230,9 @@ See [image-build.md](image-build.md).
 
 ## Runtime state (gitignored)
 
-Schedule state is relative to the current directory; build context and
-backups are relative to the compose file's directory.
+Relative to the compose file's directory. Schedule definitions are in the
+compose file itself (`x-ark-schedules`).
 
-- `.ark-manage/schedules.yaml` — schedule definitions
 - `.ark-manage/logs/schedules/<name>.log` — per-schedule run logs
 - `.ark-manage/state/schedules/<name>.last.json` — last run state
 - `.ark-manage/locks/schedule-<name>.lock` — per-schedule lock files

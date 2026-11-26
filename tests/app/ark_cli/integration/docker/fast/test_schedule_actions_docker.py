@@ -23,25 +23,34 @@ def _saves(dc: DockerClient, instance: str) -> int:
 
 
 def test_rcon_schedule_runs_command(
-    cli: Callable[..., object], compose_dir: Path, started_instance_cli: dict[str, str]
+    cli: Callable[..., object],
+    compose_client: DockerClient,
+    compose_dir: Path,
+    env: dict[str, str],
+    started_instance_cli: dict[str, str],
 ) -> None:
     """An rcon schedule sends its command to a running instance and logs the reply.
 
     Scenario:
-        An rcon schedule `ServerChat hello` is created for a started lite instance and run.
+        An rcon schedule `ServerChat costs $5` is created for a started lite instance and run.
 
     Expected:
+        - The compose file stores the command as `$$5`.
         - run schedule exits zero and prints `SUCCESS chat`.
+        - The server log holds `RCON command: ServerChat costs $5`: the command sent has one `$`.
         - The schedule log holds the server's RCON reply for the instance.
         - check schedule shows last_status success.
     """
     instance = started_instance_cli["instance"]
     cli("create", "schedule", "rcon", "--instance", instance, "--name", "chat", "--cron", "0 * * * *",
-        "--command", "ServerChat hello")
+        "--command", "ServerChat costs $5")
+    assert "ServerChat costs $$5" in Path(env["COMPOSE_FILE"]).read_text()
 
     result = cli("run", "schedule", "--name", "chat")
 
     assert "SUCCESS chat" in result.stdout
+    server_log = (compose_exec(compose_client, instance, ["cat", SERVER_LOG]) or "").splitlines()
+    assert any(line.endswith("RCON command: ServerChat costs $5") for line in server_log)
     assert f"{instance}: Server received" in _schedule_log(compose_dir, "chat")
     assert re.search(r"last_status:\s+success", cli("check", "schedule", "--name", "chat").stdout)
 

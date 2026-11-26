@@ -33,6 +33,17 @@ def _artifacts_dir(root: Path) -> Path:
     return path
 
 
+# Kept by wipe and prune: build caches that outlive test runs.
+BUILD_CACHE_DIR = ".build-cache"
+
+
+def build_cache_dir(root: Path) -> Path:
+    """Directory under .tests/ for build caches shared by all test runs (never pruned)."""
+    path = tests_root(root) / BUILD_CACHE_DIR
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def tests_root(root: Path) -> Path:
     path = _artifacts_dir(root)
     path.mkdir(parents=True, exist_ok=True)
@@ -147,6 +158,7 @@ def wipe_test_artifacts(root: Path, preserve_recent: int = 7) -> None:
     # Preserve the most recent N directories and the .run-state directory
     dirs_to_keep = set(run_dirs[-preserve_recent:]) if preserve_recent > 0 else set()
     dirs_to_keep.add(artifacts_dir / ".run-state")
+    dirs_to_keep.add(artifacts_dir / BUILD_CACHE_DIR)
 
     # Remove everything else
     for item in artifacts_dir.iterdir():
@@ -167,7 +179,7 @@ def prune_test_artifacts(root: Path, retention: int = 7) -> None:
         return
     artifacts_dir = tests_root(root)
     run_dirs = sorted(
-        [d for d in artifacts_dir.iterdir() if d.is_dir()],
+        [d for d in artifacts_dir.iterdir() if d.is_dir() and d.name != BUILD_CACHE_DIR],
         key=lambda d: d.name,
     )
     for old_dir in run_dirs[:-retention]:

@@ -238,7 +238,7 @@ Notes:
 | `BabyCuddleIntervalMultiplier` † | ✔ | float = 1 | ↑ time between cuddles | Longer gap between imprint cuddles | Cuddles come more often (lower with BabyMatureSpeedMultiplier) |
 | `BabyCuddleLoseImprintQualitySpeedMultiplier` | ✔ × | float = 1 | ↑ imprint loss speed | Imprint is lost faster after a missed cuddle | Imprint is lost slower |
 | `BabyFoodConsumptionSpeedMultiplier` † | ✔ | float = 1 | ↑ baby food use | Babies eat faster | Babies eat slower |
-| `BabyImprintAmountMultiplier` | ✗ | float = 1 | ↑ imprint per cuddle | More imprint % per cuddle | Less imprint % per cuddle |
+| `BabyImprintAmountMultiplier` † | ✔ | float = 1 | ↑ imprint per cuddle | More imprint % per cuddle | Less imprint % per cuddle |
 | `BabyImprintingStatScaleMultiplier` | ✔ × | float = 1 | ↑ imprint stat bonus | Bigger stat bonus from imprinting | Smaller imprint bonus |
 | `BabyMatureSpeedMultiplier` † | ✔ | float = 1 | ↑ maturation speed | Babies grow up faster | Babies grow up slower |
 | `EggHatchSpeedMultiplier` † | ✔ | float = 1 | ↑ hatch speed | Eggs hatch faster | Eggs hatch slower |
@@ -254,9 +254,10 @@ Notes:
 
 Notes:
 
-- `BabyCuddleIntervalMultiplier`: Cuddle interval = random(min, max) of the species interval, each multiplied by this.
+- `BabyCuddleIntervalMultiplier`: Cuddle interval = random(min, max) of the species interval, each multiplied by this. Also changes imprint per cuddle (see BabyImprintAmountMultiplier).
 - `BabyFoodConsumptionSpeedMultiplier`: Baby food drain multiplied by this.
-- `BabyMatureSpeedMultiplier`: Maturation += dt x rate x this (capped at 1.0).
+- `BabyImprintAmountMultiplier`: Imprint per cuddle = this ÷ the number of cuddles that fit into the baby's maturation, at most 100%. That number = species maturation time ÷ (species cuddle interval × BabyCuddleIntervalMultiplier × BabyMatureSpeedMultiplier), rounded: raising either gives fewer cuddles, each worth more.
+- `BabyMatureSpeedMultiplier`: Maturation += dt x rate x this (capped at 1.0). Also changes imprint per cuddle (see BabyImprintAmountMultiplier).
 - `EggHatchSpeedMultiplier`: Incubation += dt x rate x this.
 - `MatingIntervalMultiplier`: Next mating time = now + interval x this.
 - `MutagenLevelBoost`: Levels added per stat (index) by Mutagen on non-bred creatures.
@@ -324,12 +325,13 @@ Notes:
 |---|---|---|---|---|---|---|
 | `DifficultyOffset` † | ✔ | float = 0 |  | ↑ wild levels | Higher wild levels (toward the map maximum) | Lower wild levels; 0 = difficulty 1.0 |
 | `OverrideOfficialDifficulty` † | ✔ | float = 0 |  | ↑ wild levels | Higher max wild level (30 × value) | Lower; 0 = use DifficultyOffset |
-| `XPMultiplier` | ✔ × | float = 1 |  | ↑ XP gained | More XP from everything | Less XP |
+| `XPMultiplier` † | ✔ | float = 1 |  | ↑ XP gained | More XP from everything | Less XP |
 
 Notes:
 
 - `DifficultyOffset`: Difficulty = lerp(map min, map max difficulty, this); 0 = difficulty 1.0. Ignored when OverrideOfficialDifficulty > 0.
 - `OverrideOfficialDifficulty`: If > 0, replaces the difficulty value outright (max wild level = 30 x difficulty); 0 = use DifficultyOffset.
+- `XPMultiplier`: Multiplies with the Game.ini multiplier for the XP type: Generic, Harvest, Craft, Special or ExplorerNote XPMultiplier, or for kills KillXPMultiplier × the kill-type multiplier.
 
 **Game.ini `[/Script/ShooterGame.ShooterGameMode]`**
 
@@ -342,12 +344,12 @@ Notes:
 | `bAutoUnlockAllEngrams` | ✗ | bool = False | switch | On: auto unlock all engrams | Off |
 | `BossKillXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
 | `CaveKillXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
-| `CraftXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
+| `CraftXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
 | `EngramEntryAutoUnlocks` |  | list = (empty) |  |  |  |
-| `ExplorerNoteXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
-| `GenericXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
-| `HarvestXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
-| `KillXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
+| `ExplorerNoteXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
+| `GenericXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
+| `HarvestXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
+| `KillXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
 | `LevelExperienceRampOverrides` |  | list = (empty) |  |  |  |
 | `MaxDifficulty` † | ✔ | bool = False | switch | Difficulty forced to 5.0 (levels up to 150) | Normal difficulty rules |
 | `bOnlyAllowSpecifiedEngrams` | ✗ | bool = False | switch | Only allow specified engrams | Not restricted |
@@ -362,9 +364,9 @@ Notes:
 | `PerLevelStatsMultiplier_DinoWild` † | ✔ | float[12] = all 0 | ↑ stat gain per level | More stat per level point | Less stat per level point; 0 = 1.0 |
 | `PerLevelStatsMultiplier_Player` † | ✔ | float[12] = all 0 | ↑ stat gain per level | More stat per level point | Less stat per level point; 0 = 1.0 |
 | `PlayerBaseStatMultipliers` † | ✔ | float[12] = all 0 | ↑ base stat | Higher base value for that stat (index = stat); 0 = unchanged | Lower base value |
-| `SpecialXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
+| `SpecialXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
 | `TamedKillXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
-| `UnclaimedKillXPMultiplier` | ✔ × | float = 1 | ↑ XP gained | More XP | Less XP |
+| `UnclaimedKillXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
 | `bUseDinoLevelUpAnimations` † | ✔ | bool = True | switch | Use dino level up animations | Don't use dino level up animations |
 | `bUseSingleplayerSettings` † | ✔ | bool = False | switch | Single-player balance (tamed level-ups scaled up) | Normal balance |
 | `WildKillXPMultiplier` † | ✔ | float = 1 | ↑ XP gained | More XP | Less XP |
@@ -374,9 +376,14 @@ Notes:
 - `bAllowFlyerSpeedLeveling`: A flyer's 'can level speed' flag is set only when this is on.
 - `bAllowSpeedLeveling`: Guards levelling the movement-speed stat (index 9); off = speed cannot be levelled (players).
 - `bAllowUnlimitedRespecs`: When off, each respec records a real-time timestamp (respec cooldown); on = no cooldown.
-- `AlphaKillXPMultiplier`: Selected by kill type, multiplied with KillXPMultiplier and base XP.
-- `BossKillXPMultiplier`: Selected by kill type, multiplied with KillXPMultiplier and base XP.
-- `CaveKillXPMultiplier`: Selected by kill type, multiplied with KillXPMultiplier and base XP.
+- `AlphaKillXPMultiplier`: Selected by kill type: XP = base × this × KillXPMultiplier × XPMultiplier (GameUserSettings.ini).
+- `BossKillXPMultiplier`: Selected by kill type: XP = base × this × KillXPMultiplier × XPMultiplier (GameUserSettings.ini).
+- `CaveKillXPMultiplier`: Selected by kill type: XP = base × this × KillXPMultiplier × XPMultiplier (GameUserSettings.ini).
+- `CraftXPMultiplier`: XP = base × this × XPMultiplier (GameUserSettings.ini).
+- `ExplorerNoteXPMultiplier`: XP = base × this × XPMultiplier (GameUserSettings.ini).
+- `GenericXPMultiplier`: XP = base × this × XPMultiplier (GameUserSettings.ini).
+- `HarvestXPMultiplier`: XP = base × this × XPMultiplier (GameUserSettings.ini).
+- `KillXPMultiplier`: XP = base × this × the kill-type multiplier (Wild, Tamed, Alpha, Boss, Cave or Unclaimed KillXPMultiplier) × XPMultiplier (GameUserSettings.ini).
 - `MaxDifficulty`: When on, the difficulty value is forced to 5.0 (wild levels up to 150).
 - `PerLevelStatsMultiplier_DinoTamed`: Per-stat level-up multiplier; 0 is treated as 1.0.
 - `PerLevelStatsMultiplier_DinoTamed_Add`: Per-stat level-up multiplier; 0 is treated as 1.0.
@@ -384,10 +391,12 @@ Notes:
 - `PerLevelStatsMultiplier_DinoWild`: Per-stat level-up multiplier; 0 is treated as 1.0.
 - `PerLevelStatsMultiplier_Player`: Per-stat level-up multiplier; 0 is treated as 1.0.
 - `PlayerBaseStatMultipliers`: Per stat: if > 0, the player's base stat value is multiplied by this.
-- `TamedKillXPMultiplier`: Selected by kill type, multiplied with KillXPMultiplier and base XP.
+- `SpecialXPMultiplier`: XP = base × this × XPMultiplier (GameUserSettings.ini).
+- `TamedKillXPMultiplier`: Selected by kill type: XP = base × this × KillXPMultiplier × XPMultiplier (GameUserSettings.ini).
+- `UnclaimedKillXPMultiplier`: Selected by kill type: XP = base × this × KillXPMultiplier × XPMultiplier (GameUserSettings.ini).
 - `bUseDinoLevelUpAnimations`: When on, creatures play the level-up animation.
 - `bUseSingleplayerSettings`: Single-player balance; also scales the tamed per-level defaults (×2.125 health, ×2.35 melee damage, ×3.57 for the _Add values, ×2.27 for the _Affinity values).
-- `WildKillXPMultiplier`: Selected by kill type, multiplied with KillXPMultiplier and base XP.
+- `WildKillXPMultiplier`: Selected by kill type: XP = base × this × KillXPMultiplier × XPMultiplier (GameUserSettings.ini).
 
 ### PvP / PvE rules
 
@@ -698,7 +707,7 @@ Notes:
 | `BloodforgeReinforceResourceCostMultiplier` | ✗ | float = 3 | yes | ↑ reinforcing cost | Reinforcing costs more | Costs less |
 | `ClampResourceHarvestDamage` † | ✔ | bool = False |  | switch | On: clamp resource harvest damage | Off |
 | `HarvestAmountMultiplier` † | ✔ | float = 1 |  | ↑ resources per hit | More resources per hit | Fewer resources per hit |
-| `HarvestHealthMultiplier` | ✔ ÷ | float = 1 |  | ↑ resource node HP | Nodes take more hits (more total yield per node) | Nodes break sooner |
+| `HarvestHealthMultiplier` † | ✔ | float = 1 |  | ↑ resource node HP | Nodes take more hits (more total yield per node) | Nodes break sooner |
 | `ResourcesRespawnPeriodMultiplier` † | ✔ | float = 1 |  | ↑ respawn time | Resources respawn slower | Resources respawn faster |
 | `StructurePreventResourceRadiusMultiplier` † | ✔ | float = 1 | yes | ↑ no-respawn radius | Structures block resource respawn over a wider area | Smaller blocked area |
 | `UseOptimizedHarvestingHealth` † | ✔ | bool = False |  | switch | Use optimized harvesting health | Don't use optimized harvesting health |
@@ -707,6 +716,7 @@ Notes:
 
 - `ClampResourceHarvestDamage`: When on, damage dealt to a resource node is clamped to the node's remaining health.
 - `HarvestAmountMultiplier`: Resources per hit = count x this (a per-character modifier can override).
+- `HarvestHealthMultiplier`: Damage dealt to a resource node is divided by this after PlayerHarvestingDamageMultiplier or DinoHarvestingDamageMultiplier (Game.ini) is applied, so equal values cancel out.
 - `ResourcesRespawnPeriodMultiplier`: Node min/max respawn time x this.
 - `StructurePreventResourceRadiusMultiplier`: Multiplies with ResourceNoReplenishRadiusStructures (Game.ini): both at 2 gives 4× the radius.
 - `UseOptimizedHarvestingHealth`: When on, harvest yield comes from accumulated damage: every (per-item health ÷ HarvestHealthMultiplier) of damage gives one batch, remainder carried over.
@@ -717,20 +727,22 @@ Notes:
 |---|---|---|---|---|---|
 | `BloodforgeReinforceResourceCostMultiplier` (also GUS) | ✗ | float = 3 | ↑ reinforcing cost | Reinforcing costs more | Costs less |
 | `CropGrowthSpeedMultiplier` | ✗ | float = 1 | ↑ crop growth speed | Crops grow faster | Crops grow slower |
-| `DinoHarvestingDamageMultiplier` | ✔ × | float = 3.2 | ↑ damage dealt | More damage | Less damage |
+| `DinoHarvestingDamageMultiplier` † | ✔ | float = 3.2 | ↑ damage dealt | More damage | Less damage |
 | `FishingLootQualityMultiplier` † | ✔ | float = 1 | ↑ fishing loot quality | More / higher | Less / lower |
 | `HarvestResourceItemAmountClassMultipliers` |  | list = (empty) |  |  |  |
 | `MaxActiveResourceCaches` † | ✔ | int = 8 | ↑ max active resource caches | Higher limit | Lower limit |
 | `MaxActiveResourceCachesSP` † | ✔ | int = 8 | ↑ max active resource caches SP | Higher limit | Lower limit |
-| `PlayerHarvestingDamageMultiplier` | ✔ × | float = 1 | ↑ damage dealt | More damage | Less damage |
+| `PlayerHarvestingDamageMultiplier` † | ✔ | float = 1 | ↑ damage dealt | More damage | Less damage |
 | `ResourceNoReplenishRadiusPlayers` † | ✔ | float = 1 | ↑ resource no replenish radius players | Larger area | Smaller area |
 | `ResourceNoReplenishRadiusStructures` † | ✔ | float = 1 | ↑ resource no replenish radius structures | Larger area | Smaller area |
 
 Notes:
 
+- `DinoHarvestingDamageMultiplier`: Dinos' damage to resource nodes × this, then ÷ HarvestHealthMultiplier (GameUserSettings.ini); equal values cancel out.
 - `FishingLootQualityMultiplier`: Fishing rod / net: loot quality × this; 0 is special-cased.
 - `MaxActiveResourceCaches`: Lost Colony resource caches: maximum active at once = this.
 - `MaxActiveResourceCachesSP`: Lost Colony resource caches (single player): maximum active at once = this.
+- `PlayerHarvestingDamageMultiplier`: Players' damage to resource nodes × this, then ÷ HarvestHealthMultiplier (GameUserSettings.ini); equal values cancel out.
 - `ResourceNoReplenishRadiusPlayers`: Resources don't respawn while a player is within each resource's own radius, scaled by this. StructurePreventResourceRadiusMultiplier doesn't apply to it.
 - `ResourceNoReplenishRadiusStructures`: Resources don't respawn within each resource's own radius of a structure, scaled by this and by StructurePreventResourceRadiusMultiplier (GameUserSettings.ini). The two multiply: both at 2 gives 4× the radius.
 
@@ -827,7 +839,7 @@ Notes:
 | `OnLoadItemQualityRatingClamp` (also GUS) † | ✔ | float = 0 | ↑ on load item quality rating clamp | Higher limit | Lower limit |
 | `bPreventItemTraitEffects` (also GUS) † | ✔ | bool = False | switch | Item trait effects blocked | Item trait effects allowed |
 | `SingleplayerSettingsCorpseLifespanMultiplier` | ✗ | float = 6 | ↑ lifetime | Lasts longer | Disappears sooner |
-| `SupplyCrateLootQualityMultiplier` | ✔ × | float = 1 | ↑ supply crate loot quality | More / higher | Less / lower |
+| `SupplyCrateLootQualityMultiplier` † | ✔ | float = 1 | ↑ supply crate loot quality | More / higher | Less / lower |
 | `UseCorpseLifeSpanMultiplier` † | ✔ | float = 1 | ↑ corpse lifetime | Corpses last longer | Corpses vanish sooner |
 | `bUseOnLoadClampItemQualityRating` (also GUS) † | ✔ | bool = False | switch | Use on load clamp item quality rating | Don't use on load clamp item quality rating |
 | `WirelessCraftingRangeOverride` | ✔ lim | float = 0 | ↑ wireless crafting range override | Larger area | Smaller area |
@@ -856,6 +868,7 @@ Notes:
 - `MaxCosmoWeaponAmmo`: Cosmo: if > 0, max web ammo = min(this, clip size).
 - `OnLoadItemQualityRatingClamp`: If non-zero (with UseOnLoadClampItemQualityRating), items above this quality are clamped on load.
 - `bPreventItemTraitEffects`: When on, item traits have no effect.
+- `SupplyCrateLootQualityMultiplier`: Supply crate quality = the crate's own range × this. Active world buffs that apply to the crate raise it: with bEnableWorldBuffScaling on, × (1 + buff × WorldBuffScalingEfficacy); off, the buff value is added unscaled.
 - `UseCorpseLifeSpanMultiplier`: Corpse lifetime = species lifetime x this.
 - `bUseOnLoadClampItemQualityRating`: When on, item quality is clamped on load (to OnLoadItemQualityRatingClamp).
 
@@ -1171,13 +1184,14 @@ Notes:
 | `ExtinctionEventTimeInterval` (also GUS) † | ✔ ÷ | float = 0 | ↑ extinction event time interval | Longer | Shorter |
 | `NextExtinctionEventUTC` † | ✗ | int = 0 | timestamp | Next Extinction event time (UTC, set by the game) | — |
 | `ValgueroMemorialEntries` |  | string = — |  |  |  |
-| `WorldBuffScalingEfficacy` | ✔ × | float = 0 | ↑ world buff strength | World buffs scale more strongly | Weaker |
+| `WorldBuffScalingEfficacy` † | ✔ | float = 0 | ↑ world buff strength | World buffs scale more strongly | Weaker |
 
 Notes:
 
-- `bEnableWorldBuffScaling`: When on, world buff scaling (WorldBuffScalingEfficacy) is applied; off = 0.
+- `bEnableWorldBuffScaling`: When on, world buff scaling (WorldBuffScalingEfficacy) is applied. On supply crates, off means the world buff value is added unscaled (see SupplyCrateLootQualityMultiplier).
 - `ExtinctionEventTimeInterval`: Managed by the game together with NextExtinctionEventUTC; don't set by hand.
 - `NextExtinctionEventUTC`: Don't set by hand: a time in the past starts an extinction event at once and shuts the server down.
+- `WorldBuffScalingEfficacy`: Used when bEnableWorldBuffScaling is on: supply crate quality × (1 + buff × this) for active world buffs that apply to the crate.
 
 ### Missions, outposts & hexagons
 
@@ -1195,7 +1209,7 @@ Notes:
 Notes:
 
 - `MaxHexagonsPerCharacter`: Negative = no cap; otherwise hexagon balance is clamped to this.
-- `MaxHexagonsToAward`: Negative = no cap; otherwise caps hexagons awarded.
+- `MaxHexagonsToAward`: Negative = no cap; otherwise hexagons awarded are capped at this × HexagonRewardMultiplier.
 - `OutpostSigilRewardMultiplier`: Lost Colony outposts: sigils distributed × this.
 - `OverrideSecondsUntilBuriedTreasureAutoReveals`: If > 0, seconds until a buried treasure reveals itself.
 
@@ -1203,7 +1217,7 @@ Notes:
 
 | Key | Conf. | Type = default | Raising changes | Raised / True | Lowered / False |
 |---|---|---|---|---|---|
-| `BaseHexagonRewardMultiplier` | ✔ × | float = 1 | ↑ base hexagon reward | More / higher | Less / lower |
+| `BaseHexagonRewardMultiplier` † | ✔ | float = 1 | ↑ base hexagon reward | More / higher | Less / lower |
 | `bDisableGenesisMissions` † | ✔ | bool = False | switch | Genesis missions off | Genesis missions on |
 | `bDisableHexagonStore` † | ✔ | bool = False | switch | Hexagon store off | Hexagon store on |
 | `bDontEnforceMilestoneTaskOrder` | ✗ | bool = False | switch | Don't enforce milestone task order | Enforce milestone task order |
@@ -1221,10 +1235,11 @@ Notes:
 
 Notes:
 
+- `BaseHexagonRewardMultiplier`: Hexagon reward × this × HexagonRewardMultiplier.
 - `bDisableGenesisMissions`: When on, Genesis missions are skipped.
 - `bDisableHexagonStore`: HLNA companion: when on, the Hexagon store entries are disabled.
 - `HexagonCostMultiplier`: Hexagon store cost x this.
-- `HexagonRewardMultiplier`: Hexagon reward x this.
+- `HexagonRewardMultiplier`: Hexagon reward × this × BaseHexagonRewardMultiplier. Also scales the MaxHexagonsToAward cap.
 - `bHexStoreAllowOnlyEngramTradeOption`: When on, the Hexagon store only offers items flagged as engram trades.
 - `MaxActiveCityOutposts`: Lost Colony city outposts: maximum active at once = this.
 - `MaxActiveCityOutpostsSP`: Lost Colony city outposts (single player): maximum active at once = this.
@@ -1232,7 +1247,7 @@ Notes:
 - `MaxActiveOutposts`: Genesis water and Lost Colony outposts: maximum active at once = this.
 - `MaxActiveOutpostsSP`: Outposts (single player): maximum active at once = this.
 - `MaxHexagonsPerCharacter`: Negative = no cap; otherwise hexagon balance is clamped to this.
-- `MaxHexagonsToAward`: Negative = no cap; otherwise caps hexagons awarded.
+- `MaxHexagonsToAward`: Negative = no cap; otherwise hexagons awarded are capped at this × HexagonRewardMultiplier.
 - `bOutpostsNoInitialDinosSP`: Lost Colony outposts (single player): when on, no initial creatures spawn.
 
 

@@ -124,7 +124,7 @@ the exit code.
 to the schedule loop: one round at start, then one a minute
 (`app/pkg/ark/health/monitor.go`, wired in
 `app/ark-cli/internal/scheduler/scheduler.go`). Each round reloads the compose
-project, probes every instance in name order, checks every enabled backup
+project, probes every instance in name order, checks every enabled
 schedule, publishes a report and restarts at most one hung instance.
 
 ### Instance probe

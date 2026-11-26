@@ -300,7 +300,7 @@ success/failed`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli enable scheduler] --> A1[requireComposeDirIsCwd: cwd = compose dir, no outside symlink]
+    A[ark-cli enable scheduler] --> A1[schedulerComposeDir: compose file's dir, no symlink outside it]
     A1 --> A2[CheckStatic + BuildImage ark-scheduler:hash from os.Executable, unless it exists]
     A2 --> A3[DetectServiceSettings: socket, rootless?, user/group, TZ, ARK_BACKUP_DIR]
     A3 --> A4[RenderService → replace ark-scheduler block; load-check before rename]

@@ -2,6 +2,7 @@ package update
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -96,26 +97,7 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 
 	filesImage := FilesImageRepo + ":" + buildID
 	s.logger.Info("downloading the ARK server with SteamCMD", "build_id", buildID)
-	runtime := s.ContainerRuntime
-	if runtime == "" {
-		runtime = "docker"
-	}
-	workDir := filepath.Join(stateDir, "build", "work")
-	cmd := []string{"env",
-		"ARK_STEAM_BUILD_ID=" + buildID,
-		"CONTAINER_RUNTIME=" + runtime,
-		"WORK_DIR=" + workDir,
-		"bash", filepath.Join(contextDir, "files", "build.sh"), FilesImageRepo}
-	_ = os.Remove(filepath.Join(workDir, "failure")) // a reason left by an earlier run
-	run, err := s.RunCommand(cmd, ark.CommandOptions{})
-	if err == nil && run.ExitCode != 0 {
-		err = fmt.Errorf("exit code %d", run.ExitCode)
-		// download.sh's one-line reason, e.g. "SteamCMD download failed: state is 0x6".
-		if reason, readErr := os.ReadFile(filepath.Join(workDir, "failure")); readErr == nil && len(strings.TrimSpace(string(reason))) > 0 {
-			err = errors.New(strings.TrimSpace(string(reason)))
-		}
-	}
-	if err != nil {
+	if err := s.buildFilesImage(ctx, stateDir, filepath.Join(contextDir, "files"), filesImage, buildID); err != nil {
 		return BuildResult{}, fmt.Errorf("Error: server files build failed: %w", err)
 	}
 
@@ -163,6 +145,98 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 	}
 	s.logger.Info("build complete", "tag", image)
 	return BuildResult{Image: image, BuildID: buildID, Version: version, Built: true}, nil
+}
+
+// buildFilesImage downloads the server with SteamCMD in a container
+// (download.sh, into stateDir/build/work) and builds filesImage from work/out.
+// work/cache keeps the install between builds; work/out is removed.
+func (s *Service) buildFilesImage(ctx context.Context, stateDir, filesDir, filesImage, buildID string) error {
+	const steamcmdImage = "arkascended-steamcmd"
+	workDir := filepath.Join(stateDir, "build", "work")
+	stateSum := sha256.Sum256([]byte(stateDir))
+	if err := s.engine.BuildImage(ctx, ark.BuildRequest{
+		Dockerfile: filepath.Join(filesDir, "steamcmd.dockerfile"),
+		Tag:        steamcmdImage,
+		Context:    filesDir,
+	}); err != nil {
+		return err
+	}
+	// Downloaded files must end up owned by this process. Rootless engines map
+	// container root to it; rootful ones need its IDs passed in.
+	rootless, err := s.engine.Rootless(ctx)
+	if err != nil {
+		return err
+	}
+	user := ""
+	if !rootless {
+		user = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	}
+	if err := os.MkdirAll(filepath.Join(workDir, "cache"), 0o755); err != nil {
+		return err
+	}
+	if err := s.seedDepotCache(ctx, filepath.Join(workDir, "cache", "depotcache")); err != nil {
+		return err
+	}
+	outDir := filepath.Join(workDir, "out")
+	defer os.RemoveAll(outDir)
+	_ = os.Remove(filepath.Join(workDir, "failure")) // a reason left by an earlier run
+	exitCode, err := s.engine.RunContainer(ctx, ark.RunContainerRequest{
+		// Named per compose directory, so a run a killed scheduler left behind is replaced.
+		Name:   fmt.Sprintf("ark-steamcmd-build-%x", stateSum[:6]),
+		Image:  steamcmdImage,
+		Cmd:    []string{"bash", "/src/download.sh", "/work"},
+		Env:    []string{"ARK_STEAM_BUILD_ID=" + buildID},
+		Binds:  []string{filesDir + ":/src:ro", workDir + ":/work"},
+		User:   user,
+		Output: s.Output,
+	})
+	if err != nil {
+		return err
+	}
+	if exitCode != 0 {
+		// download.sh's one-line reason, e.g. "SteamCMD download failed: state is 0x6".
+		if reason, readErr := os.ReadFile(filepath.Join(workDir, "failure")); readErr == nil && len(strings.TrimSpace(string(reason))) > 0 {
+			return errors.New(strings.TrimSpace(string(reason)))
+		}
+		return fmt.Errorf("exit code %d", exitCode)
+	}
+	// BuildImage needs the Dockerfile inside its context.
+	dockerfile, err := os.ReadFile(filepath.Join(filesDir, "dockerfile"))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(outDir, "dockerfile"), dockerfile, 0o644); err != nil {
+		return err
+	}
+	return s.engine.BuildImage(ctx, ark.BuildRequest{
+		Dockerfile: filepath.Join(outDir, "dockerfile"),
+		Tag:        filesImage,
+		Context:    outDir,
+		BuildArgs:  map[string]string{"ARK_STEAM_BUILD_ID": buildID},
+	})
+}
+
+// seedDepotCache fills a missing depot cache from ARK_DEPOTCACHE_SEED_IMAGE
+// (default ark-server:latest), which has the installed build's manifest.
+// Without it SteamCMD can only update with the 0x6 fallback.
+func (s *Service) seedDepotCache(ctx context.Context, depotCache string) error {
+	if _, err := os.Stat(depotCache); err == nil {
+		return nil
+	}
+	seed := envOrDefault("ARK_DEPOTCACHE_SEED_IMAGE", DefaultLocalImageName+":latest")
+	exists, err := s.engine.ImageExists(ctx, seed)
+	if err != nil || !exists {
+		return err
+	}
+	if err := s.engine.CopyFromImage(ctx, seed, "/home/ark-user/.local/share/Steam/depotcache", depotCache); err != nil {
+		s.logger.Warn("could not copy the depot cache; this update may need the full validate", "image", seed, "error", err)
+		return nil
+	}
+	s.logger.Info("seeded the SteamCMD depot cache", "image", seed)
+	return nil
 }
 
 // ensureBaseImage makes the base image for this recipe (arkcontainer.BaseImageRef)

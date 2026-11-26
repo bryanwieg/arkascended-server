@@ -1,6 +1,7 @@
 package update
 
 import (
+	"io"
 	"log/slog"
 
 	"pkg/ark"
@@ -19,11 +20,8 @@ type Service struct {
 
 	// FetchText is injected for HTTP operations (Steam API, Docker Hub).
 	FetchText FetchTextFn
-	// RunCommand runs the server files build script (SteamCMD download);
-	// output streams to the terminal.
-	RunCommand func([]string, ark.CommandOptions) (ark.ExecResult, error)
-	// ContainerRuntime ("docker" or "podman") is passed to that script.
-	ContainerRuntime string
+	// Output receives the SteamCMD container's output during a build; nil discards it.
+	Output io.Writer
 	// DiskUsage returns (free, total) bytes for a path; checked before a build.
 	DiskUsage func(path string) (int64, int64, error)
 }

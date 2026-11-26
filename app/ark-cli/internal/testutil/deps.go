@@ -115,8 +115,6 @@ func FillTestDefaults(d *core.AppDeps, cfg TestDepsConfig) {
 	if cfg.WireUpdateService && d.UpdateService == nil {
 		us := update.New(d.Engine, d.ComposeService, d.Lifecycle, d.Logger)
 		us.FetchText = d.HostDeps.FetchText
-		us.RunCommand = d.Runtime.RunCommand
-		us.ContainerRuntime = string(d.Runtime.ContainerRuntime)
 		us.DiskUsage = d.DiskUsageForPath
 		d.UpdateService = us
 	}

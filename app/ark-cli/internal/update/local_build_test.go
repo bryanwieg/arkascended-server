@@ -29,7 +29,6 @@ func TestEnsureLocalImagesBuildsWhenMissing(t *testing.T) {
 		d.HostDeps.FetchText = func(string) (string, error) {
 			return `{"data":{"2430930":{"depots":{"branches":{"public":{"buildid":"16491427"}}}}}}`, nil
 		}
-		d.Runtime.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) { return ark.ExecResult{}, nil }
 		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
 		d.Engine = &arktest.MockEngine{
 			ImageExistsFn: func(_ context.Context, image string) (bool, error) {

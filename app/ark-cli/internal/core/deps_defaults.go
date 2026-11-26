@@ -73,8 +73,7 @@ func FillDefaults(d *AppDeps) {
 	if d.UpdateService == nil {
 		us := update.New(d.Engine, d.ComposeService, d.Lifecycle, d.Logger)
 		us.FetchText = d.HostDeps.FetchText
-		us.RunCommand = d.Runtime.RunCommand
-		us.ContainerRuntime = string(d.Runtime.ContainerRuntime)
+		us.Output = liveStdout{}
 		us.DiskUsage = d.DiskUsageForPath
 		d.UpdateService = us
 	}
@@ -210,4 +209,13 @@ func MergeHostDeps(dst *host.HostDeps, src host.HostDeps) {
 	if src.Stderr != nil {
 		dst.Stderr = src.Stderr
 	}
+}
+
+// liveStdout resolves the live stdout writer on each write: deps are built
+// before the flags that turn on the verbose log are parsed.
+type liveStdout struct{}
+
+func (liveStdout) Write(p []byte) (int, error) {
+	stdout, _ := LiveCommandOutputWriters()
+	return stdout.Write(p)
 }

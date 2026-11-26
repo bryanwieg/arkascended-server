@@ -241,8 +241,8 @@ func TestRunUpdateBuildFailureTouchesNoInstance(t *testing.T) {
 	withLocalSteamCheck(t, "98.6", "100", "200", func(d *core.AppDeps) {
 		d.Engine.(*arktest.MockEngine).PullImageFn = func(context.Context, string) error { return nil }
 		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
-		d.Runtime.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) {
-			return ark.ExecResult{ExitCode: 8}, nil // SteamCMD's exit on state 0x6
+		d.Engine.(*arktest.MockEngine).RunContainerFn = func(context.Context, ark.RunContainerRequest) (int, error) {
+			return 8, nil // SteamCMD's exit on state 0x6
 		}
 		d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
 			calls = append(calls, "stop "+req.Instance)

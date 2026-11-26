@@ -163,3 +163,32 @@ def test_create_schedule_warns_without_scheduler(cli: Callable[..., object]) -> 
     )
 
     assert "scheduler service is not enabled" in result.stdout + result.stderr
+
+
+def test_enable_scheduler_warns_about_old_schedules_file(cli: Callable[..., object], compose_dir: Path) -> None:
+    """A leftover .ark-manage/schedules.yaml is not read, and enable scheduler warns about it.
+
+    Scenario:
+        An instance exists and .ark-manage/schedules.yaml holds one schedule. list schedules
+        and enable scheduler are run.
+
+    Expected:
+        - list schedules prints `No schedules configured.`.
+        - enable scheduler warns that the file is no longer read and to recreate its schedules.
+    """
+    _create_instance(cli)
+    old = compose_dir / ".ark-manage" / "schedules.yaml"
+    old.parent.mkdir(parents=True, exist_ok=True)
+    old.write_text(
+        "version: 1\nschedules:\n"
+        f"  - name: old-nightly\n    type: backup\n    instance: {INSTANCE}\n    enabled: true\n"
+        '    cron: "0 3 * * *"\n'
+    )
+
+    assert "No schedules configured." in cli("list", "schedules").stdout
+
+    result = cli("enable", "scheduler")
+    assert (
+        "Warning: .ark-manage/schedules.yaml is no longer read; schedules live in docker-compose.yaml under "
+        "x-ark-schedules. Recreate them with 'ark-cli create schedule' and delete the file."
+    ) in result.stdout + result.stderr

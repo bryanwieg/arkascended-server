@@ -268,17 +268,17 @@ flowchart TD
 
 ## Schedule Call Graph
 
-`app/ark-cli/internal/schedule/` → `app/pkg/ark/schedule/`. Files under
-`.ark-manage/` in the current directory (the compose dir, where the scheduler
-reads them).
+`app/ark-cli/internal/schedule/` → `app/pkg/ark/schedule/`. Schedules are
+read from and written to the compose file's `x-ark-schedules` block; run state,
+logs and locks are under `.ark-manage/` in the compose file's directory.
 
 ```mermaid
 flowchart TD
     A[ark-cli schedule command] --> B{Verb?}
 
     B -->|"create/update/enable/disable/remove"| C[Parse + validate cron, format, target]
-    C --> E[SaveScheduleFile: write schedules.yaml]
-    E --> E1[warnIfSchedulerDisabled: no ark-scheduler service, or cwd is not the compose dir]
+    C --> E[SaveScheduleFile: write x-ark-schedules in the compose file]
+    E --> E1[warnIfSchedulerDisabled: no ark-scheduler service]
 
     B -->|"check"| K[LoadScheduleByName]
     K --> L[Lock file held? + LoadRunState]
@@ -300,7 +300,7 @@ success/failed`.
 
 ```mermaid
 flowchart TD
-    A[ark-cli enable scheduler] --> A1[requireComposeDirIsCwd: cwd = compose dir, no outside symlink]
+    A[ark-cli enable scheduler] --> A1[schedulerComposeDir: compose file's dir, no symlink outside it]
     A1 --> A2[CheckStatic + BuildImage ark-scheduler:hash from os.Executable, unless it exists]
     A2 --> A3[DetectServiceSettings: socket, rootless?, user/group, TZ, ARK_BACKUP_DIR]
     A3 --> A4[RenderService → replace ark-scheduler block; load-check before rename]

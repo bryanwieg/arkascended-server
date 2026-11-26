@@ -1,24 +1,32 @@
 package schedule
 
-// ScheduleFile represents the on-disk YAML schedule configuration.
+// ScheduleFile is the schedule list of one compose file (its x-ark-schedules block).
 type ScheduleFile struct {
-	Version   int              `yaml:"version"`
-	Schedules []BackupSchedule `yaml:"schedules"`
+	Schedules []BackupSchedule
 }
 
-// BackupSchedule is a single backup schedule entry (v1 format).
+// BackupSchedule is a single schedule entry of any type: backup, rcon, save or
+// restart. It keeps its historical name. store.go maps it to and from the compose file.
 type BackupSchedule struct {
-	Name         string `yaml:"name"`
-	Type         string `yaml:"type"`
-	Instance     string `yaml:"instance"`
-	Enabled      bool   `yaml:"enabled"`
-	Cron         string `yaml:"cron"`
-	Format       string `yaml:"format,omitempty"`
-	RetainCount  int    `yaml:"retain_count,omitempty"`
-	RetainDays   int    `yaml:"retain_days,omitempty"`
-	RetainSizeGB int    `yaml:"retain_size_gb,omitempty"`
-	ComposeFile  string `yaml:"compose_file,omitempty"`
+	Name         string
+	Type         string
+	Instance     string
+	Enabled      bool
+	Cron         string
+	Command      string // rcon only
+	Format       string
+	RetainCount  int
+	RetainDays   int
+	RetainSizeGB int
 }
+
+// Schedule types.
+const (
+	TypeBackup  = "backup"
+	TypeRCON    = "rcon"
+	TypeSave    = "save"
+	TypeRestart = "restart"
+)
 
 // RunState tracks the last execution status of a schedule.
 type RunState struct {

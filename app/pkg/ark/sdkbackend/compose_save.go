@@ -11,18 +11,20 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 
+	"pkg/ark"
 	"pkg/ark/runtime"
 )
 
 // Saves edit the compose file in place: only the image, environment, labels and ports entries
-// that differ from the file are rewritten, line by line, and every other byte is kept. Re-marshaling
-// the loaded project instead would bake in .env values and env_file secrets, make paths absolute,
-// drop comments, and delete services whose profile is inactive.
+// that differ from the file, and a changed x-ark-schedules block, are rewritten, line by line, and
+// every other byte is kept. Re-marshaling the loaded project instead would bake in .env values and
+// env_file secrets, make paths absolute, drop comments, and delete services whose profile is inactive.
 
-var errUnsupportedSave = errors.New("ark-cli can only change image, environment, labels and ports")
+var errUnsupportedSave = errors.New("ark-cli can only change image, environment, labels, ports and x-ark-schedules")
 
 // lineEdits collects replacements (start line → end line and new lines) and insertions after a line.
 type lineEdits struct {
@@ -36,8 +38,9 @@ type replacement struct {
 }
 
 // patchComposeText returns text with the image, environment, label and port differences between
-// before (the project loaded from text) and after applied as line edits.
-func patchComposeText(text string, before, after *types.Project) (string, error) {
+// before (the project loaded from text) and after applied as line edits, and after's schedules block
+// written when the caller changed it.
+func patchComposeText(text string, before *types.Project, after *ark.ComposeProject) (string, error) {
 	if err := checkSupportedChanges(before, after); err != nil {
 		return "", err
 	}
@@ -49,27 +52,84 @@ func patchComposeText(text string, before, after *types.Project) (string, error)
 	if err != nil {
 		return "", err
 	}
-	servicesEntry, _ := runtime.MapValueForKey(root, "services")
-	if servicesEntry == nil {
-		return "", errors.New("compose file has no services section")
-	}
-	services, err := blockMapping(servicesEntry.Value, "services")
-	if err != nil {
-		return "", err
-	}
-
 	lines := strings.Split(text, "\n")
 	edits := &lineEdits{replace: map[int]replacement{}, insert: map[int][]string{}}
-	for _, name := range slices.Sorted(maps.Keys(after.Services)) {
-		if err := diffService(lines, edits, services, name, before.Services[name], after.Services[name]); err != nil {
-			return "", fmt.Errorf("service %s: %w", name, err)
+	if !reflect.DeepEqual(before.Services, after.Project.Services) {
+		if err := diffServices(lines, edits, root, before, after.Project); err != nil {
+			return "", err
+		}
+	}
+	if schedulesChanged(after) {
+		if err := setSchedulesBlock(lines, edits, root, after.Project.Extensions[ark.SchedulesExtensionKey]); err != nil {
+			return "", err
 		}
 	}
 	return edits.apply(lines), nil
 }
 
+func diffServices(lines []string, edits *lineEdits, root *ast.MappingNode, before, after *types.Project) error {
+	servicesEntry, _ := runtime.MapValueForKey(root, "services")
+	if servicesEntry == nil {
+		return errors.New("compose file has no services section")
+	}
+	services, err := blockMapping(servicesEntry.Value, "services")
+	if err != nil {
+		return err
+	}
+	for _, name := range slices.Sorted(maps.Keys(after.Services)) {
+		if err := diffService(lines, edits, services, name, before.Services[name], after.Services[name]); err != nil {
+			return fmt.Errorf("service %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// schedulesChanged reports whether the caller changed the schedules since LoadProject; comparing with
+// the file instead would revert schedules another process wrote after this project was loaded.
+func schedulesChanged(p *ark.ComposeProject) bool {
+	return !reflect.DeepEqual(p.Project.Extensions[ark.SchedulesExtensionKey], p.LoadedSchedules)
+}
+
+// setSchedulesBlock replaces the top-level schedules entry with value, removes it when value is nil,
+// or appends it at the end of the file.
+func setSchedulesBlock(lines []string, edits *lineEdits, root *ast.MappingNode, value any) error {
+	var block []string
+	if value != nil {
+		out, err := yaml.MarshalWithOptions(map[string]any{ark.SchedulesExtensionKey: value}, yaml.IndentSequence(true))
+		if err != nil {
+			return err
+		}
+		block = strings.Split(strings.TrimSuffix(escapeDollar(string(out)), "\n"), "\n")
+	}
+	if entry, _ := runtime.MapValueForKey(root, ark.SchedulesExtensionKey); entry != nil {
+		start := line(entry.Key)
+		edits.replace[start] = replacement{end: entryEnd(lines, start, 0), lines: block}
+		return nil
+	}
+	last := len(lines) - 1
+	if lines[last] == "" && last > 0 {
+		last-- // keep the file's final newline after the block
+	}
+	edits.insert[last] = append(edits.insert[last], block...)
+	return nil
+}
+
 // checkSupportedChanges rejects changes outside the fields patchComposeText can edit.
-func checkSupportedChanges(before, after *types.Project) error {
+func checkSupportedChanges(before *types.Project, afterProject *ark.ComposeProject) error {
+	after := afterProject.Project
+	otherExtensions := func(p *types.Project) types.Extensions {
+		m := maps.Clone(p.Extensions)
+		delete(m, ark.SchedulesExtensionKey)
+		return m
+	}
+	if !maps.EqualFunc(otherExtensions(before), otherExtensions(after), reflect.DeepEqual) {
+		return fmt.Errorf("%w; only the %s extension can change", errUnsupportedSave, ark.SchedulesExtensionKey)
+	}
+	if v, ok := after.Extensions[ark.SchedulesExtensionKey]; ok && schedulesChanged(afterProject) {
+		if _, isList := v.([]any); !isList {
+			return fmt.Errorf("%w; %s must be a list", errUnsupportedSave, ark.SchedulesExtensionKey)
+		}
+	}
 	if !slices.Equal(slices.Sorted(maps.Keys(before.Services)), slices.Sorted(maps.Keys(after.Services))) {
 		return fmt.Errorf("%w; services were added or removed", errUnsupportedSave)
 	}
@@ -99,7 +159,11 @@ func checkSupportedChanges(before, after *types.Project) error {
 }
 
 // verifySaved checks that the edited file loads to the project the caller asked for.
-func verifySaved(want, got *types.Project) error {
+func verifySaved(wantProject *ark.ComposeProject, got *types.Project) error {
+	want := wantProject.Project
+	if schedulesChanged(wantProject) && !reflect.DeepEqual(want.Extensions[ark.SchedulesExtensionKey], got.Extensions[ark.SchedulesExtensionKey]) {
+		return fmt.Errorf("%s does not hold the requested schedules after the edit", ark.SchedulesExtensionKey)
+	}
 	for name, w := range want.Services {
 		g, ok := got.Services[name]
 		switch {
@@ -364,6 +428,25 @@ func blockMapping(node ast.Node, name string) (*ast.MappingNode, error) {
 
 func line(n ast.Node) int   { return n.GetToken().Position.Line - 1 }
 func column(n ast.Node) int { return n.GetToken().Position.Column }
+
+// cloneYAML deep-copies a loaded YAML value so later edits of the project do not change it.
+func cloneYAML(v any) any {
+	switch t := v.(type) {
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = cloneYAML(item)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, item := range t {
+			out[k] = cloneYAML(item)
+		}
+		return out
+	}
+	return v
+}
 
 // escapeDollar keeps compose from interpolating a literal value.
 func escapeDollar(s string) string { return strings.ReplaceAll(s, "$", "$$") }

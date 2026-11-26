@@ -126,6 +126,16 @@ func rconExec(d *core.AppDeps, composeFile, service string, command ...string) (
 	return d.ComposeService.Exec(d.Context(), composeFile, service, argv, ark.ExecOptions{DisableTTY: true, Env: envVars})
 }
 
+// RCONCommand sends one RCON command to a running service and returns its trimmed reply;
+// a non-zero ark-rcon.py exit is an error.
+func RCONCommand(d *core.AppDeps, composeFile, service, command string) (string, error) {
+	result, err := rconExec(d, composeFile, service, command)
+	if err == nil && result.ExitCode != 0 {
+		err = fmt.Errorf("rcon exit code %d: %s", result.ExitCode, strings.TrimSpace(result.Stderr))
+	}
+	return strings.TrimSpace(result.Stdout), err
+}
+
 // SetStopReason tells a running instance why its next stop happens ("updating to 98.9"), so the
 // stop's player countdown can name it. Images older than ark-stop-reason.py fail the exec; the
 // caller only warns, since the stop itself does not depend on it.

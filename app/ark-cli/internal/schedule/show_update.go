@@ -1,9 +1,9 @@
 package schedule
 
 import (
-	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
 	"errors"
+	"flag"
 	"fmt"
 	"strings"
 
@@ -15,6 +15,7 @@ import (
 func RunCheckSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet("check schedule", []string{"check schedule --name <name>"}, "Check schedule running status and last result.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -22,12 +23,13 @@ func RunCheckSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
+	_, s, _, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
 	}
 
-	running := core.CurrentAppDeps().ScheduleService.LockHeld(name)
+	running := svc.LockHeld(name)
 
 	result := "ok"
 	if running {
@@ -38,7 +40,7 @@ func RunCheckSchedule(d *core.AppDeps, args []string) error {
 	core.Infof("enabled:  %s\n", core.YesNo(s.Enabled))
 	core.Infof("running:  %s\n", core.YesNo(running))
 
-	if state, ok := core.CurrentAppDeps().ScheduleService.LoadRunState(name); ok {
+	if state, ok := svc.LoadRunState(name); ok {
 		if !running && state.LastStatus == "failed" {
 			result = "failed"
 		}
@@ -62,6 +64,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet("show schedule", []string{"show schedule --name <name>"}, "Show schedule configuration details.")
 	jsonFlag := fs.Bool("json", false, "Output as JSON.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -69,7 +72,8 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
+	_, s, _, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
 	}
@@ -81,13 +85,13 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 			Type:         s.Type,
 			Instance:     s.Instance,
 			Cron:         s.Cron,
+			Command:      s.Command,
 			Format:       s.Format,
 			RetainCount:  s.RetainCount,
 			RetainDays:   s.RetainDays,
 			RetainSizeGB: s.RetainSizeGB,
-			ComposeFile:  s.ComposeFile,
 		}
-		if state, ok := core.CurrentAppDeps().ScheduleService.LoadRunState(s.Name); ok {
+		if state, ok := svc.LoadRunState(s.Name); ok {
 			out.LastStatus = state.LastStatus
 			out.LastExitCode = state.LastExitCode
 			out.LastStartedAt = state.LastStartedAt
@@ -102,15 +106,17 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 	core.Infof("type: %s\n", s.Type)
 	core.Infof("instance: %s\n", s.Instance)
 	core.Infof("cron: %s\n", s.Cron)
+	if s.Type == schedule.TypeRCON {
+		core.Infof("command: %s\n", s.Command)
+	}
 	core.Infof("format: %s\n", runtime.FallbackDash(s.Format))
 	core.Infof("retain_count: %d\n", s.RetainCount)
 	core.Infof("retain_days: %d\n", s.RetainDays)
 	core.Infof("retain_size_gb: %d\n", s.RetainSizeGB)
-	core.Infof("compose_file: %s\n", runtime.FallbackDash(s.ComposeFile))
 	if s.Type == "backup" {
 		core.Infof("command_preview: %s\n", strings.Join(schedule.BackupCommandPreview(s), " "))
 	}
-	if state, ok := core.CurrentAppDeps().ScheduleService.LoadRunState(s.Name); ok {
+	if state, ok := svc.LoadRunState(s.Name); ok {
 		core.Infof("last_status: %s\n", runtime.FallbackDash(state.LastStatus))
 		core.Infof("last_exit_code: %d\n", state.LastExitCode)
 		core.Infof("last_started_at: %s\n", runtime.FallbackDash(state.LastStartedAt))
@@ -124,7 +130,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 		core.Infof("last_started_at: -\n")
 		core.Infof("last_finished_at: -\n")
 	}
-	core.Infof("config_path: %s\n", core.CurrentAppDeps().ScheduleService.ConfigPath)
+	core.Infof("compose_file: %s\n", composeFile)
 	return nil
 }
 
@@ -143,6 +149,7 @@ func setScheduleEnabled(d *core.AppDeps, args []string, command string, enabled 
 	}
 	fs := core.NewCommandFlagSet(command, []string{command + " --name <name>"}, verb+" a managed schedule.")
 	nameFlag := fs.String("name", "", "Schedule name.")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedules (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
 		return err
 	}
@@ -150,17 +157,18 @@ func setScheduleEnabled(d *core.AppDeps, args []string, command string, enabled 
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	file, s, idx, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
+	file, s, idx, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
 	}
 	s.Enabled = enabled
 	file.Schedules[idx] = s
-	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {
+	if err := svc.SaveScheduleFile(d.Context(), d.ComposeService, composeFile, file); err != nil {
 		return err
 	}
 	core.Infof("%s schedule %s\n", verb, s.Name)
-	warnIfSchedulerDisabled(d, s.ComposeFile)
+	warnIfSchedulerDisabled(d, composeFile)
 	return nil
 }
 
@@ -168,12 +176,13 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"update schedule",
 		[]string{"update schedule --name <name> [options]"},
-		"Update a configured schedule in schedules.yaml.",
+		"Update a configured schedule in the compose file.",
 	)
 	nameFlag := fs.String("name", "", "Schedule name.")
 	cronExpr := fs.String("cron", "", "Cron expression (5 fields).")
-	instance := fs.String("instance", "", "Backup target: instance name, 'cluster' or 'all'.")
-	composeFileFlag := fs.String("compose-file", "", "Compose file to use when schedule runs.")
+	instance := fs.String("instance", "", "Target: instance name or 'all' ('cluster' for backup schedules).")
+	command := fs.String("command", "", "RCON command (rcon schedules only).")
+	composeFileFlag := fs.String("compose-file", "", "Compose file that holds the schedule.")
 	format := fs.String("format", "", "Backup format: tar, tar.gz, or tar.zst.")
 	retainCount := fs.Int("retain-count", -1, "Retention count.")
 	retainDays := fs.Int("retain-days", -1, "Retention days.")
@@ -190,6 +199,11 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	if *enable && *disable {
 		return errors.New("Error: cannot pass both --enabled and --disabled.")
 	}
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	if passed["command"] && strings.TrimSpace(*command) == "" {
+		return errors.New("Error: --command must not be empty.")
+	}
 
 	changed := false
 	if *cronExpr != "" {
@@ -204,34 +218,41 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 		}
 		changed = true
 	}
-	if *composeFileFlag != "" {
-		changed = true
-	}
 	if *format != "" {
 		if err := backup.ValidateFormat(*format); err != nil {
 			return err
 		}
 		changed = true
 	}
-	if *retainCount >= 0 || *retainDays >= 0 || *retainSizeGB >= 0 || *enable || *disable {
+	if *retainCount >= 0 || *retainDays >= 0 || *retainSizeGB >= 0 || *enable || *disable || passed["command"] {
 		changed = true
 	}
 	if !changed {
 		return errors.New("Error: no changes specified.")
 	}
 
-	file, s, idx, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	composeFile, svc := scheduleStore(d, *composeFileFlag)
+	file, s, idx, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
 	}
-	if s.Type != "backup" {
+	if !schedule.KnownType(s.Type) {
 		return fmt.Errorf("Error: unsupported schedule type for update: %s", s.Type)
 	}
-
-	composeFile := compose.ResolveComposeFile(s.ComposeFile)
-	if *composeFileFlag != "" {
-		composeFile = *composeFileFlag
+	if passed["command"] && s.Type != schedule.TypeRCON {
+		return fmt.Errorf("Error: --command applies only to rcon schedules; %s is a %s schedule.", s.Name, s.Type)
 	}
+	if s.Type != schedule.TypeBackup {
+		for _, backupOnly := range []string{"format", "retain-count", "retain-days", "retain-size-gb"} {
+			if passed[backupOnly] {
+				return fmt.Errorf("Error: --%s is backup-only; %s is a %s schedule.", backupOnly, s.Name, s.Type)
+			}
+		}
+		if *instance == backup.ClusterTarget {
+			return errClusterBackupOnly(s.Type)
+		}
+	}
+
 	if *instance != "" {
 		if err := validateScheduleComposeTarget(composeFile, *instance); err != nil {
 			return err
@@ -242,8 +263,8 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	if *cronExpr != "" {
 		s.Cron = *cronExpr
 	}
-	if *composeFileFlag != "" {
-		s.ComposeFile = *composeFileFlag
+	if passed["command"] {
+		s.Command = *command
 	}
 	if *format != "" {
 		s.Format = *format
@@ -265,10 +286,10 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	}
 
 	file.Schedules[idx] = s
-	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {
+	if err := svc.SaveScheduleFile(d.Context(), d.ComposeService, composeFile, file); err != nil {
 		return err
 	}
 	core.Infof("Updated schedule %s\n", s.Name)
-	warnIfSchedulerDisabled(d, s.ComposeFile)
+	warnIfSchedulerDisabled(d, composeFile)
 	return nil
 }

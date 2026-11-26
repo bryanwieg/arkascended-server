@@ -19,7 +19,8 @@ type ComposeService interface {
 
 	// SaveProject writes a project loaded via LoadProject back to composeFile:
 	// changes to a service's image, environment, labels and ports become line
-	// edits that keep the rest of the file; other changes are refused. Add new
+	// edits that keep the rest of the file, and a changed x-ark-schedules
+	// extension replaces only that block; other changes are refused. Add new
 	// services with runtime.InsertService on the raw YAML instead.
 	SaveProject(ctx context.Context, composeFile string, project *ComposeProject) error
 

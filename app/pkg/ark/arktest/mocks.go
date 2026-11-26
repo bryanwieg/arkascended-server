@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -167,6 +168,23 @@ type MockCompose struct {
 	RunOneOffInteractiveFn func(ctx context.Context, composeFile, service string, command []string, opts ark.RunOptions) error
 	LogsFn                 func(ctx context.Context, composeFile, service string, opts ark.LogOptions) (io.ReadCloser, error)
 	CopyFromServiceFn      func(ctx context.Context, composeFile, service, srcPath, dstPath string) error
+}
+
+// NewMemoryCompose returns a MockCompose that keeps the project's Extensions in memory: LoadProject
+// returns a copy of project with the Extensions last saved (LoadedSchedules set from them), SaveProject keeps them.
+func NewMemoryCompose(project *ark.ComposeProject) *MockCompose {
+	extensions := maps.Clone(project.Project.Extensions)
+	return &MockCompose{
+		LoadProjectFn: func(context.Context, string) (*ark.ComposeProject, error) {
+			loaded := *project.Project
+			loaded.Extensions = maps.Clone(extensions)
+			return &ark.ComposeProject{Project: &loaded, LoadedSchedules: extensions[ark.SchedulesExtensionKey]}, nil
+		},
+		SaveProjectFn: func(_ context.Context, _ string, saved *ark.ComposeProject) error {
+			extensions = maps.Clone(saved.Project.Extensions)
+			return nil
+		},
+	}
 }
 
 func (m *MockCompose) LoadProject(ctx context.Context, composeFile string) (*ark.ComposeProject, error) {

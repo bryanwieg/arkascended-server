@@ -36,7 +36,7 @@ func RunEnableScheduler(d *core.AppDeps, args []string) error {
 	if err := compose.RequireComposeFile(composeFile); err != nil {
 		return err
 	}
-	composeDir, err := requireComposeDirIsCwd(composeFile)
+	composeDir, err := schedulerComposeDir(composeFile)
 	if err != nil {
 		return err
 	}
@@ -98,18 +98,15 @@ func RunDisableScheduler(d *core.AppDeps, args []string) error {
 	return nil
 }
 
-// requireComposeDirIsCwd returns the compose dir, failing unless it is the working directory, or when the
-// compose file is a symlink to a file outside it (the scheduler mounts only the compose dir).
-func requireComposeDirIsCwd(composeFile string) (string, error) {
-	composeDir, cwd, same, err := compose.ComposeDirIsCwd(composeFile)
+// schedulerComposeDir returns the absolute compose dir, failing when the compose file is a symlink to a file
+// outside it (the scheduler mounts only the compose dir).
+func schedulerComposeDir(composeFile string) (string, error) {
+	abs, err := filepath.Abs(composeFile)
 	if err != nil {
 		return "", err
 	}
-	if !same {
-		return "", fmt.Errorf("Error: run 'ark-cli enable scheduler' from %s: schedules are read from %s, and the scheduler reads them from %s",
-			composeDir, filepath.Join(cwd, ".ark-manage"), filepath.Join(composeDir, ".ark-manage"))
-	}
-	if target, err := filepath.EvalSymlinks(filepath.Join(composeDir, filepath.Base(composeFile))); err == nil {
+	composeDir := filepath.Dir(abs)
+	if target, err := filepath.EvalSymlinks(abs); err == nil {
 		realDir, dirErr := filepath.EvalSymlinks(composeDir)
 		if dirErr == nil && filepath.Dir(target) != realDir {
 			return "", fmt.Errorf("Error: %s links to %s, outside %s; the scheduler mounts only the compose dir. Move the file into %s",
@@ -215,6 +212,9 @@ func startScheduler(d *core.AppDeps, composeFile, composeDir, ref string, health
 	}
 	if err := RemoveManagedCrontab(d); err != nil {
 		core.Warnf("Warning: could not remove ark-cli schedules from your crontab: %v\n", err)
+	}
+	if _, err := os.Stat(filepath.Join(composeDir, ".ark-manage", "schedules.yaml")); err == nil {
+		core.Warnf("Warning: .ark-manage/schedules.yaml is no longer read; schedules live in docker-compose.yaml under x-ark-schedules. Recreate them with 'ark-cli create schedule' and delete the file.\n")
 	}
 	return nil
 }

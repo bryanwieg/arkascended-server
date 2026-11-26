@@ -22,6 +22,11 @@ func ParseCron(expr string) (cron.Schedule, error) {
 	return cron.ParseStandard(expr)
 }
 
+// KnownType reports whether t is a schedule type the runner executes.
+func KnownType(t string) bool {
+	return t == TypeBackup || t == TypeRCON || t == TypeSave || t == TypeRestart
+}
+
 // ValidateCronExpr reports whether expr is a valid standard cron expression.
 func ValidateCronExpr(expr string) error {
 	if _, err := ParseCron(expr); err != nil {
@@ -52,9 +57,6 @@ func BackupFlagArgs(s BackupSchedule) []string {
 	}
 	if s.RetainSizeGB != 0 {
 		args = append(args, "--retain-size-gb", fmt.Sprintf("%d", s.RetainSizeGB))
-	}
-	if s.ComposeFile != "" {
-		args = append(args, "--compose-file", s.ComposeFile)
 	}
 	return args
 }

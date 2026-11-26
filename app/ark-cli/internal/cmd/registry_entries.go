@@ -34,7 +34,7 @@ type CommandRouteParseSpec struct {
 var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "create", Object: "instance", Route: "create", Handler: create.RunCreate, TopLevelHelp: []string{"create instance --name <name>               Create or extend a docker-compose.yaml with an ARK server"}},
 	{Verb: "create", Object: "backup", Route: "backup", Handler: backup.RunBackup, TopLevelHelp: []string{"create backup --instance <inst|cluster|all>  Create backup archives"}},
-	{Verb: "create", Object: "schedule", Route: "create_schedule", Handler: schedule.RunCreateSchedule, TopLevelHelp: []string{"create schedule backup --instance <inst> --name <name>  Create a managed backup schedule"}},
+	{Verb: "create", Object: "schedule", Route: "create_schedule", Handler: schedule.RunCreateSchedule, TopLevelHelp: []string{"create schedule backup|rcon|save|restart --instance <inst> --name <name>  Create a managed schedule"}},
 	{Verb: "edit", Object: "ini", Route: "edit_ini", Handler: ini.RunEditIni, TopLevelHelp: []string{"edit ini --instance <inst> --file <ini>     Edit Game.ini or GameUserSettings.ini in the container"}},
 	{Verb: "get", Object: "ini", Route: "get_ini", Handler: ini.RunGetIni, TopLevelHelp: []string{"get ini --instance <inst> --file <ini> --section <s> --key <k>  Print one INI key's value"}},
 	{Verb: "set", Object: "ini", Route: "set_ini", Handler: ini.RunSetIni, TopLevelHelp: []string{"set ini --instance <inst> --file <ini> --section <s> --key <k> --value <v>  Set one INI key without an editor"}},
@@ -48,7 +48,7 @@ var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "disable", Object: "schedule", Route: "disable_schedule", Handler: schedule.RunDisableSchedule, TopLevelHelp: []string{"disable schedule --name <name>              Disable a managed schedule"}},
 	{Verb: "enable", Object: "remote-rcon", Route: "enable_remote_rcon", Handler: reconfigure.RunEnableRemoteRCON, TopLevelHelp: []string{"enable remote-rcon --instance <inst>        Publish RCON on all host interfaces"}},
 	{Verb: "disable", Object: "remote-rcon", Route: "disable_remote_rcon", Handler: reconfigure.RunDisableRemoteRCON, TopLevelHelp: []string{"disable remote-rcon --instance <inst>       Publish RCON on 127.0.0.1 only (default)"}},
-	{Verb: "enable", Object: "scheduler", Route: "enable_scheduler", Handler: scheduler.RunEnableScheduler, TopLevelHelp: []string{"enable scheduler                            Build and start the scheduler service (backups, health)"}},
+	{Verb: "enable", Object: "scheduler", Route: "enable_scheduler", Handler: scheduler.RunEnableScheduler, TopLevelHelp: []string{"enable scheduler                            Build and start the scheduler service (schedules, health)"}},
 	{Verb: "disable", Object: "scheduler", Route: "disable_scheduler", Handler: scheduler.RunDisableScheduler, TopLevelHelp: []string{"disable scheduler                           Stop and remove the scheduler service"}},
 	{Verb: "start", Object: "instance", Route: "start", Handler: compose.RunStart, TopLevelHelp: []string{"start instance --instance <inst|all>        Start compose service(s)"}},
 	{Verb: "stop", Object: "instance", Route: "stop", Handler: compose.RunStop, TopLevelHelp: []string{"stop instance --instance <inst|all>         Graceful stop via ark-server-stop.py"}},

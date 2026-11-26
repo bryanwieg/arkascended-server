@@ -2,15 +2,18 @@ package sdkbackend
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/compose-spec/compose-go/v2/types"
 
+	"pkg/ark"
 	"pkg/ark/composeutil"
 )
 
@@ -260,5 +263,161 @@ func TestSaveProjectRefusesPortRanges(t *testing.T) {
 	})
 	if err == nil || saved != compose {
 		t.Fatalf("expected a refusal and an unchanged file, got err=%v:\n%s", err, saved)
+	}
+}
+
+func newTestCompose(t *testing.T) *SDKCompose {
+	t.Helper()
+	c, err := NewSDKCompose(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func schedule(name, cron string) map[string]any {
+	return map[string]any{"cron": cron, "enabled": true, "instance": "asa1", "name": name, "type": "backup"}
+}
+
+const schedulesCompose = `services:
+  asa1:
+    image: ark-server:latest
+# Managed by ark-cli.
+x-ark-schedules:
+  - cron: "0 3 * * *"
+    enabled: true
+    instance: asa1
+    name: nightly
+    type: backup
+# Kept below the block.
+volumes:
+  data: {}
+`
+
+const nightlyBlock = `x-ark-schedules:
+  - cron: 0 3 * * *
+    enabled: true
+    instance: asa1
+    name: nightly
+    type: backup
+`
+
+func TestSaveProjectWritesSchedulesExtension(t *testing.T) {
+	setSchedules := func(v any) func(*types.Project) {
+		return func(p *types.Project) { p.Extensions = types.Extensions{ark.SchedulesExtensionKey: v} }
+	}
+	tests := []struct {
+		name, compose, want string
+		mutate              func(*types.Project)
+	}{
+		{
+			name:    "append keeps every earlier line",
+			compose: richCompose,
+			mutate: func(p *types.Project) {
+				p.Extensions[ark.SchedulesExtensionKey] = []any{schedule("nightly", "0 3 * * *")}
+			},
+			want: richCompose + nightlyBlock,
+		},
+		{
+			name:    "replace keeps comments around the block",
+			compose: schedulesCompose,
+			mutate:  setSchedules([]any{schedule("nightly", "0 4 * * *")}),
+			want:    strings.Replace(schedulesCompose, `"0 3 * * *"`, "0 4 * * *", 1),
+		},
+		{
+			name:    "remove",
+			compose: schedulesCompose,
+			mutate:  func(p *types.Project) { delete(p.Extensions, ark.SchedulesExtensionKey) },
+			want:    "services:\n  asa1:\n    image: ark-server:latest\n# Managed by ark-cli.\n# Kept below the block.\nvolumes:\n  data: {}\n",
+		},
+		{
+			name:    "flow-style empty services",
+			compose: "services: {}\n",
+			mutate:  setSchedules([]any{schedule("nightly", "0 3 * * *")}),
+			want:    "services: {}\n" + nightlyBlock,
+		},
+		{
+			name:    "dollar signs are escaped",
+			compose: "services: {}\n",
+			mutate:  setSchedules([]any{schedule("pay $5", "${X}")}),
+			want:    "services: {}\nx-ark-schedules:\n  - cron: $${X}\n    enabled: true\n    instance: asa1\n    name: pay $$5\n    type: backup\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saved, err := saveRoundTrip(t, map[string]string{"compose.yaml": tt.compose, "secrets.env": "STEAM_TOKEN=s3cret\n"}, tt.mutate)
+			if err != nil {
+				t.Fatalf("SaveProject: %v", err)
+			}
+			if saved != tt.want {
+				t.Fatalf("saved file differs.\n--- got\n%s\n--- want\n%s", saved, tt.want)
+			}
+		})
+	}
+	t.Run("dollar values load back uninterpolated", func(t *testing.T) {
+		want := []any{schedule("pay $5", "${X}")}
+		saved, err := saveRoundTrip(t, map[string]string{"compose.yaml": "services: {}\n"}, setSchedules(want))
+		if err != nil {
+			t.Fatal(err)
+		}
+		composeFile := filepath.Join(t.TempDir(), "compose.yaml")
+		if err := os.WriteFile(composeFile, []byte(saved), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := newTestCompose(t).LoadProject(context.Background(), composeFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(loaded.LoadedSchedules, want) {
+			t.Fatalf("loaded %#v, want %#v", loaded.LoadedSchedules, want)
+		}
+	})
+}
+
+func TestSaveProjectRefusesOtherExtensionChanges(t *testing.T) {
+	tests := map[string]func(*types.Project){
+		"other extension":    func(p *types.Project) { p.Extensions["x-common"] = map[string]any{"restart": "always"} },
+		"non-list schedules": func(p *types.Project) { p.Extensions[ark.SchedulesExtensionKey] = "nightly" },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			saved, err := saveRoundTrip(t, map[string]string{"compose.yaml": richCompose, "secrets.env": "STEAM_TOKEN=s3cret\n"}, mutate)
+			if !errors.Is(err, errUnsupportedSave) || saved != richCompose {
+				t.Fatalf("expected errUnsupportedSave and an unchanged file, got err=%v:\n%s", err, saved)
+			}
+		})
+	}
+}
+
+func TestSaveProjectKeepsSchedulesItDidNotChange(t *testing.T) {
+	ctx := context.Background()
+	composeFile := filepath.Join(t.TempDir(), "compose.yaml")
+	if err := os.WriteFile(composeFile, []byte(schedulesCompose), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := newTestCompose(t)
+	load := func() *ark.ComposeProject {
+		p, err := c.LoadProject(ctx, composeFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	stale, other := load(), load()
+	both := []any{schedule("nightly", "0 3 * * *"), schedule("weekly", "0 5 * * 0")}
+	other.Project.Extensions[ark.SchedulesExtensionKey] = both
+	if err := c.SaveProject(ctx, composeFile, other); err != nil {
+		t.Fatal(err)
+	}
+	mutateService(t, stale.Project, "asa1", func(s *types.ServiceConfig) { s.Image = "ark-server:v2" })
+	if err := c.SaveProject(ctx, composeFile, stale); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := load()
+	if !reflect.DeepEqual(reloaded.LoadedSchedules, both) {
+		t.Fatalf("schedules = %#v, want %#v", reloaded.LoadedSchedules, both)
+	}
+	if got := reloaded.Project.Services["asa1"].Image; got != "ark-server:v2" {
+		t.Fatalf("image = %q, want ark-server:v2", got)
 	}
 }

@@ -101,11 +101,11 @@ type ScheduleDetailJSON struct {
 	Type           string `json:"type"`
 	Instance       string `json:"instance"`
 	Cron           string `json:"cron"`
+	Command        string `json:"command,omitempty"`
 	Format         string `json:"format,omitempty"`
 	RetainCount    int    `json:"retain_count,omitempty"`
 	RetainDays     int    `json:"retain_days,omitempty"`
 	RetainSizeGB   int    `json:"retain_size_gb,omitempty"`
-	ComposeFile    string `json:"compose_file,omitempty"`
 	LastStatus     string `json:"last_status,omitempty"`
 	LastExitCode   int    `json:"last_exit_code,omitempty"`
 	LastStartedAt  string `json:"last_started_at,omitempty"`

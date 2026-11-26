@@ -77,7 +77,7 @@ func RunShowInstance(d *core.AppDeps, args []string) error {
 
 	// Schedules for this instance.
 	var instanceSchedules []schedule.BackupSchedule
-	if schedFile, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile(); err == nil {
+	if schedFile, err := d.ScheduleService.LoadScheduleFile(d.Context(), d.ComposeService, composeFile); err == nil {
 		for _, s := range schedFile.Schedules {
 			if s.Instance == instance || s.Instance == "all" {
 				instanceSchedules = append(instanceSchedules, s)

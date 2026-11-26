@@ -127,11 +127,22 @@ the host CLI, nothing is published, and the tag shows when an upgrade needs
 `enable scheduler` again. The binary must be static; `time/tzdata` is
 embedded so `TZ` works without OS files.
 
-State stays in files under `.ark-manage/` (readable, no database):
+Schedule definitions live in the compose file under `x-ark-schedules:`, read
+with `LoadProject` and written with `SaveProject`; the scheduler rereads them
+every minute. Why there and not in a file of their own: the compose file is
+already the one file a user backs up, moves and hands to Komodo, and every
+other ark-cli edit goes through it, so schedules travel with the instances they
+target and need no second path rule (the old file lived under the current
+directory, which had to be the compose directory). Compose keeps `x-` keys
+untouched; `$` is written as `$$` so interpolation leaves commands alone. The
+old schedule file under `.ark-manage/` is not migrated: `enable scheduler` warns
+while it exists and the user recreates the schedules.
+
+Run state stays in files under the compose file's `.ark-manage/` (readable, no
+database):
 
 | File | Purpose |
 |---|---|
-| `schedules.yaml` | Schedule definitions; the scheduler rereads it every minute |
 | `locks/schedule-<name>.lock` | Prevents concurrent runs of the same schedule |
 | `state/schedules/<name>.last.json` | Last-run time, status and error for `check schedule`, catch-up and health |
 | `state/scheduler/health.json` | Last health report, read by `check scheduler` |

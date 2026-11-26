@@ -10,6 +10,7 @@ its command line contains ArkAscendedServer.exe and the scripts treat it as the 
 - Serves RCON on 27020 with the ServerAdminPassword from GameUserSettings.ini, as ARK does:
   saveworld, DoExit, ListPlayers; anything else gets ARK's generic reply. ListPlayers answers
   with the lines of Saved/fake-ark-players.txt (e.g. "0. Alice, 0002abc") when that file exists.
+  Logs each command it receives as `RCON command: <command>` in ShooterGame.log.
 - On DoExit, rewrites GameUserSettings.ini as ARK does on shutdown: here it bumps
   [ServerSettings] FakeArkShutdowns. FAKE_ARK_INI_DUPLICATE=<key> also makes it write that key
   twice, like an ARK build that duplicates a key.
@@ -105,6 +106,7 @@ def read_packet(conn: socket.socket) -> tuple[int, int, str] | None:
 
 
 def run_command(command: str) -> str:
+    log(f"RCON command: {command}")
     name = command.split(" ", 1)[0].lower()
     if name == "saveworld":
         save_world()

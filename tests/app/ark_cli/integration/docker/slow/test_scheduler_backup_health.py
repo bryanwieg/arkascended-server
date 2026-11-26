@@ -18,6 +18,7 @@ pytestmark = [pytest.mark.container, pytest.mark.usefixtures("remove_new_schedul
 
 SCHEDULER = "ark-scheduler"
 SCHEDULE = "pytest-sched-every-minute"
+SAVE_SCHEDULE = "pytest-save-every-minute"
 
 
 @pytest.fixture
@@ -84,12 +85,13 @@ def test_scheduler_backup_and_health_end_to_end(
     Scenario:
         A real instance is started; an every-minute backup schedule is created and the
         scheduler enabled on a free health port. Once the scheduled archive exists the
-        schedule is removed. The instance is then stopped, started, and restarted while
+        schedule is removed, and an every-minute save schedule is run the same way. The instance is then stopped, started, and restarted while
         /health is polled every 5 s.
 
     Expected:
         - A new archive lands in $ARK_BACKUP_DIR/<instance>/ and check schedule reports success;
           the archive and the schedule state files are owned by the test user.
+        - The save schedule, read from x-ark-schedules by the scheduler, records success.
         - check scheduler exits 0 with rcon and udp ok; GET /health is 200 with rcon ok; the
           scheduler container's Docker health becomes healthy.
         - After stop instance, check scheduler still exits 0 with state stopped and /health
@@ -128,6 +130,17 @@ def test_scheduler_backup_and_health_end_to_end(
     assert set(owners.values()) == {os.getuid()}, owners
     # An every-minute backup would hold the instance lock at every round: instance busy, checks skipped.
     cli("remove", "schedule", "--name", SCHEDULE)
+
+    # Scheduled save, read from x-ark-schedules by the FROM scratch scheduler.
+    cli("create", "schedule", "save", "--instance", instance, "--name", SAVE_SCHEDULE, "--cron", "* * * * *")
+    _wait_until(
+        wait_for,
+        "a successful scheduled save",
+        180,
+        lambda: cli("check", "schedule", "--name", SAVE_SCHEDULE).stdout,
+        lambda seen: re.search(r"last_status:\s+success", seen) is not None,
+    )
+    cli("remove", "schedule", "--name", SAVE_SCHEDULE)
 
     # Healthy report: check scheduler, /health, Docker health.
     _wait_until(

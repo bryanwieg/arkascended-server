@@ -124,11 +124,11 @@ func (c *SDKCompose) LoadProject(ctx context.Context, composeFile string) (*ark.
 	c.projects[composeFile] = &projectCache{name: project.Name}
 	c.mu.Unlock()
 
-	return &ark.ComposeProject{Project: project}, nil
+	return &ark.ComposeProject{Project: project, LoadedSchedules: cloneYAML(project.Extensions[ark.SchedulesExtensionKey])}, nil
 }
 
-// SaveProject writes the image, environment, label and port changes in project back to
-// composeFile as line edits, keeping everything else in the file byte for byte (see compose_save.go).
+// SaveProject writes the image, environment, label and port changes and a changed x-ark-schedules
+// block in project back to composeFile as line edits, keeping everything else in the file byte for byte (see compose_save.go).
 // The result is loaded and compared with project before the file is replaced.
 func (c *SDKCompose) SaveProject(ctx context.Context, composeFile string, project *ark.ComposeProject) error {
 	text, err := os.ReadFile(composeFile)
@@ -139,7 +139,7 @@ func (c *SDKCompose) SaveProject(ctx context.Context, composeFile string, projec
 	if err != nil {
 		return err
 	}
-	patched, err := patchComposeText(string(text), before.Project, project.Project)
+	patched, err := patchComposeText(string(text), before.Project, project)
 	if err != nil {
 		return fmt.Errorf("cannot update %s without rewriting it: %w", composeFile, err)
 	}
@@ -157,7 +157,7 @@ func (c *SDKCompose) SaveProject(ctx context.Context, composeFile string, projec
 	if err != nil {
 		return fmt.Errorf("edited compose file does not load, %s left unchanged: %w", composeFile, err)
 	}
-	if err := verifySaved(project.Project, saved); err != nil {
+	if err := verifySaved(project, saved); err != nil {
 		return fmt.Errorf("cannot update %s without rewriting it: %w; edit it by hand", composeFile, err)
 	}
 	if err := os.WriteFile(composeFile, []byte(patched), 0o644); err != nil { //nolint:gosec // G703: the path is the user's own --compose-file

@@ -12,6 +12,9 @@ import (
 // canonical typed representation from compose-go.
 type ComposeProject struct {
 	Project *types.Project
+	// LoadedSchedules is a copy of Project.Extensions[SchedulesExtensionKey] as LoadProject read it
+	// (nil when absent); SaveProject writes the schedules only when they differ from it.
+	LoadedSchedules any
 }
 
 // An ARK instance is a service with label PortASALabel (set by create instance); any other service, such
@@ -22,6 +25,9 @@ const (
 	SchedulerRole    = "scheduler"
 	SchedulerService = "ark-scheduler" // service name; no container_name (compose names it <project>-ark-scheduler-1, so two projects on one engine never clash)
 )
+
+// SchedulesExtensionKey is the top-level compose extension holding the schedule list.
+const SchedulesExtensionKey = "x-ark-schedules"
 
 func isInstance(svc types.ServiceConfig) bool {
 	return svc.Labels[PortASALabel] != ""

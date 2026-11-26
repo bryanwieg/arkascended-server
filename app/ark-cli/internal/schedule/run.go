@@ -2,9 +2,11 @@ package schedule
 
 import (
 	"ark-cli/internal/backup"
+	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"pkg/ark/schedule"
@@ -38,10 +40,11 @@ func RunRunSchedule(d *core.AppDeps, args []string) error {
 	return nil
 }
 
-// RunScheduleOnce runs one backup schedule: lock, state "running", backup, state "success"/"failed",
-// log file line and a matching stdout line. Returns the lock error or the backup error.
+// RunScheduleOnce runs one schedule: lock, state "running", the backup or action, state
+// "success"/"failed"/"skipped", log file lines and matching output lines. Returns the lock error
+// or the run error.
 func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
-	if s.Type != "backup" {
+	if !schedule.KnownType(s.Type) {
 		return schedule.ErrUnsupportedType(s.Type)
 	}
 	svc := d.ScheduleService
@@ -55,20 +58,77 @@ func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
 		svc.AppendScheduleLog(s.Name, line)
 		core.Infof("%s\n", line)
 	}
+	logWarn := func(line string) {
+		svc.AppendScheduleLog(s.Name, line)
+		core.Warnf("%s\n", line)
+	}
 	startedAt := svc.Now().Format(time.RFC3339)
 	logLine(fmt.Sprintf("%s START %s", startedAt, s.Name))
 	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastStatus: "running"})
 
-	// A stop or update rollout holds the instance lock for minutes; wait for it instead of failing.
-	argsForBackup := append(append([]string{"--instance", s.Instance}, schedule.BackupFlagArgs(s)...), "--lock-timeout", "30m")
-	backupErr := runBackupFromSchedule(d, s.Name, argsForBackup)
+	status, runErr := runSchedule(d, s, logLine, logWarn)
 	finishedAt := svc.Now().Format(time.RFC3339)
-	if backupErr != nil {
-		logLine(fmt.Sprintf("%s FAIL %s: %s", finishedAt, s.Name, backupErr))
-		svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastFinishedAt: finishedAt, LastStatus: "failed", LastExitCode: 1, LastError: backupErr.Error()})
-		return backupErr
+	if runErr != nil {
+		logLine(fmt.Sprintf("%s FAIL %s: %s", finishedAt, s.Name, runErr))
+		svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastFinishedAt: finishedAt, LastStatus: "failed", LastExitCode: 1, LastError: runErr.Error()})
+		return runErr
 	}
-	logLine(fmt.Sprintf("%s SUCCESS %s", finishedAt, s.Name))
-	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastFinishedAt: finishedAt, LastStatus: "success"})
+	logLine(fmt.Sprintf("%s %s %s", finishedAt, strings.ToUpper(status), s.Name))
+	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastFinishedAt: finishedAt, LastStatus: status})
 	return nil
+}
+
+// runSchedule runs the backup or the action of s and returns the status to record on success.
+func runSchedule(d *core.AppDeps, s schedule.BackupSchedule, logLine, logWarn func(string)) (string, error) {
+	if s.Type == schedule.TypeBackup {
+		// A stop or update rollout holds the instance lock for minutes; wait for it instead of failing.
+		argsForBackup := append(append([]string{"--instance", s.Instance}, schedule.BackupFlagArgs(s)...), "--lock-timeout", "30m")
+		return "success", runBackupFromSchedule(d, s.Name, argsForBackup)
+	}
+	composeFile, _, services, err := compose.ResolveDockerComposeServiceTargets(d, s.ComposeFile, s.Instance,
+		"Error: compose config has no services to run the schedule on.")
+	if err != nil {
+		return "", err
+	}
+	running, err := d.ComposeService.RunningServices(d.Context(), composeFile)
+	if err != nil {
+		return "", err
+	}
+	// Targets run one after another in name order; a failure does not stop the remaining ones.
+	var errs []error
+	ran := 0
+	for _, service := range services {
+		if _, ok := running[service]; !ok {
+			logWarn(fmt.Sprintf("Warning: %s is stopped; %s command unsuccessful", service, s.Type))
+			continue
+		}
+		ran++
+		if err := runActionOn(d, s, composeFile, service, logLine, logWarn); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", service, err))
+		}
+	}
+	if ran == 0 {
+		return "skipped", nil
+	}
+	return "success", errors.Join(errs...)
+}
+
+// runActionOn sends the rcon command or saveworld to a running service, or restarts it the way
+// `restart instance --instance <service>` does.
+func runActionOn(d *core.AppDeps, s schedule.BackupSchedule, composeFile, service string, logLine, logWarn func(string)) error {
+	if s.Type == schedule.TypeRestart {
+		if err := compose.SetStopReason(d, composeFile, service, "scheduled restart"); err != nil {
+			logWarn(fmt.Sprintf("Warning: could not set the stop reason for %s: %v", service, err))
+		}
+		return compose.RunRestart(d, []string{"--instance", service, "--compose-file", composeFile})
+	}
+	command := s.Command
+	if s.Type == schedule.TypeSave {
+		command = "saveworld"
+	}
+	reply, err := compose.RCONCommand(d, composeFile, service, command)
+	if reply != "" {
+		logLine(fmt.Sprintf("%s: %s", service, reply))
+	}
+	return err
 }

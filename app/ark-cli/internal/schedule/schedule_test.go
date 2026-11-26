@@ -4,6 +4,7 @@ package schedule
 
 import (
 	"ark-cli/internal/core"
+	"ark-cli/internal/testutil"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"pkg/ark"
 	"pkg/ark/arktest"
 	"pkg/ark/backup"
+	"pkg/ark/runtime"
 	"pkg/ark/schedule"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -998,4 +1000,147 @@ func TestScheduleCommandsWarnWithoutScheduler(t *testing.T) {
 			}
 		})
 	}
+}
+
+// actionRun is what one action schedule run did, for the action contract tests.
+type actionRun struct {
+	err      error
+	stdout   string
+	stderr   string
+	log      string
+	state    schedule.RunState
+	execs    [][]string // "<service> <last argv element>" per exec
+	restarts []string   // "stop <svc>", "start <svc>"
+}
+
+// runActionSchedule runs schedule "act" from entry with asa1 and asa2 in the project, the given
+// services running, and execFn answering each exec (nil: exit 0 with reply "ok").
+func runActionSchedule(t *testing.T, entry string, running []string, execFn func(service string, argv []string) ark.ExecResult, stopErr error) actionRun {
+	t.Helper()
+	tmp := t.TempDir()
+	overrideSchedulePathsForTest(t, tmp)
+	writeScheduleFixture(t, "version: 1\nschedules:\n  - name: act\n    enabled: true\n    cron: \"0 * * * *\"\n    compose_file: "+filepath.Join(tmp, "docker-compose.yaml")+"\n"+entry)
+	got := actionRun{}
+	runningSet := map[string]struct{}{}
+	for _, s := range running {
+		runningSet[s] = struct{}{}
+	}
+	got.stderr = testutil.CaptureStderr(t, func() {
+		got.stdout = captureStdout(t, func() {
+			withScheduleComposeDeps(t, emptyServices("asa1", "asa2"), func(d *core.AppDeps) {
+				mock := d.ComposeService.(*arktest.MockCompose)
+				mock.RunningServicesFn = func(context.Context, string) (map[string]struct{}, error) { return runningSet, nil }
+				mock.ExecFn = func(_ context.Context, _, service string, argv []string, _ ark.ExecOptions) (ark.ExecResult, error) {
+					got.execs = append(got.execs, []string{service, argv[len(argv)-1]})
+					if execFn != nil {
+						return execFn(service, argv), nil
+					}
+					return ark.ExecResult{Stdout: "ok\n"}, nil
+				}
+				d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
+					got.restarts = append(got.restarts, "stop "+req.Instance)
+					return stopErr
+				}
+				d.RestartStartInstance = func(req runtime.StartCommandRequest) error {
+					got.restarts = append(got.restarts, "start "+req.Instance)
+					return nil
+				}
+			}, func() {
+				got.err = RunScheduleOnce(core.CurrentAppDeps(), mustLoadSchedule(t, "act"))
+			})
+		})
+	})
+	logBytes, _ := os.ReadFile(core.CurrentAppDeps().ScheduleService.LogPath("act"))
+	got.log = string(logBytes)
+	stateBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.StatePath("act"))
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if err := json.Unmarshal(stateBytes, &got.state); err != nil {
+		t.Fatalf("unmarshal state: %v", err)
+	}
+	return got
+}
+
+func mustLoadSchedule(t *testing.T, name string) schedule.BackupSchedule {
+	t.Helper()
+	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	if err != nil {
+		t.Fatalf("load schedule: %v", err)
+	}
+	return s
+}
+
+func TestRunScheduleActionsOnRunningInstances(t *testing.T) {
+	cases := []struct {
+		name, entry, wantExecs, wantRestarts string
+	}{
+		{"rcon", "    type: rcon\n    instance: asa1\n    command: ServerChat hi\n", "[[asa1 ServerChat hi]]", "[]"},
+		{"save", "    type: save\n    instance: asa1\n", "[[asa1 saveworld]]", "[]"},
+		{"restart", "    type: restart\n    instance: asa1\n", "[[asa1 scheduled restart]]", "[stop asa1 start asa1]"},
+		{"all in name order", "    type: rcon\n    instance: all\n    command: ServerChat hi\n", "[[asa1 ServerChat hi] [asa2 ServerChat hi]]", "[]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runActionSchedule(t, tc.entry, []string{"asa1", "asa2"}, nil, nil)
+			if got.err != nil {
+				t.Fatalf("RunScheduleOnce: %v\n%s", got.err, got.stderr)
+			}
+			if s := fmt.Sprint(got.execs); s != tc.wantExecs {
+				t.Fatalf("execs = %s, want %s", s, tc.wantExecs)
+			}
+			if s := fmt.Sprint(got.restarts); s != tc.wantRestarts {
+				t.Fatalf("restarts = %s, want %s", s, tc.wantRestarts)
+			}
+			if got.state.LastStatus != "success" || !strings.Contains(got.log, "SUCCESS act") {
+				t.Fatalf("state %+v, log:\n%s", got.state, got.log)
+			}
+			if tc.name == "rcon" && !strings.Contains(got.log, "asa1: ok") {
+				t.Fatalf("log missing the rcon reply:\n%s", got.log)
+			}
+		})
+	}
+}
+
+func TestRunScheduleActionsSkipStoppedTargets(t *testing.T) {
+	t.Run("only target stopped", func(t *testing.T) {
+		got := runActionSchedule(t, "    type: restart\n    instance: asa2\n", []string{"asa1"}, nil, nil)
+		warning := "Warning: asa2 is stopped; restart command unsuccessful"
+		if got.err != nil || got.state.LastStatus != "skipped" || len(got.execs) != 0 || len(got.restarts) != 0 {
+			t.Fatalf("err %v, state %+v, execs %v, restarts %v", got.err, got.state, got.execs, got.restarts)
+		}
+		if !strings.Contains(got.stderr, warning) || !strings.Contains(got.log, warning) || !strings.Contains(got.log, "SKIPPED act") {
+			t.Fatalf("stderr:\n%s\nlog:\n%s", got.stderr, got.log)
+		}
+	})
+	t.Run("one running one stopped", func(t *testing.T) {
+		got := runActionSchedule(t, "    type: save\n    instance: all\n", []string{"asa1"}, nil, nil)
+		if got.err != nil || got.state.LastStatus != "success" || fmt.Sprint(got.execs) != "[[asa1 saveworld]]" {
+			t.Fatalf("err %v, state %+v, execs %v", got.err, got.state, got.execs)
+		}
+		if !strings.Contains(got.log, "Warning: asa2 is stopped; save command unsuccessful") {
+			t.Fatalf("log missing the warning:\n%s", got.log)
+		}
+	})
+	t.Run("rcon failure keeps going", func(t *testing.T) {
+		failAsa1 := func(service string, _ []string) ark.ExecResult {
+			if service == "asa1" {
+				return ark.ExecResult{ExitCode: 1, Stderr: "refused"}
+			}
+			return ark.ExecResult{}
+		}
+		got := runActionSchedule(t, "    type: rcon\n    instance: all\n    command: ServerChat hi\n", []string{"asa1", "asa2"}, failAsa1, nil)
+		if got.err == nil || got.state.LastStatus != "failed" || !strings.Contains(got.state.LastError, "asa1: rcon exit code 1: refused") {
+			t.Fatalf("err %v, state %+v", got.err, got.state)
+		}
+		if len(got.execs) != 2 {
+			t.Fatalf("asa2 must still run: execs %v", got.execs)
+		}
+	})
+	t.Run("restart failure", func(t *testing.T) {
+		got := runActionSchedule(t, "    type: restart\n    instance: asa1\n", []string{"asa1"}, nil, errors.New("stop timed out"))
+		if got.err == nil || got.state.LastStatus != "failed" || !strings.Contains(got.state.LastError, "asa1: stop timed out") {
+			t.Fatalf("err %v, state %+v", got.err, got.state)
+		}
+	})
 }

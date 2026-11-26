@@ -465,3 +465,37 @@ def test_unset_refuses_env_keys_duplicates_and_running_server(ark_ini, capsys, t
     assert (code, result["old"]) == (0, ["ark", "restored"])
     assert gus.read_text() == "[ServerSettings]\nRCONPort=27020\n"
     assert ih._git(tmp_path, "show", "HEAD~1:GameUserSettings.ini") == content
+
+
+def test_history_stays_packed(ark_ini, capsys, tmp_path: Path) -> None:
+    """A few hundred `set ini` runs leave a small packed .git that still holds every revision unchanged."""
+    (tmp_path / "GameUserSettings.ini").write_text("[ServerSettings]\n" + "Filler=some value\n" * 300)
+    ih.commit(tmp_path, ih.ARK, "image default")
+    fmt = "--format=%H %an %at %s"
+    seen = [ih._git(tmp_path, "log", "-1", fmt).strip()]
+    for n in range(250):
+        code, _out, err = run(
+            ark_ini,
+            capsys,
+            "set",
+            "--file",
+            "gameusersettings",
+            "--section",
+            "ServerSettings",
+            "--key",
+            "MaxPlayers",
+            "--value",
+            str(n),
+        )
+        assert (code, err) == (0, "")
+        seen.append(ih._git(tmp_path, "log", "-1", fmt).strip())
+
+    git_dir = tmp_path / ".git"
+    assert ih._git(tmp_path, "log", fmt).splitlines() == seen[::-1]
+    assert len(set(seen)) == 251
+    assert sum(f.stat().st_size for f in git_dir.rglob("*") if f.is_file()) < 300_000
+    assert list(git_dir.glob("objects/pack/*.pack"))
+    assert int(ih._git(tmp_path, "count-objects").split()[0]) <= ih._PACK_AFTER
+    assert not (git_dir / "logs").exists()
+    assert not (git_dir / "hooks").exists()
+    ih._git(tmp_path, "fsck", "--strict")

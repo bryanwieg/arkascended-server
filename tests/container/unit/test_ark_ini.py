@@ -118,7 +118,6 @@ def test_set_reports_change_as_json_and_keeps_mode(ark_ini, capsys, tmp_path: Pa
         "old": ["70"],
         "changed": True,
         "removed": 0,
-        "backup": None,
     }
     assert gus.read_text() == "[ServerSettings]\nMaxPlayers=20\n"
     assert gus.stat().st_mode & 0o777 == 0o640
@@ -201,9 +200,7 @@ def test_replace_all_on_game_ini_collapses_list_lines(ark_ini, capsys, tmp_path:
     )
     assert (code, json.loads(out)["removed"]) == (0, 1)
     assert game.read_text() == "[S]\nOverrideNamedEngramEntries=c\n"
-    assert (
-        tmp_path / "Game.ini.bak"
-    ).read_text() == "[S]\nOverrideNamedEngramEntries=a\nOverrideNamedEngramEntries=b\n"
+    assert not (tmp_path / "Game.ini.bak").exists()
 
 
 def test_get_key_works_while_server_runs_and_needs_both_names(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:
@@ -237,8 +234,8 @@ def test_duplicates_refused_with_origin_then_replace_all(ark_ini, capsys, tmp_pa
     result = json.loads(out)
     assert (code, result["removed"], result["old"]) == (0, 1, ["ark", "restored"])
     assert gus.read_text() == "[ServerSettings]\nK=new\n"
-    assert Path(result["backup"]).read_text() == "[ServerSettings]\nK=ark\nK=restored\n"
-    # The hand edit is committed as such before set's own write; the .bak isn't tracked.
+    # The hand edit is committed as such before set's own write, so the history holds the previous file.
+    assert ih._git(tmp_path, "show", "HEAD~1:GameUserSettings.ini") == "[ServerSettings]\nK=ark\nK=restored\n"
     assert log(tmp_path) == [
         "ark-cli set ini: [ServerSettings] K=new",
         "outside ark-cli: changed outside ark-cli; found before set ini",
@@ -394,7 +391,7 @@ def test_history_without_git_or_files(tmp_path: Path, monkeypatch) -> None:
 _UNSET = ("unset", "--file", "gameusersettings", "--section", "ServerSettings", "--key")
 
 
-def test_unset_removes_key_keeps_bak_and_commits(ark_ini, capsys, tmp_path: Path) -> None:
+def test_unset_removes_key_and_commits(ark_ini, capsys, tmp_path: Path) -> None:
     gus = tmp_path / "GameUserSettings.ini"
     before = b"[ServerSettings]\r\n; note\r\nA=1\r\nMaxPlayers=70\r\nB=2\r\n[T]\r\nMaxPlayers=5\r\n"
     gus.write_bytes(before)
@@ -408,10 +405,9 @@ def test_unset_removes_key_keeps_bak_and_commits(ark_ini, capsys, tmp_path: Path
         "key": "maxplayers",
         "old": ["70"],
         "changed": True,
-        "backup": str(tmp_path / "GameUserSettings.ini.bak"),
     }
     assert gus.read_bytes() == b"[ServerSettings]\r\n; note\r\nA=1\r\nB=2\r\n[T]\r\nMaxPlayers=5\r\nC=3\r\n"
-    assert (tmp_path / "GameUserSettings.ini.bak").read_bytes() == before + b"C=3\r\n"
+    assert not (tmp_path / "GameUserSettings.ini.bak").exists()
     assert log(tmp_path) == [
         "ark-cli unset ini: [ServerSettings] maxplayers",
         "outside ark-cli: changed outside ark-cli; found before unset ini",
@@ -433,9 +429,9 @@ def test_unset_missing_key_is_no_change(ark_ini, capsys, tmp_path: Path) -> None
     ):
         code, out, _err = run(ark_ini, capsys, *args)
         reply = json.loads(out)
-        assert (code, reply["old"], reply["changed"], reply["backup"]) == (0, [], False, None)
+        assert (code, reply["old"], reply["changed"]) == (0, [], False)
     assert gus.read_text() == "[ServerSettings]\nA=1\n"
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["GameUserSettings.ini"]  # no Game.ini, .bak or .git
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["GameUserSettings.ini"]  # no Game.ini or .git
 
 
 def test_unset_refuses_env_keys_duplicates_and_running_server(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:
@@ -468,4 +464,4 @@ def test_unset_refuses_env_keys_duplicates_and_running_server(ark_ini, capsys, t
     result = json.loads(out)
     assert (code, result["old"]) == (0, ["ark", "restored"])
     assert gus.read_text() == "[ServerSettings]\nRCONPort=27020\n"
-    assert Path(result["backup"]).read_text() == content
+    assert ih._git(tmp_path, "show", "HEAD~1:GameUserSettings.ini") == content

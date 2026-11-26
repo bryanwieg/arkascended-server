@@ -27,7 +27,7 @@ func TestRunSetIniStoppedRunsScriptAndReportsChange(t *testing.T) {
 				RunningServicesFn: editIniMockCompose(false).RunningServicesFn,
 				RunOneOffFn: func(_ context.Context, _, _ string, command []string, opts ark.RunOptions) (ark.ExecResult, error) {
 					gotCommand, gotOpts = command, opts
-					return ark.ExecResult{Stdout: `{"file":"GameUserSettings.ini","section":"ServerSettings","key":"MaxPlayers","value":"20","old":["70","80"],"changed":true,"removed":1,"backup":"/x/GameUserSettings.ini.bak"}`}, nil
+					return ark.ExecResult{Stdout: `{"file":"GameUserSettings.ini","section":"ServerSettings","key":"MaxPlayers","value":"20","old":["70","80"],"changed":true,"removed":1}`}, nil
 				},
 			}
 		}, func() {
@@ -45,7 +45,7 @@ func TestRunSetIniStoppedRunsScriptAndReportsChange(t *testing.T) {
 	}
 	for _, s := range []string{
 		`GameUserSettings.ini [ServerSettings] MaxPlayers: "70", "80" -> "20"`,
-		"Removed 1 repeated MaxPlayers line(s); the previous file is saved as /x/GameUserSettings.ini.bak.",
+		"Removed 1 repeated MaxPlayers line(s).",
 	} {
 		if !strings.Contains(out, s) {
 			t.Fatalf("missing %q in:\n%s", s, out)
@@ -101,7 +101,7 @@ func TestRunSetIniRestartStopsAppliesAndStartsEvenOnRefusal(t *testing.T) {
 					if refuse {
 						return ark.ExecResult{ExitCode: 1, Stderr: "Error: refused"}, nil
 					}
-					return ark.ExecResult{Stdout: `{"file":"Game.ini","section":"S","key":"K","value":"v","old":[],"changed":true,"removed":0,"backup":null}`}, nil
+					return ark.ExecResult{Stdout: `{"file":"Game.ini","section":"S","key":"K","value":"v","old":[],"changed":true,"removed":0}`}, nil
 				},
 			}
 			d.RestartStopInstance = func(req runtime.StopCommandRequest) error {
@@ -191,7 +191,7 @@ func TestRunSetIniReportsNoChange(t *testing.T) {
 				LoadProjectFn:     editIniMockCompose(false).LoadProjectFn,
 				RunningServicesFn: editIniMockCompose(false).RunningServicesFn,
 				RunOneOffFn: func(context.Context, string, string, []string, ark.RunOptions) (ark.ExecResult, error) {
-					return ark.ExecResult{Stdout: `{"file":"Game.ini","section":"S","key":"K","value":"v","old":["v"],"changed":false,"removed":0,"backup":null}`}, nil
+					return ark.ExecResult{Stdout: `{"file":"Game.ini","section":"S","key":"K","value":"v","old":["v"],"changed":false,"removed":0}`}, nil
 				},
 			}
 		}, func() {

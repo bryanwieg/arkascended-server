@@ -11,10 +11,10 @@ get prints the file; with --section and --key, one JSON object instead:
   {"file", "section", "key", "lines": [{"line", "value", "origin"}, ...], "history": str}
   (lines is empty when the key isn't set; origin and history as in set's refusal below).
 set prints one JSON object on stdout:
-  {"file", "section", "key", "value", "old": [...], "changed": bool, "removed": int, "backup": str|null}
-unset removes every line of the key under set's rules (--all where set has --replace-all), always
-keeps <file>.bak, and prints one JSON object on stdout:
-  {"file", "section", "key", "old": [...], "changed": bool, "backup": str|null}
+  {"file", "section", "key", "value", "old": [...], "changed": bool, "removed": int}
+unset removes every line of the key under set's rules (--all where set has --replace-all) and
+prints one JSON object on stdout:
+  {"file", "section", "key", "old": [...], "changed": bool}
 Errors go to stderr as one "Error: ..." message. Exit codes: 0 ok, 1 refused or failed, 2 usage.
 
 set refuses while the server runs (ARK rewrites GameUserSettings.ini when it stops), refuses the
@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -227,16 +226,11 @@ def cmd_set(file_key: str, section: str, key: str, value: str, *, replace_all: b
         "old": old,
         "changed": updated != original,
         "removed": max(len(old) - 1, 0),
-        "backup": None,
     }
     if not result["changed"]:
         return result
     # Changes nobody recorded (hand edits, restores) get their own commit, so they aren't blamed on us.
     ini_history.commit_outside_changes(path.parent, "changed outside ark-cli; found before set ini")
-    if result["removed"]:
-        backup = path.with_name(path.name + ".bak")
-        shutil.copy2(path, backup)
-        result["backup"] = str(backup)
     write_atomic(path, updated)
     ini_history.commit(path.parent, ini_history.CLI_SET, f"[{section}] {key}={value}")
     return result
@@ -262,16 +256,14 @@ def cmd_unset(file_key: str, section: str, key: str, *, remove_all: bool) -> dic
             "Use 'edit ini' to remove one line, or rerun with --all to remove every line."
         )
     old = [_entry(lines[i])[1] for i in matches]  # type: ignore[index]
-    result = {"file": path.name, "section": section, "key": key, "old": old, "changed": bool(matches), "backup": None}
+    result = {"file": path.name, "section": section, "key": key, "old": old, "changed": bool(matches)}
     if not matches:
         return result
     # Changes nobody recorded (hand edits, restores) get their own commit, so they aren't blamed on us.
     ini_history.commit_outside_changes(path.parent, "changed outside ark-cli; found before unset ini")
-    backup = path.with_name(path.name + ".bak")
-    shutil.copy2(path, backup)
     write_atomic(path, "".join(line for i, line in enumerate(lines) if i not in matches))
     ini_history.commit(path.parent, ini_history.CLI_UNSET, f"[{section}] {key}")
-    return {**result, "backup": str(backup)}
+    return result
 
 
 def cmd_track(by: str) -> None:

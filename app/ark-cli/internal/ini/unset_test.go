@@ -39,7 +39,7 @@ func TestRunUnsetIni(t *testing.T) {
 		})
 		return command, steps, out, err
 	}
-	removed := ark.ExecResult{Stdout: `{"file":"GameUserSettings.ini","section":"ServerSettings","key":"MaxPlayers","old":["70"],"changed":true,"backup":"/x/GameUserSettings.ini.bak"}`}
+	removed := ark.ExecResult{Stdout: `{"file":"GameUserSettings.ini","section":"ServerSettings","key":"MaxPlayers","old":["70"],"changed":true}`}
 
 	t.Run("stopped: runs the script and prints the removal", func(t *testing.T) {
 		command, steps, out, err := run(t, false, removed, base...)
@@ -49,7 +49,6 @@ func TestRunUnsetIni(t *testing.T) {
 		}
 		for _, s := range []string{
 			`GameUserSettings.ini [ServerSettings] MaxPlayers: removed "70"`,
-			"The previous file is saved as /x/GameUserSettings.ini.bak.",
 		} {
 			if !strings.Contains(out, s) {
 				t.Fatalf("missing %q in:\n%s", s, out)
@@ -58,7 +57,7 @@ func TestRunUnsetIni(t *testing.T) {
 	})
 
 	t.Run("not set: no change", func(t *testing.T) {
-		reply := ark.ExecResult{Stdout: `{"file":"GameUserSettings.ini","section":"ServerSettings","key":"MaxPlayers","old":[],"changed":false,"backup":null}`}
+		reply := ark.ExecResult{Stdout: `{"file":"GameUserSettings.ini","section":"ServerSettings","key":"MaxPlayers","old":[],"changed":false}`}
 		_, _, out, err := run(t, false, reply, base...)
 		if err != nil || out != "GameUserSettings.ini [ServerSettings] MaxPlayers is not set; no change." {
 			t.Fatalf("err = %v, output = %q", err, out)
@@ -66,7 +65,7 @@ func TestRunUnsetIni(t *testing.T) {
 	})
 
 	t.Run("--all: passed on, every value printed", func(t *testing.T) {
-		reply := ark.ExecResult{Stdout: `{"file":"Game.ini","section":"S","key":"K","old":["a","b"],"changed":true,"backup":"/x/Game.ini.bak"}`}
+		reply := ark.ExecResult{Stdout: `{"file":"Game.ini","section":"S","key":"K","old":["a","b"],"changed":true}`}
 		command, _, out, err := run(t, false, reply, append(base, "--all")...)
 		if err != nil || command[len(command)-1] != "--all" || !strings.Contains(out, `Game.ini [S] K: removed "a", "b"`) {
 			t.Fatalf("err = %v, command = %#v, output = %q", err, command, out)

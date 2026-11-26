@@ -33,8 +33,7 @@ ark-cli set ini --instance my-server --file gus --section ServerSettings --key M
 
 If the key appears more than once, `set ini` stops and lists the lines, marking
 which ones ARK wrote (`get ini` shows the same list without changing anything). Some keys are lists (one engram or item per line), so check
-before rerunning with `--replace-all`, which keeps one line and saves the old
-file as `GameUserSettings.ini.bak`. Details:
+before rerunning with `--replace-all`, which keeps one line. Details:
 [set ini](../reference/cli-commands.md#set-ini).
 
 `unset ini` removes a key the same way, so ARK falls back to its default; a

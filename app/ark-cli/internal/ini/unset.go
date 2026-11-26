@@ -16,7 +16,6 @@ type unsetIniResult struct {
 	Key     string   `json:"key"`
 	Old     []string `json:"old"`
 	Changed bool     `json:"changed"`
-	Backup  *string  `json:"backup"`
 }
 
 // RunUnsetIni removes one key from an instance INI file through ark-ini.py, which enforces the safety rules.
@@ -24,7 +23,7 @@ func RunUnsetIni(d *core.AppDeps, args []string) error {
 	fs := core.NewCommandFlagSet(
 		"unset ini",
 		[]string{"unset ini --instance <instance> --file <game|gameusersettings> --section <section> --key <key> [options]"},
-		"Remove one INI key (keeps a .bak of the file). A key that appears more than once is refused unless --all.",
+		"Remove one INI key; the INI history keeps the previous file. A key that appears more than once is refused unless --all.",
 	)
 	instanceFlag := fs.String("instance", "", "Instance name.")
 	fileFlag := fs.String("file", "", "INI file: game or gameusersettings.")
@@ -91,8 +90,5 @@ func applyUnsetIni(d *core.AppDeps, composeFile, instance string, scriptArgs []s
 		quoted[i] = fmt.Sprintf("%q", v)
 	}
 	core.Infof("%s: removed %s\n", label, strings.Join(quoted, ", "))
-	if res.Backup != nil {
-		core.Infof("The previous file is saved as %s.\n", *res.Backup)
-	}
 	return nil
 }

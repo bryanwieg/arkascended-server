@@ -21,7 +21,6 @@ type setIniResult struct {
 	Old     []string `json:"old"`
 	Changed bool     `json:"changed"`
 	Removed int      `json:"removed"`
-	Backup  *string  `json:"backup"`
 }
 
 // RunSetIni sets one key in an instance INI file through ark-ini.py, which enforces the safety rules.
@@ -36,7 +35,7 @@ func RunSetIni(d *core.AppDeps, args []string) error {
 	sectionFlag := fs.String("section", "", "Section name, with or without brackets (e.g. ServerSettings).")
 	keyFlag := fs.String("key", "", "Key name.")
 	valueFlag := fs.String("value", "", "New value (\"\" for an empty value).")
-	replaceAll := fs.Bool("replace-all", false, "Replace every line for a repeated key with one line (keeps a .bak of the file).")
+	replaceAll := fs.Bool("replace-all", false, "Replace every line for a repeated key with one line.")
 	restartNow := fs.Bool("restart", false, "If the instance is running: stop it (saving the world), apply the change, start it again.")
 	composeFileFlag := fs.String("compose-file", "", "Path to docker-compose.yaml (default: ./docker-compose.yaml or COMPOSE_FILE).")
 	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
@@ -131,8 +130,8 @@ func applySetIni(d *core.AppDeps, composeFile, instance string, scriptArgs []str
 		was = strings.Join(quoted, ", ")
 	}
 	core.Infof("%s: %s -> %q\n", label, was, res.Value)
-	if res.Removed > 0 && res.Backup != nil {
-		core.Infof("Removed %d repeated %s line(s); the previous file is saved as %s.\n", res.Removed, res.Key, *res.Backup)
+	if res.Removed > 0 {
+		core.Infof("Removed %d repeated %s line(s).\n", res.Removed, res.Key)
 	}
 	return nil
 }

@@ -344,7 +344,7 @@ the command is called:
   listed with its origin from the [INI history](#ini-history): some ARK keys
   (engram and item overrides in `Game.ini`, for example) are lists with one line
   per entry. Use `edit ini` to change one line, or `--replace-all` to replace
-  them all with one; the previous file is kept as `<file>.bak`.
+  them all with one.
 - `GameUserSettings.ini` must exist (it is created on the first start);
   `Game.ini` is created if missing.
 
@@ -371,12 +371,11 @@ the same checks: a running instance is refused unless `--restart`, and the
 keys set from the instance's environment are refused. A key that appears more
 than once is refused, with each line listed with its origin, unless `--all`
 removes every line (use `edit ini` to remove one of them). The previous file
-is always kept as `<file>.bak`. A key that is not set is not an error.
+stays in the [INI history](#ini-history). A key that is not set is not an error.
 
 ```sh
 ark-cli unset ini --instance asa1 --file gus --section ServerSettings --key MaxPlayers
 # GameUserSettings.ini [ServerSettings] MaxPlayers: removed "70"
-# The previous file is saved as .../GameUserSettings.ini.bak.
 ```
 
 | Flag | Default | Description |

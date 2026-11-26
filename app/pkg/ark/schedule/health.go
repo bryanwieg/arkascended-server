@@ -1,10 +1,13 @@
 package schedule
 
 import (
+	"context"
 	"os"
 	"slices"
 	"strings"
 	"time"
+
+	"pkg/ark"
 )
 
 // OverdueGrace is how late a schedule may be before Health reports it overdue.
@@ -20,14 +23,14 @@ type ScheduleHealth struct {
 // Health checks each enabled schedule of a known type, in name order: a held lock is OK "running"; a run left
 // "running" with the lock free or a "failed" run is not OK; otherwise (including "skipped") it is overdue when now is past
 // Next(base)+OverdueGrace, where base is the latest of the last start, since (the scheduler's start) and the
-// schedules file's modification time, so a schedule enabled or edited after a long pause is not overdue.
-func (s *Service) Health(now, since time.Time) []ScheduleHealth {
-	file, err := s.LoadScheduleFile()
+// compose file's modification time, so a schedule enabled or edited after a long pause is not overdue.
+func (s *Service) Health(ctx context.Context, compose ark.ComposeService, composeFile string, now, since time.Time) []ScheduleHealth {
+	file, err := s.LoadScheduleFile(ctx, compose, composeFile)
 	if err != nil {
 		return []ScheduleHealth{{Name: "schedules", OK: false, Detail: err.Error()}}
 	}
 	base := since
-	if info, err := os.Stat(s.ConfigPath); err == nil && info.ModTime().After(base) {
+	if info, err := os.Stat(composeFile); err == nil && info.ModTime().After(base) {
 		base = info.ModTime()
 	}
 	sorted := slices.SortedFunc(slices.Values(file.Schedules), func(a, b BackupSchedule) int {

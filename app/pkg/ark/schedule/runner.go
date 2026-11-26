@@ -6,15 +6,19 @@ import (
 	"strings"
 	"time"
 
+	"pkg/ark"
+
 	"github.com/robfig/cron/v3"
 )
 
 // Runner runs due schedules one at a time on a clock.
 type Runner struct {
-	Service *Service
-	RunOne  func(ctx context.Context, s BackupSchedule) error // errors are logged, never stop the loop
-	Now     func() time.Time                                  // default time.Now
-	Logf    func(format string, args ...any)
+	Service     *Service
+	Compose     ark.ComposeService
+	ComposeFile string                                            // holds the schedules
+	RunOne      func(ctx context.Context, s BackupSchedule) error // errors are logged, never stop the loop
+	Now         func() time.Time                                  // default time.Now
+	Logf        func(format string, args ...any)
 }
 
 // Run catches up once at start, then on each tick runs every enabled schedule of a known type due in (prev, now],
@@ -72,12 +76,12 @@ func (r *Runner) now() time.Time {
 	return r.Now()
 }
 
-// runDue reloads the schedule file and runs, in name order, each enabled schedule of a known type that due accepts,
+// runDue reloads the schedules from the compose file and runs, in name order, each enabled schedule of a known type that due accepts,
 // stopping between runs once ctx is done.
 func (r *Runner) runDue(ctx context.Context, due func(BackupSchedule, cron.Schedule) bool) {
-	file, err := r.Service.LoadScheduleFile()
+	file, err := r.Service.LoadScheduleFile(ctx, r.Compose, r.ComposeFile)
 	if err != nil {
-		r.Logf("schedule file unreadable: %v", err)
+		r.Logf("schedules unreadable: %v", err)
 		return
 	}
 	sorted := slices.SortedFunc(slices.Values(file.Schedules), func(a, b BackupSchedule) int {

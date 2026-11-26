@@ -29,11 +29,11 @@ import (
 	"pkg/ark/schedule"
 )
 
-// withSchedulerDeps runs fn with a compose file holding instance asa1 and the health endpoint on a free port;
-// it returns the compose file.
+// withSchedulerDeps runs fn with a compose file holding instance asa1 beside svc's .ark-manage, an in-memory
+// compose project for the schedules and the health endpoint on a free port; it returns the compose file.
 func withSchedulerDeps(t *testing.T, ctx context.Context, svc *schedule.Service, backup func(string, []string) error, fn func()) string {
 	t.Helper()
-	file := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	file := filepath.Join(svc.RepoDir, "docker-compose.yaml")
 	if err := os.WriteFile(file, []byte("services:\n  asa1:\n    image: ark-server:abc123\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +45,7 @@ func withSchedulerDeps(t *testing.T, ctx context.Context, svc *schedule.Service,
 	testutil.WithPatchedAppDeps(t, testutil.FullConfig, func(d *core.AppDeps) {
 		d.Ctx = ctx
 		d.ScheduleService = svc
+		d.ComposeService = arktest.NewMemoryCompose(testutil.FakeProject(testutil.EmptyServices("asa1")))
 		d.RunBackupFromSchedule = backup
 	}, fn)
 	return file
@@ -62,7 +63,7 @@ func TestRunSchedulerReturnsOnCancelledContext(t *testing.T) {
 			}
 		})
 	})
-	for _, want := range []string{"Scheduler started (TZ ", "schedules " + svc.ConfigPath, "Scheduler stopped"} {
+	for _, want := range []string{"Scheduler started (TZ ", "schedules " + filepath.Join(svc.RepoDir, "docker-compose.yaml"), "Scheduler stopped"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
@@ -178,9 +179,6 @@ func TestMonitorRestartStartsAfterFailedStop(t *testing.T) {
 func TestRunSchedulerSignalDoesNotCancelRunningBackup(t *testing.T) {
 	svc := schedule.New(t.TempDir(), nil)
 	s := schedule.BackupSchedule{Name: "nightly", Type: "backup", Instance: "asa1", Enabled: true, Cron: "0 3 * * *"}
-	if err := svc.SaveScheduleFile(schedule.ScheduleFile{Version: 1, Schedules: []schedule.BackupSchedule{s}}); err != nil {
-		t.Fatal(err)
-	}
 	// Left "running" with its lock free, so the start-up catch-up reruns it.
 	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: "2026-11-21T03:00:00Z", LastStatus: "running"})
 
@@ -195,7 +193,12 @@ func TestRunSchedulerSignalDoesNotCancelRunningBackup(t *testing.T) {
 			backupCtxErr = core.CurrentAppDeps().Context().Err()
 			return nil
 		}, func() {
-			if err := RunRunScheduler(core.CurrentAppDeps(), nil); err != nil {
+			d := core.CurrentAppDeps()
+			file := schedule.ScheduleFile{Schedules: []schedule.BackupSchedule{s}}
+			if err := svc.SaveScheduleFile(d.Context(), d.ComposeService, os.Getenv("COMPOSE_FILE"), file); err != nil {
+				t.Fatal(err)
+			}
+			if err := RunRunScheduler(d, nil); err != nil {
 				t.Fatalf("RunRunScheduler: %v", err)
 			}
 		})

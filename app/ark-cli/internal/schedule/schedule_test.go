@@ -1,6 +1,6 @@
 package schedule
 
-// Tests: schedule lifecycle: create/list/remove/show/update/run/validate, lock and status tracking, compose config caching
+// Tests: schedule lifecycle: create/list/remove/show/update/run/validate, lock and status tracking
 
 import (
 	"ark-cli/internal/core"
@@ -22,6 +22,7 @@ import (
 	"pkg/ark/schedule"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/goccy/go-yaml"
 )
 
 func TestCreateListRemoveScheduleBackupPhase1(t *testing.T) {
@@ -45,7 +46,7 @@ func TestCreateListRemoveScheduleBackupPhase1(t *testing.T) {
 		t.Fatalf("unexpected create output: %s", out)
 	}
 
-	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	configBytes, err := savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read schedule config: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestCreateListRemoveScheduleBackupPhase1(t *testing.T) {
 		t.Fatalf("unexpected remove output: %s", removeOut)
 	}
 
-	configBytes, err = os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	configBytes, err = savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read schedule config after remove: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestCreateScheduleRejectsDuplicateName(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 
-	initial := "version: 1\nschedules:\n  - name: nightly\n    type: backup\n    instance: asa1\n    enabled: true\n    cron: \"0 3 * * *\"\n"
+	initial := "x-ark-schedules:\n  - name: nightly\n    type: backup\n    instance: asa1\n    enabled: true\n    cron: \"0 3 * * *\"\n"
 	writeScheduleFixture(t, initial)
 
 	withScheduleComposeDeps(t, emptyServices("asa1"), nil, func() {
@@ -104,8 +105,7 @@ func TestShowUpdateRunSchedulePhase2(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -134,7 +134,7 @@ schedules:
 			t.Fatalf("runUpdateSchedule: %v", err)
 		}
 	})
-	updatedBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	updatedBytes, err := savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read updated config: %v", err)
 	}
@@ -185,8 +185,7 @@ func TestValidateSchedulePhase3(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -212,61 +211,11 @@ schedules:
 	}
 }
 
-func TestValidateScheduleCachesComposeConfigByFile(t *testing.T) {
-	tmp := t.TempDir()
-	overrideSchedulePathsForTest(t, tmp)
-
-	composePath := filepath.Join(tmp, "docker-compose.yaml")
-	initial := `version: 1
-schedules:
-  - name: nightly
-    type: backup
-    instance: asa1
-    enabled: true
-    cron: "0 3 * * *"
-    compose_file: ` + composePath + `
-  - name: hourly
-    type: backup
-    instance: asa2
-    enabled: true
-    cron: "0 * * * *"
-    compose_file: ` + composePath + `
-`
-	writeScheduleFixture(t, initial)
-
-	// Create the compose file so requireCompose (os.Stat) succeeds.
-	if err := os.WriteFile(composePath, []byte("services:\n  asa1: {}\n  asa2: {}\n"), 0o644); err != nil {
-		t.Fatalf("write compose: %v", err)
-	}
-
-	loadCalls := 0
-	withPatchedAppDeps(t, func(d *core.AppDeps) {
-		d.ComposeService = &arktest.MockCompose{
-			LoadProjectFn: func(_ context.Context, path string) (*ark.ComposeProject, error) {
-				loadCalls++
-				if path != composePath {
-					t.Fatalf("unexpected compose path: %s", path)
-				}
-				return fakeProject(emptyServices("asa1", "asa2")), nil
-			},
-		}
-	}, func() {
-		if err := RunValidateSchedule(core.CurrentAppDeps(), []string{}); err != nil {
-			t.Fatalf("runValidateSchedule: %v", err)
-		}
-	})
-
-	if loadCalls != 1 {
-		t.Fatalf("loadComposeConfig calls=%d want 1", loadCalls)
-	}
-}
-
 func TestRunScheduleWritesLockLogAndStatus(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -327,8 +276,7 @@ schedules:
 func TestRunScheduleLockHeldFails(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -355,8 +303,7 @@ func TestListSchedulesIncludesLastRunColumns(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -387,8 +334,7 @@ func TestShowScheduleIncludesCommandPreview(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
 
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -398,7 +344,6 @@ schedules:
     retain_count: 20
     retain_days: 14
     retain_size_gb: 5
-    compose_file: docker-compose.alt.yaml
 `
 	writeScheduleFixture(t, initial)
 
@@ -410,7 +355,6 @@ schedules:
 	for _, want := range []string{
 		"command_preview: ark-cli create backup --instance asa1",
 		"--retain-days 14",
-		"--compose-file docker-compose.alt.yaml",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("show output missing %q\n%s", want, out)
@@ -421,8 +365,7 @@ schedules:
 func TestRunScheduleFailureWritesFailedState(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -463,8 +406,7 @@ schedules:
 func TestUpdateScheduleNoChangesErrors(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -479,8 +421,7 @@ schedules:
 func TestUpdateScheduleConflictingEnabledDisabledErrors(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -495,7 +436,7 @@ schedules:
 func TestListSchedulesEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, "version: 1\nschedules: []\n")
+	writeScheduleFixture(t, "x-ark-schedules: []\n")
 
 	out := captureStdout(t, func() {
 		if err := RunListSchedules(core.CurrentAppDeps(), []string{}); err != nil {
@@ -510,8 +451,7 @@ func TestListSchedulesEmpty(t *testing.T) {
 func TestShowScheduleNotFound(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -526,8 +466,7 @@ schedules:
 func TestRemoveScheduleNotFound(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -565,7 +504,7 @@ func TestCreateScheduleBackupWithDisabledFlag(t *testing.T) {
 		}
 	})
 
-	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	configBytes, err := savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -574,36 +513,10 @@ func TestCreateScheduleBackupWithDisabledFlag(t *testing.T) {
 	}
 }
 
-func TestCreateScheduleBackupWithComposeFile(t *testing.T) {
-	tmp := t.TempDir()
-	overrideSchedulePathsForTest(t, tmp)
-	composePath := filepath.Join(tmp, "custom-compose.yaml")
-	if err := os.WriteFile(composePath, []byte("services:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n"), 0o644); err != nil {
-		t.Fatalf("write compose: %v", err)
-	}
-
-	withScheduleComposeDeps(t, emptyServices("asa1"), nil, func() {
-		if err := runCreateScheduleBackup([]string{
-			"--instance", "asa1", "--name", "nightly", "--cron", "0 3 * * *",
-			"--compose-file", composePath,
-		}); err != nil {
-			t.Fatalf("runCreateScheduleBackup: %v", err)
-		}
-	})
-
-	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
-	if err != nil {
-		t.Fatalf("read config: %v", err)
-	}
-	if !strings.Contains(string(configBytes), composePath) {
-		t.Fatalf("expected compose_file in config:\n%s", string(configBytes))
-	}
-}
-
 func TestValidateScheduleNoSchedulesConfigured(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, "version: 1\nschedules: []\n")
+	writeScheduleFixture(t, "x-ark-schedules: []\n")
 
 	if err := RunValidateSchedule(core.CurrentAppDeps(), []string{}); err == nil {
 		t.Fatal("expected error for empty schedule list")
@@ -613,8 +526,7 @@ func TestValidateScheduleNoSchedulesConfigured(t *testing.T) {
 func TestRunEnableScheduleFlipsEnabled(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -631,7 +543,7 @@ schedules:
 		t.Fatalf("expected enable output, got:\n%s", out)
 	}
 
-	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	configBytes, err := savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -643,8 +555,7 @@ schedules:
 func TestRunEnableScheduleAlreadyEnabled(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -665,8 +576,7 @@ schedules:
 func TestRunEnableScheduleNotFound(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -682,8 +592,7 @@ schedules:
 func TestRunDisableScheduleFlipsDisabled(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -700,7 +609,7 @@ schedules:
 		t.Fatalf("expected disable output, got:\n%s", out)
 	}
 
-	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	configBytes, err := savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -712,8 +621,7 @@ schedules:
 func TestRunDisableScheduleAlreadyDisabled(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -734,8 +642,7 @@ schedules:
 func TestRunDisableScheduleNotFound(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -751,8 +658,7 @@ schedules:
 func TestRunCheckScheduleShowsStatus(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -779,8 +685,7 @@ schedules:
 func TestRunCheckScheduleRunningState(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -809,8 +714,7 @@ schedules:
 func TestRunCheckScheduleFailedLastRun(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -831,8 +735,7 @@ schedules:
 func TestRunCheckScheduleNotFound(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -848,8 +751,7 @@ schedules:
 func TestRunCheckScheduleNoRunState(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -876,16 +778,45 @@ func containsArgPair(args []string, key, value string) bool {
 	return false
 }
 
+// testStore is the test's in-memory compose project; it holds the schedules across dep patches.
+var testStore *arktest.MockCompose
+
+func testComposeFile() string { return os.Getenv("COMPOSE_FILE") }
+
+// writeScheduleFixture seeds the store with raw, compose YAML holding an x-ark-schedules list.
 func writeScheduleFixture(t *testing.T, raw string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(core.CurrentAppDeps().ScheduleService.ConfigPath), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	var doc map[string][]map[string]any
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatalf("parse fixture: %v", err)
 	}
-	if err := os.WriteFile(core.CurrentAppDeps().ScheduleService.ConfigPath, []byte(raw), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
+	items := []any{}
+	for _, entry := range doc[ark.SchedulesExtensionKey] {
+		for key, value := range entry {
+			if n, ok := value.(uint64); ok { // LoadProject returns int
+				entry[key] = int(n)
+			}
+		}
+		items = append(items, entry)
+	}
+	project := fakeProject(nil)
+	project.Project.Extensions = types.Extensions{ark.SchedulesExtensionKey: items}
+	if err := testStore.SaveProject(context.Background(), testComposeFile(), project); err != nil {
+		t.Fatalf("seed schedules: %v", err)
 	}
 }
 
+// savedSchedulesYAML is the store's x-ark-schedules value as YAML text.
+func savedSchedulesYAML(t *testing.T) ([]byte, error) {
+	t.Helper()
+	project, err := testStore.LoadProject(context.Background(), testComposeFile())
+	if err != nil {
+		return nil, err
+	}
+	return yaml.Marshal(project.Project.Extensions[ark.SchedulesExtensionKey])
+}
+
+// withScheduleComposeDeps runs with a compose project of the given services over the test's schedule store.
 func withScheduleComposeDeps(
 	t *testing.T,
 	services types.Services,
@@ -894,21 +825,31 @@ func withScheduleComposeDeps(
 ) {
 	t.Helper()
 	withPatchedAppDeps(t, func(d *core.AppDeps) {
-		d.ComposeService = &arktest.MockCompose{
-			LoadProjectFn: func(_ context.Context, _ string) (*ark.ComposeProject, error) {
-				return fakeProject(services), nil
-			},
+		mock := *testStore
+		mock.LoadProjectFn = func(ctx context.Context, composeFile string) (*ark.ComposeProject, error) {
+			project, err := testStore.LoadProject(ctx, composeFile)
+			if err != nil {
+				return nil, err
+			}
+			project.Project.Services = services
+			return project, nil
 		}
+		d.ComposeService = &mock
 		if mutate != nil {
 			mutate(d)
 		}
 	}, run)
 }
 
+// overrideSchedulePathsForTest gives the test an empty schedule store and points COMPOSE_FILE at
+// <root>/docker-compose.yaml, so run state, logs and locks land under root.
 func overrideSchedulePathsForTest(t *testing.T, root string) {
 	t.Helper()
+	setEnv(t, "COMPOSE_FILE", filepath.Join(root, "docker-compose.yaml"))
+	testStore = arktest.NewMemoryCompose(fakeProject(nil))
 	patchAppDepsForTest(t, func(d *core.AppDeps) {
 		d.ScheduleService = schedule.New(root, nil)
+		d.ComposeService = testStore
 	})
 }
 
@@ -929,7 +870,7 @@ func TestCreateScheduleBackupForCluster(t *testing.T) {
 			}
 		})
 	})
-	configBytes, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	configBytes, err := savedSchedulesYAML(t)
 	if err != nil {
 		t.Fatalf("read schedule config: %v", err)
 	}
@@ -949,18 +890,15 @@ func TestCreateScheduleBackupForCluster(t *testing.T) {
 // service in the schedule's project, and a working directory other than the compose directory.
 func TestScheduleCommandsWarnWithoutScheduler(t *testing.T) {
 	const notEnabled = "the scheduler service is not enabled"
-	const wrongDir = "a scheduler only reads"
 	withScheduler := types.Services{ark.SchedulerService: {Name: ark.SchedulerService, Labels: types.Labels{ark.RoleLabel: ark.SchedulerRole}}}
 	for _, tc := range []struct {
 		name      string
 		services  types.Services
-		otherCwd  bool
 		wantWarns []string
 		noWarns   []string
 	}{
-		{name: "no scheduler", services: emptyServices("asa1"), wantWarns: []string{notEnabled}, noWarns: []string{wrongDir}},
-		{name: "scheduler enabled", services: withScheduler, noWarns: []string{notEnabled, wrongDir}},
-		{name: "other working dir", services: withScheduler, otherCwd: true, wantWarns: []string{wrongDir}, noWarns: []string{notEnabled}},
+		{name: "no scheduler", services: emptyServices("asa1"), wantWarns: []string{notEnabled}},
+		{name: "scheduler enabled", services: withScheduler, noWarns: []string{notEnabled}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmp := t.TempDir()
@@ -969,11 +907,6 @@ func TestScheduleCommandsWarnWithoutScheduler(t *testing.T) {
 			setEnv(t, "COMPOSE_FILE", composeFile)
 			if err := os.WriteFile(composeFile, []byte("services: {}\n"), 0o644); err != nil {
 				t.Fatalf("write compose: %v", err)
-			}
-			if tc.otherCwd {
-				t.Chdir(t.TempDir())
-			} else {
-				t.Chdir(tmp)
 			}
 			var buf strings.Builder
 			origWarnf := core.Warnf
@@ -1019,7 +952,7 @@ func runActionSchedule(t *testing.T, entry string, running []string, execFn func
 	t.Helper()
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, "version: 1\nschedules:\n  - name: act\n    enabled: true\n    cron: \"0 * * * *\"\n    compose_file: "+filepath.Join(tmp, "docker-compose.yaml")+"\n"+entry)
+	writeScheduleFixture(t, "x-ark-schedules:\n  - name: act\n    enabled: true\n    cron: \"0 * * * *\"\n"+entry)
 	got := actionRun{}
 	runningSet := map[string]struct{}{}
 	for _, s := range running {
@@ -1046,7 +979,7 @@ func runActionSchedule(t *testing.T, entry string, running []string, execFn func
 					return nil
 				}
 			}, func() {
-				got.err = RunScheduleOnce(core.CurrentAppDeps(), mustLoadSchedule(t, "act"))
+				got.err = RunScheduleOnce(core.CurrentAppDeps(), testComposeFile(), mustLoadSchedule(t, "act"))
 			})
 		})
 	})
@@ -1064,7 +997,7 @@ func runActionSchedule(t *testing.T, entry string, running []string, execFn func
 
 func mustLoadSchedule(t *testing.T, name string) schedule.BackupSchedule {
 	t.Helper()
-	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(name)
+	_, s, _, err := core.CurrentAppDeps().ScheduleService.LoadScheduleByName(context.Background(), testStore, testComposeFile(), name)
 	if err != nil {
 		t.Fatalf("load schedule: %v", err)
 	}
@@ -1185,7 +1118,7 @@ func TestCreateScheduleActionTypes(t *testing.T) {
 			}
 		}
 	})
-	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile()
+	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile(context.Background(), testStore, testComposeFile())
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -1202,8 +1135,7 @@ func TestCreateScheduleActionTypes(t *testing.T) {
 func TestUpdateScheduleTypeRules(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	initial := `version: 1
-schedules:
+	initial := `x-ark-schedules:
   - name: chat
     type: rcon
     instance: asa1
@@ -1222,6 +1154,7 @@ schedules:
     cron: "0 3 * * *"
 `
 	writeScheduleFixture(t, initial)
+	seeded, _ := savedSchedulesYAML(t)
 
 	showOut := captureStdout(t, func() {
 		if err := RunShowSchedule(core.CurrentAppDeps(), []string{"--name", "chat"}); err != nil {
@@ -1248,8 +1181,8 @@ schedules:
 			t.Fatalf("update %v: got %v, want %q", tc.args, err, tc.want)
 		}
 	}
-	unchanged, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
-	if err != nil || string(unchanged) != initial {
+	unchanged, err := savedSchedulesYAML(t)
+	if err != nil || string(unchanged) != string(seeded) {
 		t.Fatalf("refused updates changed the file (%v):\n%s", err, unchanged)
 	}
 
@@ -1279,7 +1212,7 @@ func TestValidateScheduleActionTypes(t *testing.T) {
 			entry("nightly", schedule.TypeBackup, "asa1", ""),
 		}}
 		captureStdout(t, func() {
-			if n, err := validateScheduleFile(valid, ""); err != nil || n != 4 {
+			if n, err := validateScheduleFile(valid, "", "docker-compose.yaml"); err != nil || n != 4 {
 				t.Fatalf("validate valid entries: n=%d err=%v", n, err)
 			}
 		})
@@ -1289,7 +1222,7 @@ func TestValidateScheduleActionTypes(t *testing.T) {
 			entry("reboot", schedule.TypeRestart, "cluster", ""),
 			entry("weird", "monthly", "asa1", ""),
 		} {
-			if _, err := validateScheduleFile(schedule.ScheduleFile{Schedules: []schedule.BackupSchedule{bad}}, ""); err == nil {
+			if _, err := validateScheduleFile(schedule.ScheduleFile{Schedules: []schedule.BackupSchedule{bad}}, "", "docker-compose.yaml"); err == nil {
 				t.Fatalf("expected validation failure for %+v", bad)
 			}
 		}

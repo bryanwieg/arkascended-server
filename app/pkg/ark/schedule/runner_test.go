@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"pkg/ark"
 )
 
 // recorder is a RunOne that records schedule names.
@@ -41,11 +41,12 @@ func (rec *recorder) names() []string {
 func runnerWith(t *testing.T, schedules ...BackupSchedule) (*Runner, *recorder) {
 	t.Helper()
 	svc := testService(t)
-	if err := svc.SaveScheduleFile(ScheduleFile{Version: 1, Schedules: schedules}); err != nil {
+	compose := memCompose(nil)
+	if err := svc.SaveScheduleFile(context.Background(), compose, testComposeFile, ScheduleFile{Schedules: schedules}); err != nil {
 		t.Fatal(err)
 	}
 	rec := &recorder{}
-	return &Runner{Service: svc, RunOne: rec.runOne, Logf: rec.logf}, rec
+	return &Runner{Service: svc, Compose: compose, ComposeFile: testComposeFile, RunOne: rec.runOne, Logf: rec.logf}, rec
 }
 
 func backupAt(name, cronExpr string) BackupSchedule {
@@ -84,15 +85,11 @@ func TestStepRunsOnlyDueSchedules(t *testing.T) {
 func TestStepRunsInNameOrderAndSkipsDisabled(t *testing.T) {
 	withLocal(t, time.UTC)
 	r, rec := runnerWith(t)
-	// A hand-edited file need not be sorted.
-	if err := os.WriteFile(r.Service.ConfigPath, []byte(`version: 1
-schedules:
-  - {name: c, type: backup, instance: main, enabled: true, cron: "* * * * *"}
-  - {name: b-off, type: backup, instance: main, enabled: false, cron: "* * * * *"}
-  - {name: a, type: backup, instance: main, enabled: true, cron: "* * * * *"}
-`), 0o644); err != nil {
-		t.Fatal(err)
+	// A hand-edited block need not be sorted.
+	entry := func(name string, enabled bool) map[string]any {
+		return map[string]any{"name": name, "type": "backup", "instance": "main", "enabled": enabled, "cron": "* * * * *"}
 	}
+	r.Compose = memCompose([]any{entry("c", true), entry("b-off", false), entry("a", true)})
 	r.Step(context.Background(), utc("10:00"), utc("10:01"))
 	if got := rec.names(); !slices.Equal(got, []string{"a", "c"}) {
 		t.Fatalf("runs = %v, want [a c]", got)
@@ -110,12 +107,14 @@ func TestStepRunsEveryKnownType(t *testing.T) {
 	chat.Command = "ServerChat hi"
 	r, rec := runnerWith(t, typed("save", TypeSave), typed("other", "other"), typed("restart", TypeRestart),
 		chat, typed("backup", TypeBackup))
-	raw, err := os.ReadFile(r.Service.ConfigPath)
+	project, err := r.Compose.LoadProject(context.Background(), testComposeFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(string(raw), "command:"); n != 1 {
-		t.Fatalf("file has %d command keys, want only the rcon one:\n%s", n, raw)
+	saved := project.Project.Extensions[ark.SchedulesExtensionKey].([]any)
+	withCommand := slices.DeleteFunc(slices.Clone(saved), func(e any) bool { _, ok := e.(map[string]any)["command"]; return !ok })
+	if len(withCommand) != 1 {
+		t.Fatalf("%d entries have a command key, want only the rcon one: %v", len(withCommand), saved)
 	}
 
 	r.Step(context.Background(), utc("02:59"), utc("03:00"))
@@ -150,20 +149,13 @@ func TestStepSkipsInvalidCron(t *testing.T) {
 func TestStepLoadErrorRunsNothingAndDoesNotBurst(t *testing.T) {
 	withLocal(t, time.UTC)
 	r, rec := runnerWith(t, backupAt("hourly", "0 * * * *"))
-	good, err := os.ReadFile(r.Service.ConfigPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(r.Service.ConfigPath, []byte("schedules: [unclosed"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	good := r.Compose
+	r.Compose = memCompose("not a list")
 	prev := r.Step(context.Background(), utc("09:59"), utc("10:00"))
 	if len(rec.names()) != 0 || len(rec.logs) != 1 {
 		t.Fatalf("runs = %v, logs = %v; want no run and one log line", rec.names(), rec.logs)
 	}
-	if err := os.WriteFile(r.Service.ConfigPath, good, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	r.Compose = good
 	r.Step(context.Background(), prev, utc("10:01"))
 	if got := rec.names(); len(got) != 0 {
 		t.Fatalf("runs = %v, want none (the 10:00 slot fell in the failed step)", got)

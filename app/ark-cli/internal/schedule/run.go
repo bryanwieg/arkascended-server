@@ -29,25 +29,26 @@ func RunRunSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: --name is required.")
 	}
 	name := *nameFlag
-	_, s, _, err := d.ScheduleService.LoadScheduleByName(name)
+	composeFile, svc := scheduleStore(d, "")
+	_, s, _, err := svc.LoadScheduleByName(d.Context(), d.ComposeService, composeFile, name)
 	if err != nil {
 		return err
 	}
-	if err := RunScheduleOnce(d, s); err != nil {
+	if err := RunScheduleOnce(d, composeFile, s); err != nil {
 		return err
 	}
 	core.Infof("Ran schedule %s\n", name)
 	return nil
 }
 
-// RunScheduleOnce runs one schedule: lock, state "running", the backup or action, state
-// "success"/"failed"/"skipped", log file lines and matching output lines. Returns the lock error
-// or the run error.
-func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
+// RunScheduleOnce runs one schedule of composeFile on that compose file: lock, state "running", the backup or
+// action, state "success"/"failed"/"skipped", log file lines and matching output lines. Returns the lock
+// error or the run error.
+func RunScheduleOnce(d *core.AppDeps, composeFile string, s schedule.BackupSchedule) error {
 	if !schedule.KnownType(s.Type) {
 		return schedule.ErrUnsupportedType(s.Type)
 	}
-	svc := d.ScheduleService
+	svc := d.ScheduleService.ForComposeFile(composeFile)
 	release, err := svc.AcquireLock(s.Name)
 	if err != nil {
 		return err
@@ -66,7 +67,7 @@ func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
 	logLine(fmt.Sprintf("%s START %s", startedAt, s.Name))
 	svc.WriteRunState(schedule.RunState{Name: s.Name, LastStartedAt: startedAt, LastStatus: "running"})
 
-	status, runErr := runSchedule(d, s, logLine, logWarn)
+	status, runErr := runSchedule(d, composeFile, s, logLine, logWarn)
 	finishedAt := svc.Now().Format(time.RFC3339)
 	if runErr != nil {
 		logLine(fmt.Sprintf("%s FAIL %s: %s", finishedAt, s.Name, runErr))
@@ -79,13 +80,13 @@ func RunScheduleOnce(d *core.AppDeps, s schedule.BackupSchedule) error {
 }
 
 // runSchedule runs the backup or the action of s and returns the status to record on success.
-func runSchedule(d *core.AppDeps, s schedule.BackupSchedule, logLine, logWarn func(string)) (string, error) {
+func runSchedule(d *core.AppDeps, composeFile string, s schedule.BackupSchedule, logLine, logWarn func(string)) (string, error) {
 	if s.Type == schedule.TypeBackup {
 		// A stop or update rollout holds the instance lock for minutes; wait for it instead of failing.
-		argsForBackup := append(append([]string{"--instance", s.Instance}, schedule.BackupFlagArgs(s)...), "--lock-timeout", "30m")
+		argsForBackup := append(append([]string{"--instance", s.Instance}, schedule.BackupFlagArgs(s)...), "--compose-file", composeFile, "--lock-timeout", "30m")
 		return "success", runBackupFromSchedule(d, s.Name, argsForBackup)
 	}
-	composeFile, _, services, err := compose.ResolveDockerComposeServiceTargets(d, s.ComposeFile, s.Instance,
+	_, _, services, err := compose.ResolveDockerComposeServiceTargets(d, composeFile, s.Instance,
 		"Error: compose config has no services to run the schedule on.")
 	if err != nil {
 		return "", err

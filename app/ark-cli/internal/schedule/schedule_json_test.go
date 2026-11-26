@@ -21,7 +21,7 @@ import (
 func TestListSchedulesJSONEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, "version: 1\nschedules: []\n")
+	writeScheduleFixture(t, "x-ark-schedules: []\n")
 
 	out := captureStdout(t, func() {
 		if err := RunListSchedules(core.CurrentAppDeps(), []string{"--json"}); err != nil {
@@ -49,8 +49,7 @@ func TestListSchedulesJSONEmpty(t *testing.T) {
 func TestListSchedulesJSONShape(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -101,8 +100,7 @@ schedules:
 func TestShowScheduleJSON(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1
@@ -146,8 +144,7 @@ schedules:
 func TestListSchedulesTextModeUnchanged(t *testing.T) {
 	tmp := t.TempDir()
 	overrideSchedulePathsForTest(t, tmp)
-	writeScheduleFixture(t, `version: 1
-schedules:
+	writeScheduleFixture(t, `x-ark-schedules:
   - name: nightly
     type: backup
     instance: asa1

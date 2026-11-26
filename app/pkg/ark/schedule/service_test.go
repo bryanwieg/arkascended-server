@@ -1,15 +1,23 @@
 package schedule
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"pkg/ark"
+	"pkg/ark/arktest"
+
+	"github.com/compose-spec/compose-go/v2/types"
 )
 
 func discardLogger() *slog.Logger {
@@ -23,49 +31,71 @@ func testService(t *testing.T) *Service {
 	return s
 }
 
-// --- Types ---
-
-func TestScheduleFileDefaults(t *testing.T) {
-	var f ScheduleFile
-	if f.Version != 0 {
-		t.Fatal("zero value should have version 0")
-	}
-}
-
 // --- Store: load/save ---
 
-func TestLoadScheduleFileNotExists(t *testing.T) {
-	s := testService(t)
-	file, err := s.LoadScheduleFile()
-	if err != nil {
-		t.Fatal(err)
+const testComposeFile = "docker-compose.yaml"
+
+// memCompose is an in-memory compose project holding the given x-ark-schedules value (nil: no block).
+func memCompose(schedules any) *arktest.MockCompose {
+	extensions := map[string]any{}
+	if schedules != nil {
+		extensions[ark.SchedulesExtensionKey] = schedules
 	}
-	if file.Version != 1 || len(file.Schedules) != 0 {
-		t.Fatalf("expected empty v1 file, got: %+v", file)
-	}
+	return arktest.NewMemoryCompose(&ark.ComposeProject{Project: &types.Project{Extensions: extensions}})
 }
 
-func TestSaveAndLoadScheduleFile(t *testing.T) {
+func TestSchedulesRoundTripThroughCompose(t *testing.T) {
 	s := testService(t)
-	file := ScheduleFile{
-		Version: 1,
-		Schedules: []BackupSchedule{
-			{Name: "nightly", Type: "backup", Instance: "asa1", Enabled: true, Cron: "0 3 * * *"},
-		},
+	ctx := context.Background()
+	compose := memCompose(nil)
+	if file, err := s.LoadScheduleFile(ctx, compose, testComposeFile); err != nil || len(file.Schedules) != 0 {
+		t.Fatalf("no block: got %+v, %v; want no schedules", file, err)
 	}
-	if err := s.SaveScheduleFile(file); err != nil {
+	nightly := BackupSchedule{Name: "nightly", Type: TypeBackup, Instance: "asa1", Enabled: true, Cron: "0 3 * * *", Format: "tar.gz", RetainCount: 20, RetainDays: 7, RetainSizeGB: 5}
+	chat := BackupSchedule{Name: "chat", Type: TypeRCON, Instance: "all", Cron: "@daily", Command: "ServerChat costs $5"}
+	if err := s.SaveScheduleFile(ctx, compose, testComposeFile, ScheduleFile{Schedules: []BackupSchedule{nightly, chat}}); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := s.LoadScheduleFile()
+	loaded, err := s.LoadScheduleFile(ctx, compose, testComposeFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Schedules) != 1 || loaded.Schedules[0].Name != "nightly" {
-		t.Fatalf("unexpected loaded file: %+v", loaded)
+	if !slices.Equal(loaded.Schedules, []BackupSchedule{chat, nightly}) {
+		t.Fatalf("loaded %+v, want chat then nightly unchanged", loaded.Schedules)
+	}
+	project, _ := compose.LoadProject(ctx, testComposeFile)
+	wantChat := map[string]any{"name": "chat", "type": "rcon", "instance": "all", "enabled": false, "cron": "@daily", "command": "ServerChat costs $5"}
+	if items := project.Project.Extensions[ark.SchedulesExtensionKey].([]any); !reflect.DeepEqual(items[0], wantChat) {
+		t.Fatalf("saved entry %#v, want %#v", items[0], wantChat)
+	}
+
+	if err := s.SaveScheduleFile(ctx, compose, testComposeFile, ScheduleFile{}); err != nil {
+		t.Fatal(err)
+	}
+	project, _ = compose.LoadProject(ctx, testComposeFile)
+	if _, ok := project.Project.Extensions[ark.SchedulesExtensionKey]; ok {
+		t.Fatal("an empty list must remove the key")
+	}
+
+	ignored := []any{map[string]any{"name": "old", "compose_file": "x.yaml"}}
+	if file, err := s.LoadScheduleFile(ctx, memCompose(ignored), testComposeFile); err != nil || file.Schedules[0].Name != "old" {
+		t.Fatalf("unknown keys: got %+v, %v; want them ignored", file, err)
+	}
+	for name, value := range map[string]any{
+		"not a list":      map[string]any{"name": "x"},
+		"not mappings":    []any{"nightly"},
+		"wrong type":      []any{map[string]any{"name": "x", "retain_count": "many"}},
+		"null in a field": []any{map[string]any{"name": nil}},
+	} {
+		_, err := s.LoadScheduleFile(ctx, memCompose(value), testComposeFile)
+		if err == nil || !strings.HasPrefix(err.Error(), "Error: x-ark-schedules in docker-compose.yaml: ") {
+			t.Errorf("%s: err = %v, want the bad x-ark-schedules error", name, err)
+		}
 	}
 }
 
 func TestSaveScheduleFileSortsByName(t *testing.T) {
+	compose := memCompose(nil)
 	s := testService(t)
 	file := ScheduleFile{
 		Schedules: []BackupSchedule{
@@ -73,29 +103,15 @@ func TestSaveScheduleFileSortsByName(t *testing.T) {
 			{Name: "alpha", Type: "backup"},
 		},
 	}
-	if err := s.SaveScheduleFile(file); err != nil {
+	if err := s.SaveScheduleFile(context.Background(), compose, testComposeFile, file); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := s.LoadScheduleFile()
+	loaded, err := s.LoadScheduleFile(context.Background(), compose, testComposeFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if loaded.Schedules[0].Name != "alpha" || loaded.Schedules[1].Name != "zebra" {
 		t.Fatalf("not sorted: %v", loaded.Schedules)
-	}
-}
-
-func TestSaveScheduleFileSetsVersionDefault(t *testing.T) {
-	s := testService(t)
-	if err := s.SaveScheduleFile(ScheduleFile{}); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := s.LoadScheduleFile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Version != 1 {
-		t.Fatalf("expected version 1, got %d", loaded.Version)
 	}
 }
 
@@ -116,21 +132,22 @@ func TestFindScheduleByName(t *testing.T) {
 }
 
 func TestLoadScheduleByName(t *testing.T) {
+	compose := memCompose(nil)
 	s := testService(t)
 	file := ScheduleFile{Schedules: []BackupSchedule{
 		{Name: "nightly", Type: "backup", Instance: "asa1", Enabled: true, Cron: "0 3 * * *"},
 	}}
-	if err := s.SaveScheduleFile(file); err != nil {
+	if err := s.SaveScheduleFile(context.Background(), compose, testComposeFile, file); err != nil {
 		t.Fatal(err)
 	}
-	_, sched, idx, err := s.LoadScheduleByName("nightly")
+	_, sched, idx, err := s.LoadScheduleByName(context.Background(), compose, testComposeFile, "nightly")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if sched.Name != "nightly" || idx != 0 {
 		t.Fatalf("unexpected: %v %d", sched, idx)
 	}
-	_, _, _, err = s.LoadScheduleByName("missing")
+	_, _, _, err = s.LoadScheduleByName(context.Background(), compose, testComposeFile, "missing")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -234,9 +251,6 @@ func TestAcquireAndReleaseLock(t *testing.T) {
 func TestPathDerivation(t *testing.T) {
 	repo := t.TempDir()
 	s := New(repo, discardLogger())
-	if s.ConfigPath != repo+"/.ark-manage/schedules.yaml" {
-		t.Fatalf("config path: %s", s.ConfigPath)
-	}
 	if s.LogPath("x") != repo+"/.ark-manage/logs/schedules/x.log" {
 		t.Fatalf("log path: %s", s.LogPath("x"))
 	}
@@ -288,10 +302,9 @@ func TestValidateRetention(t *testing.T) {
 func TestBackupFlagArgs(t *testing.T) {
 	s := BackupSchedule{
 		Format: "tar.gz", RetainCount: 20, RetainDays: 7, RetainSizeGB: 5,
-		ComposeFile: "custom.yaml",
 	}
 	args := BackupFlagArgs(s)
-	expected := []string{"--format", "tar.gz", "--retain-count", "20", "--retain-days", "7", "--retain-size-gb", "5", "--compose-file", "custom.yaml"}
+	expected := []string{"--format", "tar.gz", "--retain-count", "20", "--retain-days", "7", "--retain-size-gb", "5"}
 	if len(args) != len(expected) {
 		t.Fatalf("got %v", args)
 	}

@@ -43,7 +43,7 @@ func RunListInstances(d *core.AppDeps, args []string) error {
 
 	// Resolve backup root and schedule file once.
 	backupRoot := core.BackupRootDirForComposeFile(composeFile)
-	schedFile, _ := core.CurrentAppDeps().ScheduleService.LoadScheduleFile()
+	schedFile, _ := d.ScheduleService.LoadScheduleFile(d.Context(), d.ComposeService, composeFile)
 
 	type instanceRow struct {
 		s                 compose.InstanceSummary

@@ -9,6 +9,8 @@ import (
 	"pkg/ark/filelock"
 )
 
+// Paths are under RepoDir/.ark-manage; RepoDir is the compose file's directory (ForComposeFile).
+
 // LogPath returns the log file path for a named schedule.
 func (s *Service) LogPath(name string) string {
 	return filepath.Join(s.RepoDir, ".ark-manage", "logs", "schedules", name+".log")

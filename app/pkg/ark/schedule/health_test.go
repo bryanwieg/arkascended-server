@@ -1,7 +1,9 @@
 package schedule
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -11,6 +13,7 @@ func TestHealth(t *testing.T) {
 	withLocal(t, time.UTC)
 	now := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
 	weekAgo := now.Add(-7 * 24 * time.Hour)
+	ctx := context.Background()
 	cases := []struct {
 		name     string
 		cron     string
@@ -36,10 +39,15 @@ func TestHealth(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc := testService(t)
 			s := backupAt("nightly", tc.cron)
-			if err := svc.SaveScheduleFile(ScheduleFile{Version: 1, Schedules: []BackupSchedule{s}}); err != nil {
+			compose := memCompose(nil)
+			composeFile := filepath.Join(svc.RepoDir, testComposeFile)
+			if err := svc.SaveScheduleFile(ctx, compose, composeFile, ScheduleFile{Schedules: []BackupSchedule{s}}); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Chtimes(svc.ConfigPath, tc.mtime, tc.mtime); err != nil {
+			if err := os.WriteFile(composeFile, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(composeFile, tc.mtime, tc.mtime); err != nil {
 				t.Fatal(err)
 			}
 			if tc.state != nil {
@@ -55,7 +63,7 @@ func TestHealth(t *testing.T) {
 				defer release()
 			}
 			want := []ScheduleHealth{{Name: "nightly", OK: tc.wantOK, Detail: tc.wantText}}
-			if got := svc.Health(now, tc.since); !slices.Equal(got, want) {
+			if got := svc.Health(ctx, compose, composeFile, now, tc.since); !slices.Equal(got, want) {
 				t.Fatalf("Health = %+v, want %+v", got, want)
 			}
 		})
@@ -73,7 +81,8 @@ func TestHealthCoversEveryTypeAndSkipped(t *testing.T) {
 	}
 	disabled := typed("disabled", TypeSave)
 	disabled.Enabled = false
-	if err := svc.SaveScheduleFile(ScheduleFile{Version: 1, Schedules: []BackupSchedule{
+	compose := memCompose(nil)
+	if err := svc.SaveScheduleFile(context.Background(), compose, testComposeFile, ScheduleFile{Schedules: []BackupSchedule{
 		typed("zeta", TypeBackup), typed("restart", TypeRestart), disabled, typed("other", "other"),
 		typed("save", TypeSave), typed("chat", TypeRCON),
 	}}); err != nil {
@@ -81,7 +90,7 @@ func TestHealthCoversEveryTypeAndSkipped(t *testing.T) {
 	}
 	svc.WriteRunState(RunState{Name: "save", LastStatus: "skipped", LastStartedAt: "2026-11-21T03:00:00Z"})
 	svc.WriteRunState(RunState{Name: "chat", LastStatus: "failed", LastStartedAt: "2026-11-21T03:00:00Z", LastError: "rcon down"})
-	got := svc.Health(now, now)
+	got := svc.Health(context.Background(), compose, testComposeFile, now, now)
 	want := []ScheduleHealth{
 		{Name: "chat", Detail: "last run failed: rcon down"},
 		{Name: "restart", OK: true},
@@ -95,10 +104,7 @@ func TestHealthCoversEveryTypeAndSkipped(t *testing.T) {
 
 func TestHealthFileLoadError(t *testing.T) {
 	svc := testService(t)
-	if err := os.MkdirAll(svc.ConfigPath, 0o755); err != nil { // a directory cannot be read as the file
-		t.Fatal(err)
-	}
-	got := svc.Health(time.Now(), time.Now())
+	got := svc.Health(context.Background(), memCompose("not a list"), testComposeFile, time.Now(), time.Now())
 	if len(got) != 1 || got[0].Name != "schedules" || got[0].OK || got[0].Detail == "" {
 		t.Fatalf("Health = %+v, want one failed schedules entry", got)
 	}

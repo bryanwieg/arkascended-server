@@ -53,12 +53,16 @@ func RunRunScheduler(d *core.AppDeps, args []string) error {
 	ctx, cancel := context.WithCancel(sig) // also ends the loops when the health endpoint fails
 	defer cancel()
 
-	core.Infof("Scheduler started (TZ %s, schedules %s)\n", time.Local, d.ScheduleService.ConfigPath)
+	core.Infof("Scheduler started (TZ %s, schedules %s)\n", time.Local, composeFile)
 	logf := func(format string, args ...any) { core.Infof(format+"\n", args...) }
 	runner := schedule.Runner{
-		Service: d.ScheduleService,
-		RunOne:  func(_ context.Context, s schedule.BackupSchedule) error { return clischedule.RunScheduleOnce(d, s) },
-		Logf:    logf,
+		Service:     d.ScheduleService.ForComposeFile(composeFile),
+		Compose:     d.ComposeService,
+		ComposeFile: composeFile,
+		RunOne: func(_ context.Context, s schedule.BackupSchedule) error {
+			return clischedule.RunScheduleOnce(d, composeFile, s)
+		},
+		Logf: logf,
 	}
 	monitor := newMonitor(d, composeFile, time.Now(), logf)
 	srv := &http.Server{Handler: health.Handler(monitor.Latest, time.Now), ReadHeaderTimeout: 5 * time.Second}
@@ -121,7 +125,7 @@ func newMonitor(d *core.AppDeps, composeFile string, started time.Time, logf fun
 		},
 		Schedules: func(now time.Time) []health.CheckResult {
 			var checks []health.CheckResult
-			for _, s := range d.ScheduleService.Health(now, started) {
+			for _, s := range d.ScheduleService.ForComposeFile(composeFile).Health(d.Context(), d.ComposeService, composeFile, now, started) {
 				checks = append(checks, health.CheckResult{Name: s.Name, OK: s.OK, Detail: s.Detail})
 			}
 			return checks

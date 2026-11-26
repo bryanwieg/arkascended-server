@@ -58,9 +58,6 @@ func BackupFlagArgs(s BackupSchedule) []string {
 	if s.RetainSizeGB != 0 {
 		args = append(args, "--retain-size-gb", fmt.Sprintf("%d", s.RetainSizeGB))
 	}
-	if s.ComposeFile != "" {
-		args = append(args, "--compose-file", s.ComposeFile)
-	}
 	return args
 }
 

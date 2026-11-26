@@ -64,6 +64,33 @@ Retention, applied after each run (`0` disables a rule):
 The newest backups are always kept; see
 [Understanding backups](../explanation/backups.md).
 
+## Schedule RCON commands, saves and restarts
+
+Three action schedules work on running instances. They take `--instance`
+(an instance or `all`; not `cluster`), `--name`, `--cron`, `--disabled` and
+`--compose-file` like a backup schedule, but no `--format` or `--retain-*`.
+
+```sh
+ark-cli create schedule rcon --instance all --name hourly-chat --cron "0 * * * *" --command "ServerChat Backup in 5 minutes"
+ark-cli create schedule save --instance my-server --name save-my-server --cron "*/30 * * * *"
+ark-cli create schedule restart --instance my-server --name nightly-restart --cron "0 5 * * *"
+```
+
+- `rcon` sends `--command` over RCON. The server's reply is written to the
+  run log, `.ark-manage/logs/schedules/<name>.log`. Change the command with
+  `ark-cli update schedule --name hourly-chat --command "..."`.
+- `save` sends `saveworld`.
+- `restart` restarts the instance as `ark-cli restart instance` does. With
+  players online the stop first counts down for the instance's
+  `SHUTDOWN_WARNING_MINUTES` (see [Configuration](../reference/configuration.md)),
+  naming `scheduled restart` as the reason, then saves.
+
+An instance that is stopped when the schedule runs is skipped with
+`Warning: <instance> is stopped; <type> command unsuccessful`; a restart
+schedule does not start it. When every target is stopped, the run records
+`skipped`; `check schedule` and the scheduler's health treat that as a
+successful run, so a stopped instance does not make the schedule fail.
+
 ## When schedules run
 
 - The scheduler rereads `schedules.yaml` every minute, so a new or changed

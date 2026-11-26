@@ -580,7 +580,7 @@ Apply retention without creating a backup.
 
 ## Schedules
 
-Managed backup schedules. The `ark-scheduler` service runs them (see
+Managed schedules: backups and the `rcon`, `save` and `restart` actions. The `ark-scheduler` service runs them (see
 [Scheduler](#scheduler)); schedule commands only edit
 `.ark-manage/schedules.yaml`, and the scheduler rereads it every minute. Run
 schedule commands from the compose file's directory: files are relative to the
@@ -617,12 +617,46 @@ scheduler's `TZ`. `TZ=`/`CRON_TZ=` prefixes and `@every` are refused.
 ark-cli create schedule backup --instance asa-server-1 --name nightly-asa1 --cron "0 3 * * *"
 ```
 
+### create schedule rcon, save and restart
+
+Action schedules for running instances:
+
+| Type | Runs |
+|---|---|
+| `rcon` | The RCON command `--command` (required); the server's reply goes to the run log. |
+| `save` | RCON `saveworld`. |
+| `restart` | `restart instance`: the stop's `SHUTDOWN_WARNING_MINUTES` countdown (reason `scheduled restart`) while players are online, save, stop, start. |
+
+| Flag | Default | Description |
+|---|---|---|
+| `--name` | required | Unique schedule name. |
+| `--instance` | required | Instance or `all`. `cluster` is refused. |
+| `--cron` | required | Cron expression (see above). |
+| `--command` | | `rcon` only, required there. |
+| `--disabled` | `false` | Create disabled. |
+| `--compose-file` | | Compose file the scheduled run uses. |
+
+Targets run one after another. A stopped target is skipped with
+`Warning: <instance> is stopped; <type> command unsuccessful`; a `restart`
+schedule does not start it. When every target is stopped the run records
+`skipped`, which counts as a successful run in `check schedule` and the
+scheduler's health.
+
+```sh
+ark-cli create schedule rcon --instance all --name hourly-chat --cron "0 * * * *" --command "ServerChat Backup in 5 minutes"
+ark-cli create schedule save --instance asa-server-1 --name save-asa1 --cron "*/30 * * * *"
+ark-cli create schedule restart --instance asa-server-1 --name nightly-restart --cron "0 5 * * *"
+```
+
 ### update schedule
 
 `--name` (required) plus at least one of: `--cron`, `--instance`,
 `--compose-file`, `--format`, `--retain-count`, `--retain-days`,
-`--retain-size-gb`, `--enabled`, `--disabled` (the last two are mutually
-exclusive). Unset flags keep their current value.
+`--retain-size-gb`, `--command`, `--enabled`, `--disabled` (the last two are
+mutually exclusive). Unset flags keep their current value. `--command` applies
+to `rcon` schedules only; `--format` and `--retain-*` to `backup` schedules
+only; `--instance cluster` is refused on non-backup schedules. A flag that does
+not fit the schedule's type exits 1 with an error naming the flag and the type.
 
 ### Other schedule commands
 

@@ -6,7 +6,8 @@ type ScheduleFile struct {
 	Schedules []BackupSchedule `yaml:"schedules"`
 }
 
-// BackupSchedule is a single backup schedule entry (v1 format).
+// BackupSchedule is a single schedule entry (v1 format) of any type: backup,
+// rcon, save or restart. It keeps its historical name.
 type BackupSchedule struct {
 	Name         string `yaml:"name"`
 	Type         string `yaml:"type"`

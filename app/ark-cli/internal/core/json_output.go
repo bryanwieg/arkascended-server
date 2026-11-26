@@ -101,6 +101,7 @@ type ScheduleDetailJSON struct {
 	Type           string `json:"type"`
 	Instance       string `json:"instance"`
 	Cron           string `json:"cron"`
+	Command        string `json:"command,omitempty"`
 	Format         string `json:"format,omitempty"`
 	RetainCount    int    `json:"retain_count,omitempty"`
 	RetainDays     int    `json:"retain_days,omitempty"`

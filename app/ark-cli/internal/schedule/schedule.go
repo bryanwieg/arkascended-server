@@ -18,8 +18,10 @@ func RunCreateSchedule(d *core.AppDeps, args []string) error {
 		return errors.New("Error: create schedule command is required.")
 	}
 	switch args[0] {
-	case "backup":
+	case schedule.TypeBackup:
 		return runCreateScheduleBackup(args[1:])
+	case schedule.TypeRCON, schedule.TypeSave, schedule.TypeRestart:
+		return runCreateScheduleAction(args[0], args[1:])
 	default:
 		return fmt.Errorf("Error: unknown create schedule command: %s", args[0])
 	}
@@ -69,19 +71,9 @@ func runCreateScheduleBackup(args []string) error {
 	if err := validateScheduleComposeTarget(*composeFileFlag, instance); err != nil {
 		return err
 	}
-
-	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile()
-	if err != nil {
-		return err
-	}
-	for _, s := range file.Schedules {
-		if s.Name == *name {
-			return fmt.Errorf("Error: schedule already exists: %s", *name)
-		}
-	}
-	s := schedule.BackupSchedule{
+	return addSchedule(schedule.BackupSchedule{
 		Name:         *name,
-		Type:         "backup",
+		Type:         schedule.TypeBackup,
 		Instance:     instance,
 		Enabled:      !*disabled,
 		Cron:         *cronExpr,
@@ -89,9 +81,77 @@ func runCreateScheduleBackup(args []string) error {
 		RetainCount:  *retainCount,
 		RetainDays:   *retainDays,
 		RetainSizeGB: *retainSizeGB,
+		ComposeFile:  *composeFileFlag,
+	})
+}
+
+func runCreateScheduleAction(scheduleType string, args []string) error {
+	usage := "create schedule " + scheduleType + " --instance <instance> --name <name> --cron \"m h dom mon dow\""
+	if scheduleType == schedule.TypeRCON {
+		usage += " --command <text>"
 	}
-	if *composeFileFlag != "" {
-		s.ComposeFile = *composeFileFlag
+	fs := core.NewCommandFlagSet(
+		"create schedule "+scheduleType,
+		[]string{usage + " [options]"},
+		"Create a managed "+scheduleType+" schedule entry in schedules.yaml.",
+	)
+	instanceFlag := fs.String("instance", "", "Target: instance name or 'all'.")
+	name := fs.String("name", "", "Unique schedule name.")
+	cronExpr := fs.String("cron", "", "Cron expression (5 fields).")
+	composeFileFlag := fs.String("compose-file", "", "Compose file to use when schedule runs.")
+	disabled := fs.Bool("disabled", false, "Create the schedule disabled.")
+	command := new(string)
+	if scheduleType == schedule.TypeRCON {
+		command = fs.String("command", "", "RCON command to send.")
+	}
+	if err := core.ParseNoPositionalArgs(fs, args); err != nil {
+		return err
+	}
+	if *instanceFlag == "" {
+		return errors.New("Error: --instance is required.")
+	}
+	if *name == "" {
+		return errors.New("Error: --name is required.")
+	}
+	if *cronExpr == "" {
+		return errors.New("Error: --cron is required.")
+	}
+	if scheduleType == schedule.TypeRCON && strings.TrimSpace(*command) == "" {
+		return errors.New("Error: --command is required.")
+	}
+	if *instanceFlag == backup.ClusterTarget {
+		return errClusterBackupOnly(scheduleType)
+	}
+	if err := runtime.ValidateComposeName(*name, "schedule name"); err != nil {
+		return err
+	}
+	if err := schedule.ValidateCronExpr(*cronExpr); err != nil {
+		return err
+	}
+	if err := validateScheduleComposeTarget(*composeFileFlag, *instanceFlag); err != nil {
+		return err
+	}
+	return addSchedule(schedule.BackupSchedule{
+		Name:        *name,
+		Type:        scheduleType,
+		Instance:    *instanceFlag,
+		Enabled:     !*disabled,
+		Cron:        *cronExpr,
+		Command:     *command,
+		ComposeFile: *composeFileFlag,
+	})
+}
+
+// addSchedule appends a new, already validated entry to schedules.yaml, refusing a duplicate name.
+func addSchedule(s schedule.BackupSchedule) error {
+	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile()
+	if err != nil {
+		return err
+	}
+	for _, existing := range file.Schedules {
+		if existing.Name == s.Name {
+			return fmt.Errorf("Error: schedule already exists: %s", s.Name)
+		}
 	}
 	file.Schedules = append(file.Schedules, s)
 	if err := core.CurrentAppDeps().ScheduleService.SaveScheduleFile(file); err != nil {

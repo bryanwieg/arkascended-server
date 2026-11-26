@@ -34,7 +34,7 @@ type CommandRouteParseSpec struct {
 var CommandRegistry = []CommandRegistryEntry{
 	{Verb: "create", Object: "instance", Route: "create", Handler: create.RunCreate, TopLevelHelp: []string{"create instance --name <name>               Create or extend a docker-compose.yaml with an ARK server"}},
 	{Verb: "create", Object: "backup", Route: "backup", Handler: backup.RunBackup, TopLevelHelp: []string{"create backup --instance <inst|cluster|all>  Create backup archives"}},
-	{Verb: "create", Object: "schedule", Route: "create_schedule", Handler: schedule.RunCreateSchedule, TopLevelHelp: []string{"create schedule backup --instance <inst> --name <name>  Create a managed backup schedule"}},
+	{Verb: "create", Object: "schedule", Route: "create_schedule", Handler: schedule.RunCreateSchedule, TopLevelHelp: []string{"create schedule backup|rcon|save|restart --instance <inst> --name <name>  Create a managed schedule"}},
 	{Verb: "edit", Object: "ini", Route: "edit_ini", Handler: ini.RunEditIni, TopLevelHelp: []string{"edit ini --instance <inst> --file <ini>     Edit Game.ini or GameUserSettings.ini in the container"}},
 	{Verb: "get", Object: "ini", Route: "get_ini", Handler: ini.RunGetIni, TopLevelHelp: []string{"get ini --instance <inst> --file <ini> --section <s> --key <k>  Print one INI key's value"}},
 	{Verb: "set", Object: "ini", Route: "set_ini", Handler: ini.RunSetIni, TopLevelHelp: []string{"set ini --instance <inst> --file <ini> --section <s> --key <k> --value <v>  Set one INI key without an editor"}},

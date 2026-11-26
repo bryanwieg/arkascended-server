@@ -5,6 +5,7 @@ import (
 	"ark-cli/internal/core"
 	"errors"
 	"fmt"
+	"strings"
 
 	"pkg/ark"
 	backup "pkg/ark/backup"
@@ -13,6 +14,11 @@ import (
 )
 
 var validateScheduleRetention = schedule.ValidateRetention
+
+// errClusterBackupOnly refuses the cluster target for a non-backup schedule type.
+func errClusterBackupOnly(scheduleType string) error {
+	return fmt.Errorf("Error: instance cluster is backup-only; %s schedules target an instance or 'all'.", scheduleType)
+}
 
 func validateScheduleComposeTarget(composeFileFlag, instance string) error {
 	composeFile := compose.ResolveComposeFile(composeFileFlag)
@@ -46,8 +52,14 @@ func validateScheduleEntry(s schedule.BackupSchedule, seen map[string]bool, comp
 	if err := runtime.ValidateComposeName(s.Name, "schedule name"); err != nil {
 		return err
 	}
-	if s.Type != "backup" {
+	if !schedule.KnownType(s.Type) {
 		return schedule.ErrUnsupportedType(s.Type)
+	}
+	if s.Type == schedule.TypeRCON && strings.TrimSpace(s.Command) == "" {
+		return errors.New("Error: rcon schedule requires a command.")
+	}
+	if s.Type != schedule.TypeBackup && s.Instance == backup.ClusterTarget {
+		return errClusterBackupOnly(s.Type)
 	}
 	if err := schedule.ValidateCronExpr(s.Cron); err != nil {
 		return err

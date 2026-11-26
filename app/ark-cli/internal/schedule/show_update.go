@@ -4,6 +4,7 @@ import (
 	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
 	"errors"
+	"flag"
 	"fmt"
 	"strings"
 
@@ -81,6 +82,7 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 			Type:         s.Type,
 			Instance:     s.Instance,
 			Cron:         s.Cron,
+			Command:      s.Command,
 			Format:       s.Format,
 			RetainCount:  s.RetainCount,
 			RetainDays:   s.RetainDays,
@@ -102,6 +104,9 @@ func RunShowSchedule(d *core.AppDeps, args []string) error {
 	core.Infof("type: %s\n", s.Type)
 	core.Infof("instance: %s\n", s.Instance)
 	core.Infof("cron: %s\n", s.Cron)
+	if s.Type == schedule.TypeRCON {
+		core.Infof("command: %s\n", s.Command)
+	}
 	core.Infof("format: %s\n", runtime.FallbackDash(s.Format))
 	core.Infof("retain_count: %d\n", s.RetainCount)
 	core.Infof("retain_days: %d\n", s.RetainDays)
@@ -172,7 +177,8 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	)
 	nameFlag := fs.String("name", "", "Schedule name.")
 	cronExpr := fs.String("cron", "", "Cron expression (5 fields).")
-	instance := fs.String("instance", "", "Backup target: instance name, 'cluster' or 'all'.")
+	instance := fs.String("instance", "", "Target: instance name or 'all' ('cluster' for backup schedules).")
+	command := fs.String("command", "", "RCON command (rcon schedules only).")
 	composeFileFlag := fs.String("compose-file", "", "Compose file to use when schedule runs.")
 	format := fs.String("format", "", "Backup format: tar, tar.gz, or tar.zst.")
 	retainCount := fs.Int("retain-count", -1, "Retention count.")
@@ -189,6 +195,11 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	name := *nameFlag
 	if *enable && *disable {
 		return errors.New("Error: cannot pass both --enabled and --disabled.")
+	}
+	passed := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { passed[f.Name] = true })
+	if passed["command"] && strings.TrimSpace(*command) == "" {
+		return errors.New("Error: --command must not be empty.")
 	}
 
 	changed := false
@@ -213,7 +224,7 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 		}
 		changed = true
 	}
-	if *retainCount >= 0 || *retainDays >= 0 || *retainSizeGB >= 0 || *enable || *disable {
+	if *retainCount >= 0 || *retainDays >= 0 || *retainSizeGB >= 0 || *enable || *disable || passed["command"] {
 		changed = true
 	}
 	if !changed {
@@ -224,8 +235,21 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 	if err != nil {
 		return err
 	}
-	if s.Type != "backup" {
+	if !schedule.KnownType(s.Type) {
 		return fmt.Errorf("Error: unsupported schedule type for update: %s", s.Type)
+	}
+	if passed["command"] && s.Type != schedule.TypeRCON {
+		return fmt.Errorf("Error: --command applies only to rcon schedules; %s is a %s schedule.", s.Name, s.Type)
+	}
+	if s.Type != schedule.TypeBackup {
+		for _, backupOnly := range []string{"format", "retain-count", "retain-days", "retain-size-gb"} {
+			if passed[backupOnly] {
+				return fmt.Errorf("Error: --%s is backup-only; %s is a %s schedule.", backupOnly, s.Name, s.Type)
+			}
+		}
+		if *instance == backup.ClusterTarget {
+			return errClusterBackupOnly(s.Type)
+		}
 	}
 
 	composeFile := compose.ResolveComposeFile(s.ComposeFile)
@@ -241,6 +265,9 @@ func RunUpdateSchedule(d *core.AppDeps, args []string) error {
 
 	if *cronExpr != "" {
 		s.Cron = *cronExpr
+	}
+	if passed["command"] {
+		s.Command = *command
 	}
 	if *composeFileFlag != "" {
 		s.ComposeFile = *composeFileFlag

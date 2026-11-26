@@ -1144,3 +1144,154 @@ func TestRunScheduleActionsSkipStoppedTargets(t *testing.T) {
 		}
 	})
 }
+
+func TestCreateScheduleActionTypes(t *testing.T) {
+	tmp := t.TempDir()
+	overrideSchedulePathsForTest(t, tmp)
+	setEnv(t, "COMPOSE_FILE", filepath.Join(tmp, "docker-compose.yaml"))
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	cron := []string{"--cron", "0 * * * *"}
+	withScheduleComposeDeps(t, emptyServices("asa1"), nil, func() {
+		out := captureStdout(t, func() {
+			for _, args := range [][]string{
+				append([]string{"rcon", "--instance", "asa1", "--name", "chat", "--command", "ServerChat hi"}, cron...),
+				append([]string{"save", "--instance", "all", "--name", "saver"}, cron...),
+				append([]string{"restart", "--instance", "asa1", "--name", "reboot", "--disabled"}, cron...),
+			} {
+				if err := RunCreateSchedule(core.CurrentAppDeps(), args); err != nil {
+					t.Fatalf("create %v: %v", args, err)
+				}
+			}
+		})
+		if !strings.Contains(out, "Created schedule chat") {
+			t.Fatalf("output:\n%s", out)
+		}
+		for _, tc := range []struct {
+			args []string
+			want string
+		}{
+			{[]string{"rcon", "--instance", "asa1", "--name", "x"}, "Error: --command is required."},
+			{[]string{"rcon", "--instance", "asa1", "--name", "x", "--command", "  "}, "Error: --command is required."},
+			{[]string{"save", "--instance", "cluster", "--name", "x"}, "backup-only"},
+			{[]string{"restart", "--instance", "cluster", "--name", "x"}, "backup-only"},
+			{[]string{"rcon", "--instance", "cluster", "--name", "x", "--command", "c"}, "backup-only"},
+			{[]string{"save", "--instance", "nope", "--name", "x"}, "nope"},
+		} {
+			err := RunCreateSchedule(core.CurrentAppDeps(), append(tc.args, cron...))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("create %v: got %v, want %q", tc.args, err, tc.want)
+			}
+		}
+	})
+	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []schedule.BackupSchedule{
+		{Name: "chat", Type: schedule.TypeRCON, Instance: "asa1", Enabled: true, Cron: "0 * * * *", Command: "ServerChat hi"},
+		{Name: "reboot", Type: schedule.TypeRestart, Instance: "asa1", Enabled: false, Cron: "0 * * * *"},
+		{Name: "saver", Type: schedule.TypeSave, Instance: "all", Enabled: true, Cron: "0 * * * *"},
+	} // the store keeps schedules sorted by name
+	if fmt.Sprint(file.Schedules) != fmt.Sprint(want) {
+		t.Fatalf("saved schedules:\n got %+v\nwant %+v", file.Schedules, want)
+	}
+}
+
+func TestUpdateScheduleTypeRules(t *testing.T) {
+	tmp := t.TempDir()
+	overrideSchedulePathsForTest(t, tmp)
+	initial := `version: 1
+schedules:
+  - name: chat
+    type: rcon
+    instance: asa1
+    enabled: true
+    cron: "0 * * * *"
+    command: ServerChat hi
+  - name: saver
+    type: save
+    instance: asa1
+    enabled: true
+    cron: "0 * * * *"
+  - name: nightly
+    type: backup
+    instance: asa1
+    enabled: true
+    cron: "0 3 * * *"
+`
+	writeScheduleFixture(t, initial)
+
+	showOut := captureStdout(t, func() {
+		if err := RunShowSchedule(core.CurrentAppDeps(), []string{"--name", "chat"}); err != nil {
+			t.Fatalf("show: %v", err)
+		}
+	})
+	if !strings.Contains(showOut, "command: ServerChat hi") || !strings.Contains(showOut, "retain_count: 0") {
+		t.Fatalf("show output:\n%s", showOut)
+	}
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--name", "saver", "--command", "x"}, "--command applies only to rcon"},
+		{[]string{"--name", "nightly", "--command", "x"}, "--command applies only to rcon"},
+		{[]string{"--name", "saver", "--format", "tar"}, "--format is backup-only"},
+		{[]string{"--name", "saver", "--retain-days", "3"}, "--retain-days is backup-only"},
+		{[]string{"--name", "chat", "--instance", "cluster"}, "backup-only"},
+		{[]string{"--name", "chat", "--command", " "}, "--command must not be empty"},
+	} {
+		err := RunUpdateSchedule(core.CurrentAppDeps(), tc.args)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("update %v: got %v, want %q", tc.args, err, tc.want)
+		}
+	}
+	unchanged, err := os.ReadFile(core.CurrentAppDeps().ScheduleService.ConfigPath)
+	if err != nil || string(unchanged) != initial {
+		t.Fatalf("refused updates changed the file (%v):\n%s", err, unchanged)
+	}
+
+	if err := RunUpdateSchedule(core.CurrentAppDeps(), []string{"--name", "chat", "--command", "Broadcast hi"}); err != nil {
+		t.Fatalf("update command: %v", err)
+	}
+	jsonOut := captureStdout(t, func() {
+		if err := RunShowSchedule(core.CurrentAppDeps(), []string{"--name", "chat", "--json"}); err != nil {
+			t.Fatalf("show --json: %v", err)
+		}
+	})
+	var detail core.ScheduleDetailJSON
+	if err := json.Unmarshal([]byte(jsonOut), &detail); err != nil || detail.Command != "Broadcast hi" {
+		t.Fatalf("show --json (%v):\n%s", err, jsonOut)
+	}
+}
+
+func TestValidateScheduleActionTypes(t *testing.T) {
+	entry := func(name, typ, instance, command string) schedule.BackupSchedule {
+		return schedule.BackupSchedule{Name: name, Type: typ, Instance: instance, Enabled: true, Cron: "0 * * * *", Command: command}
+	}
+	withScheduleComposeDeps(t, emptyServices("asa1"), nil, func() {
+		valid := schedule.ScheduleFile{Schedules: []schedule.BackupSchedule{
+			entry("chat", schedule.TypeRCON, "asa1", "ServerChat hi"),
+			entry("saver", schedule.TypeSave, "all", ""),
+			entry("reboot", schedule.TypeRestart, "asa1", ""),
+			entry("nightly", schedule.TypeBackup, "asa1", ""),
+		}}
+		captureStdout(t, func() {
+			if n, err := validateScheduleFile(valid, ""); err != nil || n != 4 {
+				t.Fatalf("validate valid entries: n=%d err=%v", n, err)
+			}
+		})
+		for _, bad := range []schedule.BackupSchedule{
+			entry("chat", schedule.TypeRCON, "asa1", ""),
+			entry("saver", schedule.TypeSave, "cluster", ""),
+			entry("reboot", schedule.TypeRestart, "cluster", ""),
+			entry("weird", "monthly", "asa1", ""),
+		} {
+			if _, err := validateScheduleFile(schedule.ScheduleFile{Schedules: []schedule.BackupSchedule{bad}}, ""); err == nil {
+				t.Fatalf("expected validation failure for %+v", bad)
+			}
+		}
+	})
+}

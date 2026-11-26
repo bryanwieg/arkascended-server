@@ -32,6 +32,8 @@ type MockEngine struct {
 	VolumeMountpointFn  func(ctx context.Context, volume string) (string, bool)
 	RemoveVolumeFn      func(ctx context.Context, volume string) error
 	CopyFromContainerFn func(ctx context.Context, container, srcPath, dstPath string) error
+	RunContainerFn      func(ctx context.Context, req ark.RunContainerRequest) (int, error)
+	CopyFromImageFn     func(ctx context.Context, image, srcPath, dstPath string) error
 }
 
 func (m *MockEngine) InspectState(ctx context.Context, container string) (ark.ContainerState, error) {
@@ -143,6 +145,20 @@ func (m *MockEngine) RemoveVolume(ctx context.Context, volume string) error {
 func (m *MockEngine) CopyFromContainer(ctx context.Context, container, srcPath, dstPath string) error {
 	if m.CopyFromContainerFn != nil {
 		return m.CopyFromContainerFn(ctx, container, srcPath, dstPath)
+	}
+	return nil
+}
+
+func (m *MockEngine) RunContainer(ctx context.Context, req ark.RunContainerRequest) (int, error) {
+	if m.RunContainerFn != nil {
+		return m.RunContainerFn(ctx, req)
+	}
+	return 0, nil
+}
+
+func (m *MockEngine) CopyFromImage(ctx context.Context, image, srcPath, dstPath string) error {
+	if m.CopyFromImageFn != nil {
+		return m.CopyFromImageFn(ctx, image, srcPath, dstPath)
 	}
 	return nil
 }

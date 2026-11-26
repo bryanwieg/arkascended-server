@@ -6,11 +6,14 @@
 package conformance
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -99,6 +102,125 @@ func TestContainerEngine(t *testing.T, engine ark.ContainerEngine) {
 		if err == nil {
 			t.Fatal("expected error for missing file")
 		}
+	})
+
+	t.Run("RunContainer", func(t *testing.T) {
+		pullAlpine(t)
+		cli := sharedClient(t)
+		gone := func(t *testing.T, name string) {
+			t.Helper()
+			if _, err := engine.InspectState(ctx, name); !errors.Is(err, ark.ErrNotFound) {
+				t.Fatalf("container %s left behind (InspectState err: %v)", name, err)
+			}
+		}
+
+		t.Run("exit_code_output_and_leftover", func(t *testing.T) {
+			name := "ark-conformance-run"
+			// A container of the same name left by a killed earlier run.
+			if _, err := cli.ContainerCreate(ctx, dockerclient.ContainerCreateOptions{
+				Name: name, Config: &container.Config{Image: "alpine:latest", Cmd: []string{"true"}},
+			}); err != nil {
+				t.Fatalf("create leftover: %v", err)
+			}
+			CleanupContainer(t, engine, name)
+			var out bytes.Buffer
+			code, err := engine.RunContainer(ctx, ark.RunContainerRequest{
+				Name: name, Image: "alpine:latest", Cmd: []string{"sh", "-c", "echo hi; exit 3"}, Output: &out,
+			})
+			if err != nil || code != 3 || !strings.Contains(out.String(), "hi") {
+				t.Fatalf("RunContainer = %d, %v, output %q; want 3, nil, hi", code, err, out.String())
+			}
+			gone(t, name)
+		})
+
+		t.Run("bind_and_user", func(t *testing.T) {
+			rootless, err := engine.Rootless(ctx)
+			if err != nil {
+				t.Fatalf("Rootless: %v", err)
+			}
+			// On a rootless engine container root maps to the caller.
+			user := ""
+			if !rootless {
+				user = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+			}
+			dir := t.TempDir()
+			code, err := engine.RunContainer(ctx, ark.RunContainerRequest{
+				Image: "alpine:latest", Cmd: []string{"sh", "-c", "echo x > /work/f"}, Binds: []string{dir + ":/work"}, User: user,
+			})
+			if err != nil || code != 0 {
+				t.Fatalf("RunContainer = %d, %v", code, err)
+			}
+			info, err := os.Stat(filepath.Join(dir, "f"))
+			if err != nil {
+				t.Fatalf("file not written through the bind: %v", err)
+			}
+			if st := info.Sys().(*syscall.Stat_t); int(st.Uid) != os.Getuid() {
+				t.Fatalf("file owned by uid %d, want %d", st.Uid, os.Getuid())
+			}
+		})
+
+		t.Run("missing_image_returns_ErrNotFound", func(t *testing.T) {
+			name := "ark-conformance-run-missing"
+			_, err := engine.RunContainer(ctx, ark.RunContainerRequest{Name: name, Image: "ark-conformance-nonexistent:never", Cmd: []string{"true"}})
+			if !errors.Is(err, ark.ErrNotFound) {
+				t.Fatalf("expected ErrNotFound, got: %v", err)
+			}
+			gone(t, name)
+		})
+
+		t.Run("cancel_stops_and_removes", func(t *testing.T) {
+			name := "ark-conformance-run-cancel"
+			CleanupContainer(t, engine, name)
+			cctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			time.AfterFunc(2*time.Second, cancel)
+			_, err := engine.RunContainer(cctx, ark.RunContainerRequest{Name: name, Image: "alpine:latest", Cmd: []string{"sleep", "60"}})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("expected context.Canceled, got: %v", err)
+			}
+			gone(t, name)
+		})
+	})
+
+	t.Run("CopyFromImage", func(t *testing.T) {
+		pullAlpine(t)
+		cli := sharedClient(t)
+		alpineContainers := func(t *testing.T) int {
+			t.Helper()
+			list, err := cli.ContainerList(ctx, dockerclient.ContainerListOptions{All: true, Filters: dockerclient.Filters{}.Add("ancestor", "alpine:latest")})
+			if err != nil {
+				t.Fatalf("ContainerList: %v", err)
+			}
+			return len(list.Items)
+		}
+
+		t.Run("copies_directory", func(t *testing.T) {
+			before := alpineContainers(t)
+			dst := filepath.Join(t.TempDir(), "apk")
+			if err := engine.CopyFromImage(ctx, "alpine:latest", "/etc/apk", dst); err != nil {
+				t.Fatalf("CopyFromImage: %v", err)
+			}
+			// Like `docker cp` to a new path: dst holds the directory's contents.
+			if _, err := os.Stat(filepath.Join(dst, "world")); err != nil {
+				t.Fatalf("expected %s/world: %v", dst, err)
+			}
+			if info, err := os.Stat(filepath.Join(dst, "keys")); err != nil || !info.IsDir() {
+				t.Fatalf("expected directory %s/keys: %v", dst, err)
+			}
+			if after := alpineContainers(t); after != before {
+				t.Fatalf("%d alpine containers before, %d after: one was left", before, after)
+			}
+		})
+
+		t.Run("missing_returns_ErrNotFound", func(t *testing.T) {
+			dir := t.TempDir()
+			if err := engine.CopyFromImage(ctx, "ark-conformance-nonexistent:never", "/etc", filepath.Join(dir, "a")); !errors.Is(err, ark.ErrNotFound) {
+				t.Fatalf("missing image: expected ErrNotFound, got: %v", err)
+			}
+			if err := engine.CopyFromImage(ctx, "alpine:latest", "/nonexistent", filepath.Join(dir, "b")); !errors.Is(err, ark.ErrNotFound) {
+				t.Fatalf("missing path: expected ErrNotFound, got: %v", err)
+			}
+		})
 	})
 
 	t.Run("RemoveContainer/not_found_returns_ErrNotFound", func(t *testing.T) {

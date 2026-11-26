@@ -17,6 +17,7 @@ container, image or volume) and `ErrConflict` (in use).
 | Method | Behavior |
 |--------|----------|
 | `InspectState` | Runtime state of a container (`Running`, `Restarting`, `ExitCode`, `StartedAt`). `ErrNotFound` if missing |
+| `RunContainer` | Run a `RunContainerRequest` to completion (binds, user, env), stream output, return the exit code; always removes the container and first removes a leftover one of the same name. `ErrNotFound` if the image is missing; on cancel stops it and wraps `ctx.Err()` |
 | `RemoveContainer` | Force-remove a container. `ErrNotFound` if missing |
 | `ContainerLogs` | Reader for combined stdout/stderr |
 | `ImageExists` | Whether an image exists locally |
@@ -24,6 +25,7 @@ container, image or volume) and `ErrConflict` (in use).
 | `PullImage` | Pull a reference anonymously; returns errors reported during the pull |
 | `BuildImage` | Build an image from a `BuildRequest` |
 | `ReadFileFromImage` | Read a file via a throwaway container (removed afterwards) |
+| `CopyFromImage` | Copy a file or directory out of an image to a host path, like `docker create` + `cp` + `rm`. `ErrNotFound` if the image or path is missing |
 | `ImageTags` | Local tags of a repository, full reference to image ID |
 | `RemoveImage` | Remove one tag, no force. Removing the last tag of an image a container uses returns `ErrConflict`; `ErrNotFound` if the reference is missing |
 | `ImagesInUse` | IDs of images any container uses (running or stopped, any project) |

@@ -16,6 +16,13 @@ type ContainerEngine interface {
 	// Returns ErrNotFound if the container does not exist.
 	InspectState(ctx context.Context, container string) (ContainerState, error)
 
+	// RunContainer runs a container to completion, streams its output to
+	// req.Output and returns its exit code. The container is always removed,
+	// and a leftover container named req.Name is removed first. Returns
+	// ErrNotFound if the image does not exist; when ctx is cancelled the
+	// container is stopped and the error wraps ctx.Err().
+	RunContainer(ctx context.Context, req RunContainerRequest) (exitCode int, err error)
+
 	// RemoveContainer force-removes the named container.
 	// Returns ErrNotFound if the container does not exist.
 	RemoveContainer(ctx context.Context, container string) error
@@ -42,6 +49,11 @@ type ContainerEngine interface {
 	// ReadFileFromImage runs a throwaway container from the image and returns
 	// the contents of the given path. The container is removed after reading.
 	ReadFileFromImage(ctx context.Context, image, path string) (string, error)
+
+	// CopyFromImage copies a file or directory out of an image to a local host
+	// path, like `docker create` + `docker cp` + `docker rm`. Returns
+	// ErrNotFound if the image or the path does not exist.
+	CopyFromImage(ctx context.Context, image, srcPath, dstPath string) error
 
 	// ImageTags returns the local tags of a repository (e.g. "ark-server"),
 	// each as a full reference ("ark-server:latest") mapped to its image ID.

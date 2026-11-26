@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -263,7 +264,8 @@ func (s *Service) ensureBaseImage(ctx context.Context, contextDir string) (strin
 	return ref, nil
 }
 
-// checkBuildDisk requires ARK_BUILD_REQUIRED_FREE_GB (default 90) GiB free at stateDir.
+// checkBuildDisk requires ARK_BUILD_REQUIRED_FREE_GB (default 90) GiB free at
+// stateDir, minus what the SteamCMD cache in work/cache already holds.
 func (s *Service) checkBuildDisk(stateDir string) error {
 	raw := envOrDefault("ARK_BUILD_REQUIRED_FREE_GB", "90")
 	required, err := strconv.Atoi(raw)
@@ -274,9 +276,29 @@ func (s *Service) checkBuildDisk(stateDir string) error {
 	if err != nil {
 		return fmt.Errorf("Error: could not check free disk in %s: %w", stateDir, err)
 	}
+	cacheDir := filepath.Join(stateDir, "build", "work", "cache")
+	var cache int64
+	err = filepath.WalkDir(cacheDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() { // WalkDir never follows symlinks
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		cache += info.Size()
+		return nil
+	})
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("Error: could not measure the SteamCMD cache in %s: %w", cacheDir, err)
+	}
 	const gib = 1 << 30
-	if free < int64(required)*gib {
-		return fmt.Errorf("Error: building the ARK image needs about %d GB free in %s (%d GB available); set ARK_BUILD_REQUIRED_FREE_GB to override", required, stateDir, free/gib)
+	needed := max(int64(required)*gib-cache, 0)
+	if free < needed {
+		return fmt.Errorf("Error: building the ARK image needs about %d GB free in %s (%d GB available, the SteamCMD cache already holds %d GB); set ARK_BUILD_REQUIRED_FREE_GB to override", (needed+gib-1)/gib, stateDir, free/gib, cache/gib)
 	}
 	return nil
 }

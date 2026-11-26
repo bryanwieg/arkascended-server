@@ -296,9 +296,12 @@ func TestBuildLocalImageSkipsExistingBuild(t *testing.T) {
 func TestBuildLocalImageRefusesWithoutWork(t *testing.T) {
 	for _, tc := range []struct {
 		name, env, want string
+		cache           int64
 		setup           func(*buildRig)
 	}{
 		{name: "low disk", want: "needs about 90 GB free", setup: func(r *buildRig) { r.free = 10 << 30 }},
+		{name: "75 GiB free without cache", want: "needs about 90 GB free", setup: func(r *buildRig) { r.free = 75 << 30 }},
+		{name: "75 GiB free with 20 GiB cache", cache: 20 << 30, setup: func(r *buildRig) { r.free = 75 << 30 }},
 		{name: "bad disk override", env: "lots", want: "ARK_BUILD_REQUIRED_FREE_GB must be a positive whole number"},
 		{name: "steam offline", want: "cannot read ARK's current build", setup: func(r *buildRig) { r.steam = errors.New("offline") }},
 		{name: "steam moved on", want: "built ARK build 201, but Steam reported 200", setup: func(r *buildRig) { r.baseID = "201" }},
@@ -309,7 +312,26 @@ func TestBuildLocalImageRefusesWithoutWork(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(r)
 			}
-			_, err := r.service().BuildLocalImage(context.Background(), t.TempDir())
+			stateDir := t.TempDir()
+			if tc.cache > 0 {
+				cacheFile := filepath.Join(stateDir, "build", "work", "cache", "steamapps.bin")
+				if err := os.MkdirAll(filepath.Dir(cacheFile), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(cacheFile, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Truncate(cacheFile, tc.cache); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := r.service().BuildLocalImage(context.Background(), stateDir)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("err = %v, want the build to pass the disk check", err)
+				}
+				return
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}

@@ -123,6 +123,6 @@ without it. See [restore-backup.md](../how-to/restore-backup.md).
 | `RCON_HOST`, `RCON_PORT` | unset | When set, passed into the container for `save instance`, overriding the container values. |
 | `ARK_STEAM_API_URL` | `https://api.steamcmd.net/v1/info/2430930` | Steam app-info endpoint for update checks. For testing. |
 | `ARK_BUILD_NO_CACHE` | unset | Any non-empty value builds the image without layer cache. |
-| `ARK_BUILD_REQUIRED_FREE_GB` | `90` | GiB that must be free in `<compose dir>/.ark-manage` before an image build; positive integer. |
+| `ARK_BUILD_REQUIRED_FREE_GB` | `90` | GiB that must be free in `<compose dir>/.ark-manage` before an image build, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`; positive integer. |
 | `ARK_UPDATE_WEBHOOK_URL` | unset | `http`/`https` URL. On update result `build_failed`, `rolled_back` or `rollback_failed`, POSTs `{"content": "<host>: ARK update of <instance> <result>: <from> -> <to>. <message>"}` (Discord webhook format). A bad URL or failed post only warns. |
 | `TERM` | | `dumb` disables the progress spinner. |

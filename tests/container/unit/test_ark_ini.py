@@ -469,36 +469,31 @@ def test_unset_refuses_env_keys_duplicates_and_running_server(ark_ini, capsys, t
 
 def test_history_stays_packed(ark_ini, capsys, tmp_path: Path) -> None:
     """A few hundred `set ini` runs leave a small packed .git that still holds every revision unchanged."""
-    (tmp_path / "GameUserSettings.ini").write_text("[ServerSettings]\n" + "Filler=some value\n" * 300)
+    (tmp_path / "GameUserSettings.ini").write_text("[ServerSettings]\nK=ark\n" + "Filler=some value\n" * 300)
     ih.commit(tmp_path, ih.ARK, "image default")
     fmt = "--format=%H %an %at %s"
     seen = [ih._git(tmp_path, "log", "-1", fmt).strip()]
-    for n in range(250):
-        code, _out, err = run(
-            ark_ini,
-            capsys,
-            "set",
-            "--file",
-            "gameusersettings",
-            "--section",
-            "ServerSettings",
-            "--key",
-            "MaxPlayers",
-            "--value",
-            str(n),
-        )
+    section = ("--file", "gameusersettings", "--section", "ServerSettings")
+    for n in range(300):
+        code, _out, err = run(ark_ini, capsys, "set", *section, "--key", "MaxPlayers", "--value", str(n))
         assert (code, err) == (0, "")
         seen.append(ih._git(tmp_path, "log", "-1", fmt).strip())
 
     git_dir = tmp_path / ".git"
     assert ih._git(tmp_path, "log", fmt).splitlines() == seen[::-1]
-    assert len(set(seen)) == 251
-    assert sum(f.stat().st_size for f in git_dir.rglob("*") if f.is_file()) < 300_000
+    assert len(set(seen)) == 301
+    revs, more = ih.revisions(tmp_path, None, user_only=False, limit=0, since=None, patch=False)
+    assert (len(revs), more) == (301, False)
+    assert (revs[-1]["by"], revs[-1]["message"]) == ("ARK", "image default")
+    assert sum(f.stat().st_size for f in git_dir.rglob("*") if f.is_file()) < 512 * 1024
     assert list(git_dir.glob("objects/pack/*.pack"))
     assert int(ih._git(tmp_path, "count-objects").split()[0]) <= ih._PACK_AFTER
     assert not (git_dir / "logs").exists()
     assert not (git_dir / "hooks").exists()
     ih._git(tmp_path, "fsck", "--strict")
+    for key, line, value, origin in (("K", 2, "ark", "written by ARK"), ("MaxPlayers", 303, "299", "set with ark-cli")):
+        code, out, _err = run(ark_ini, capsys, "get", *section, "--key", key)
+        assert (code, json.loads(out)["lines"]) == (0, [{"line": line, "value": value, "origin": f"{origin} {_WHEN}"}])
 
 
 def test_restore_writes_revision_and_commits(ark_ini, capsys, tmp_path: Path, monkeypatch) -> None:

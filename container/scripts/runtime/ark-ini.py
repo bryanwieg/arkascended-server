@@ -4,6 +4,7 @@
 Usage:
   ark-ini.py get --file <game|gameusersettings> [--section <s> --key <k>]
   ark-ini.py set --file <game|gameusersettings> --section <s> --key <k> --value <v> [--replace-all]
+  ark-ini.py unset --file <game|gameusersettings> --section <s> --key <k> [--all]
   ark-ini.py track --by <edit|outside>
 
 get prints the file; with --section and --key, one JSON object instead:
@@ -11,6 +12,9 @@ get prints the file; with --section and --key, one JSON object instead:
   (lines is empty when the key isn't set; origin and history as in set's refusal below).
 set prints one JSON object on stdout:
   {"file", "section", "key", "value", "old": [...], "changed": bool, "removed": int, "backup": str|null}
+unset removes every line of the key under set's rules (--all where set has --replace-all), always
+keeps <file>.bak, and prints one JSON object on stdout:
+  {"file", "section", "key", "old": [...], "changed": bool, "backup": str|null}
 Errors go to stderr as one "Error: ..." message. Exit codes: 0 ok, 1 refused or failed, 2 usage.
 
 set refuses while the server runs (ARK rewrites GameUserSettings.ini when it stops), refuses the
@@ -238,6 +242,38 @@ def cmd_set(file_key: str, section: str, key: str, value: str, *, replace_all: b
     return result
 
 
+def cmd_unset(file_key: str, section: str, key: str, *, remove_all: bool) -> dict:
+    section, key = validate(file_key, section, key, "")
+    if ark_server_running():
+        raise IniError("Error: the server is running; stop it first (ark-cli unset ini --restart does this for you).")
+    path = FILES[file_key]
+    if file_key == "gameusersettings" and not path.is_file():
+        raise IniError(missing_message(file_key))
+    # surrogateescape: bytes that aren't valid UTF-8 are written back unchanged.
+    original = path.read_text(encoding="utf-8", errors="surrogateescape", newline="") if path.is_file() else ""
+    lines = original.splitlines(keepends=True)
+    _s, _e, _l, matches = find_key(lines, section, key)
+    if len(matches) > 1 and not remove_all:
+        entries, history = key_lines(path, lines, matches)
+        listing = "\n".join(f"  line {e['line']}: {key}={e['value']}  ({e['origin']})" for e in entries)
+        raise IniError(
+            f"Error: {key} appears {len(matches)} times in [{section}] of {path.name}:\n{listing}\n{history}\n"
+            "Some ARK keys are lists with one line per entry, and unset would delete them all. "
+            "Use 'edit ini' to remove one line, or rerun with --all to remove every line."
+        )
+    old = [_entry(lines[i])[1] for i in matches]  # type: ignore[index]
+    result = {"file": path.name, "section": section, "key": key, "old": old, "changed": bool(matches), "backup": None}
+    if not matches:
+        return result
+    # Changes nobody recorded (hand edits, restores) get their own commit, so they aren't blamed on us.
+    ini_history.commit_outside_changes(path.parent, "changed outside ark-cli; found before unset ini")
+    backup = path.with_name(path.name + ".bak")
+    shutil.copy2(path, backup)
+    write_atomic(path, "".join(line for i, line in enumerate(lines) if i not in matches))
+    ini_history.commit(path.parent, ini_history.CLI_UNSET, f"[{section}] {key}")
+    return {**result, "backup": str(backup)}
+
+
 def cmd_track(by: str) -> None:
     """Commit the INI files as changed by `by`: edit (after ark-cli's editor) or outside (before it)."""
     config_dir = FILES["gameusersettings"].parent
@@ -260,6 +296,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     put.add_argument("--key", required=True)
     put.add_argument("--value", required=True)
     put.add_argument("--replace-all", action="store_true")
+    unset = sub.add_parser("unset")
+    unset.add_argument("--file", required=True, choices=FILES)
+    unset.add_argument("--section", required=True)
+    unset.add_argument("--key", required=True)
+    unset.add_argument("--all", action="store_true")
     track = sub.add_parser("track")
     track.add_argument("--by", required=True, choices=("edit", "outside"))
     args = parser.parse_args(argv)
@@ -277,6 +318,9 @@ def main(argv: list[str]) -> int:
             sys.stdout.write(cmd_get(args.file))
         elif args.command == "track":
             cmd_track(args.by)
+        elif args.command == "unset":
+            result = cmd_unset(args.file, args.section, args.key, remove_all=args.all)
+            sys.stdout.write(json.dumps(result) + "\n")
         else:
             result = cmd_set(args.file, args.section, args.key, args.value, replace_all=args.replace_all)
             sys.stdout.write(json.dumps(result) + "\n")

@@ -6,6 +6,7 @@ it) tracks Game.ini and GameUserSettings.ini only. Every writer commits under it
   ARK server       the image default (ARK generated it at build) and the server's own writes
   instance env     the RCON and password settings the entrypoint applies from the environment
   ark-cli set ini  ark-ini.py set
+  ark-cli unset ini  ark-ini.py unset
   ark-cli edit ini the editor run by `ark-cli edit ini`
   outside ark-cli  changes found uncommitted (a hand edit or a restored file), committed when found
   unknown origin   the files as first seen, when the repository is created on an existing volume
@@ -24,6 +25,7 @@ TRACKED = ("Game.ini", "GameUserSettings.ini")
 ARK = "ARK server"
 ENV = "instance env"
 CLI_SET = "ark-cli set ini"
+CLI_UNSET = "ark-cli unset ini"
 CLI_EDIT = "ark-cli edit ini"
 OUTSIDE = "outside ark-cli"
 UNKNOWN = "unknown origin"
@@ -31,6 +33,7 @@ _LABELS = {
     ARK: "written by ARK",
     ENV: "set from instance env",
     CLI_SET: "set with ark-cli",
+    CLI_UNSET: "unset with ark-cli",
     CLI_EDIT: "edited with ark-cli",
     OUTSIDE: "changed outside ark-cli",
 }

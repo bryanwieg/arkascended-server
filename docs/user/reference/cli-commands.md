@@ -689,7 +689,7 @@ Each also takes `--compose-file`.
 ## Scheduler
 
 The `ark-scheduler` compose service runs `ark-cli run scheduler`: enabled
-backup schedules when due, and a health monitor that checks every instance and
+schedules when due, and a health monitor that checks every instance and
 schedule once a minute and restarts hung instances. It is marked with the
 label `ark.role: scheduler` and, having no `ark.port.asa` label, is not an
 instance: `list instances`,

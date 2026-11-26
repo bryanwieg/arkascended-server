@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.7.2...cli-v0.8.0) (2026-11-26)
+
+
+### Features
+
+* **cli:** add unset ini, INI history list and restore ([#55](https://github.com/bryanwieg/arkascended-server/issues/55)) ([fd95f1c](https://github.com/bryanwieg/arkascended-server/commit/fd95f1ca271b9c3e1282891f3a66d89465296f0f))
+
 ## [0.7.2](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.7.1...cli-v0.7.2) (2026-11-25)
 
 

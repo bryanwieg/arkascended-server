@@ -10,15 +10,15 @@ import (
 // OverdueGrace is how late a schedule may be before Health reports it overdue.
 const OverdueGrace = time.Hour
 
-// ScheduleHealth is the health of one enabled backup schedule.
+// ScheduleHealth is the health of one enabled schedule.
 type ScheduleHealth struct {
 	Name   string
 	OK     bool
 	Detail string
 }
 
-// Health checks each enabled backup schedule, in name order: a held lock is OK "running"; a run left
-// "running" with the lock free or a "failed" run is not OK; otherwise it is overdue when now is past
+// Health checks each enabled schedule of a known type, in name order: a held lock is OK "running"; a run left
+// "running" with the lock free or a "failed" run is not OK; otherwise (including "skipped") it is overdue when now is past
 // Next(base)+OverdueGrace, where base is the latest of the last start, since (the scheduler's start) and the
 // schedules file's modification time, so a schedule enabled or edited after a long pause is not overdue.
 func (s *Service) Health(now, since time.Time) []ScheduleHealth {
@@ -35,7 +35,7 @@ func (s *Service) Health(now, since time.Time) []ScheduleHealth {
 	})
 	result := []ScheduleHealth{}
 	for _, sched := range sorted {
-		if sched.Enabled && sched.Type == "backup" {
+		if sched.Enabled && KnownType(sched.Type) {
 			result = append(result, s.scheduleHealth(sched, now, base))
 		}
 	}

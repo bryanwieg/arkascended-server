@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -95,6 +96,42 @@ schedules:
 	r.Step(context.Background(), utc("10:00"), utc("10:01"))
 	if got := rec.names(); !slices.Equal(got, []string{"a", "c"}) {
 		t.Fatalf("runs = %v, want [a c]", got)
+	}
+}
+
+func TestStepRunsEveryKnownType(t *testing.T) {
+	withLocal(t, time.UTC)
+	typed := func(name, typ string) BackupSchedule {
+		s := backupAt(name, "0 3 * * *")
+		s.Type = typ
+		return s
+	}
+	chat := typed("chat", TypeRCON)
+	chat.Command = "ServerChat hi"
+	r, rec := runnerWith(t, typed("save", TypeSave), typed("other", "other"), typed("restart", TypeRestart),
+		chat, typed("backup", TypeBackup))
+	raw, err := os.ReadFile(r.Service.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(raw), "command:"); n != 1 {
+		t.Fatalf("file has %d command keys, want only the rcon one:\n%s", n, raw)
+	}
+
+	r.Step(context.Background(), utc("02:59"), utc("03:00"))
+	if got := rec.names(); !slices.Equal(got, []string{"backup", "chat", "restart", "save"}) {
+		t.Fatalf("runs = %v, want [backup chat restart save]", got)
+	}
+
+	// Each missed its run the day before; only the backup is caught up.
+	for _, name := range []string{"backup", "chat", "restart", "save", "other"} {
+		r.Service.WriteRunState(RunState{Name: name, LastStartedAt: "2026-11-20T03:00:00Z", LastStatus: "success"})
+	}
+	catchUp := &recorder{}
+	r.RunOne = catchUp.runOne
+	r.CatchUp(context.Background(), utc("10:00"))
+	if got := catchUp.names(); !slices.Equal(got, []string{"backup"}) {
+		t.Fatalf("catch-up runs = %v, want [backup]", got)
 	}
 }
 

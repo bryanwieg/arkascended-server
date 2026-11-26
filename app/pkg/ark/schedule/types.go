@@ -13,12 +13,21 @@ type BackupSchedule struct {
 	Instance     string `yaml:"instance"`
 	Enabled      bool   `yaml:"enabled"`
 	Cron         string `yaml:"cron"`
+	Command      string `yaml:"command,omitempty"` // rcon only
 	Format       string `yaml:"format,omitempty"`
 	RetainCount  int    `yaml:"retain_count,omitempty"`
 	RetainDays   int    `yaml:"retain_days,omitempty"`
 	RetainSizeGB int    `yaml:"retain_size_gb,omitempty"`
 	ComposeFile  string `yaml:"compose_file,omitempty"`
 }
+
+// Schedule types.
+const (
+	TypeBackup  = "backup"
+	TypeRCON    = "rcon"
+	TypeSave    = "save"
+	TypeRestart = "restart"
+)
 
 // RunState tracks the last execution status of a schedule.
 type RunState struct {

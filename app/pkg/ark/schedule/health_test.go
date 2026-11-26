@@ -62,21 +62,32 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestHealthOnlyEnabledBackupsInNameOrder(t *testing.T) {
+func TestHealthCoversEveryTypeAndSkipped(t *testing.T) {
 	withLocal(t, time.UTC)
 	now := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
 	svc := testService(t)
-	disabled := backupAt("disabled", "0 3 * * *")
+	typed := func(name, typ string) BackupSchedule {
+		s := backupAt(name, "0 3 * * *")
+		s.Type = typ
+		return s
+	}
+	disabled := typed("disabled", TypeSave)
 	disabled.Enabled = false
-	other := backupAt("other", "0 3 * * *")
-	other.Type = "other"
 	if err := svc.SaveScheduleFile(ScheduleFile{Version: 1, Schedules: []BackupSchedule{
-		backupAt("zeta", "0 3 * * *"), disabled, other, backupAt("alpha", "0 3 * * *"),
+		typed("zeta", TypeBackup), typed("restart", TypeRestart), disabled, typed("other", "other"),
+		typed("save", TypeSave), typed("chat", TypeRCON),
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	svc.WriteRunState(RunState{Name: "save", LastStatus: "skipped", LastStartedAt: "2026-11-21T03:00:00Z"})
+	svc.WriteRunState(RunState{Name: "chat", LastStatus: "failed", LastStartedAt: "2026-11-21T03:00:00Z", LastError: "rcon down"})
 	got := svc.Health(now, now)
-	want := []ScheduleHealth{{Name: "alpha", OK: true}, {Name: "zeta", OK: true}}
+	want := []ScheduleHealth{
+		{Name: "chat", Detail: "last run failed: rcon down"},
+		{Name: "restart", OK: true},
+		{Name: "save", OK: true},
+		{Name: "zeta", OK: true},
+	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Health = %+v, want %+v", got, want)
 	}

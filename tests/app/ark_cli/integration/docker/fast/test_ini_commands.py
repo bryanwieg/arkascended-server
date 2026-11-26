@@ -157,15 +157,19 @@ def test_list_ini_history_shows_user_and_ark_revisions(
     table = cli("list", "ini-history").splitlines()
     assert table[0].split() == ["REVISION", "DATE", "BY", "HOW", "FILES", "MESSAGE"]
     assert [line.split()[0] for line in table[1:-1]] == [r["revision"] for r in revisions]
-    assert "ARK's own writes" in table[-1] and "--user-only" in table[-1]
+    assert "ARK's own writes" in table[-1]
+    assert "--user-only" in table[-1]
 
     user_only = cli("list", "ini-history", "--user-only")
     assert set_row["revision"] in user_only
-    assert " ARK " not in user_only and "--user-only" not in user_only
+    assert " ARK " not in user_only
+    assert "--user-only" not in user_only
 
     limited = cli("list", "ini-history", "--limit", "1").splitlines()
     assert limited[1].split()[0] == revisions[0]["revision"]
-    assert len(limited) == 4 and "--limit 0" in limited[-1] and "--since" in limited[-1]
+    assert len(limited) == 4
+    assert "--limit 0" in limited[-1]
+    assert "--since" in limited[-1]
 
     assert f"No INI history recorded for {instance}." in cli("list", "ini-history", "--since", "2999-01-01")
     assert "+MaxPlayers=20" in cli("list", "ini-history", "--patch", "--user-only", "--file", "gus")
@@ -203,7 +207,19 @@ def test_restore_ini_brings_back_a_revision(
     def user_revisions() -> list[dict]:
         return json.loads(cli("list", "ini-history", "--json", "--file", "gus", "--user-only").stdout)["revisions"]
 
-    cli("set", "ini", "--file", "gus", "--section", "ServerSettings", "--key", "MaxPlayers", "--value", "20", "--restart")
+    cli(
+        "set",
+        "ini",
+        "--file",
+        "gus",
+        "--section",
+        "ServerSettings",
+        "--key",
+        "MaxPlayers",
+        "--value",
+        "20",
+        "--restart",
+    )
     revisions = json.loads(cli("list", "ini-history", "--json", "--file", "gus", "--limit", "0").stdout)["revisions"]
     set_index = next(i for i, r in enumerate(revisions) if r["how"] == "set with ark-cli")
     before_set = revisions[set_index + 1]["revision"]

@@ -231,12 +231,18 @@ Immutable images make rollback a tag switch: a failed update switches compose
 back to the previous tag and restores the pre-update backup. Image cleanup keeps
 each instance's current and previous image.
 
-SteamCMD runs in its own throwaway container (`container/files/build.sh`), not
-in a BuildKit stage. BuildKit evicted its cache mounts (Docker's default
+SteamCMD runs in its own throwaway container, not in a BuildKit stage. BuildKit evicted its cache mounts (Docker's default
 build-cache limits dropped the SteamCMD install), so delta updates silently
 became full 12 GB downloads, and raising the limits needs host config on every
 machine. The install is cached in `.ark-manage/build/work/cache`, outside
 BuildKit's control. Don't move SteamCMD back into the runtime build.
+
+`ark-cli` drives that container and every image build through the engine API
+(`RunContainer`, `CopyFromImage`, `BuildImage`), not by running
+`container/files/build.sh`. *Why:* the scheduler container has no shell or
+container CLI, and a scheduled update has to build there; going through the API
+also drops the dependency on `bash`, `docker` or `podman` being on the host's
+`PATH`. `build.sh` stays for CI and manual builds only.
 
 ## Why the INI files have a git history
 

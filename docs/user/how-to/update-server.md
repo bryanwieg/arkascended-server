@@ -15,7 +15,7 @@ stop (saves), `pre-update` backup, switch image, start, wait for ready. On
 failure the instance is rolled back and restored, the remaining instances are
 skipped, and the exit code is 1.
 
-The build needs `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB free.
+The build needs `ARK_BUILD_REQUIRED_FREE_GB` (default 90) GiB free.
 
 ## After an update
 

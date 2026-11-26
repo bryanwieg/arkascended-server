@@ -20,7 +20,7 @@ new image even when ARK hasn't updated.
   `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), with
   SteamCMD's depot manifests, so later updates download only changed files.
 - Before a build, free space in `.ark-manage` must be at least
-  `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB. A lock stops two builds from
+  `ARK_BUILD_REQUIRED_FREE_GB` (default 90) GiB. A lock stops two builds from
   running at once.
 
 A build takes 15-25 minutes. Host, disk and network requirements:

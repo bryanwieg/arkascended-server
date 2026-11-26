@@ -700,7 +700,7 @@ Notes:
 | `HarvestAmountMultiplier` † | ✔ | float = 1 |  | ↑ resources per hit | More resources per hit | Fewer resources per hit |
 | `HarvestHealthMultiplier` | ✔ ÷ | float = 1 |  | ↑ resource node HP | Nodes take more hits (more total yield per node) | Nodes break sooner |
 | `ResourcesRespawnPeriodMultiplier` † | ✔ | float = 1 |  | ↑ respawn time | Resources respawn slower | Resources respawn faster |
-| `StructurePreventResourceRadiusMultiplier` | ✔ × | float = 1 | yes | ↑ no-respawn radius | Structures block resource respawn over a wider area | Smaller blocked area |
+| `StructurePreventResourceRadiusMultiplier` † | ✔ | float = 1 | yes | ↑ no-respawn radius | Structures block resource respawn over a wider area | Smaller blocked area |
 | `UseOptimizedHarvestingHealth` † | ✔ | bool = False |  | switch | Use optimized harvesting health | Don't use optimized harvesting health |
 
 Notes:
@@ -708,6 +708,7 @@ Notes:
 - `ClampResourceHarvestDamage`: When on, damage dealt to a resource node is clamped to the node's remaining health.
 - `HarvestAmountMultiplier`: Resources per hit = count x this (a per-character modifier can override).
 - `ResourcesRespawnPeriodMultiplier`: Node min/max respawn time x this.
+- `StructurePreventResourceRadiusMultiplier`: Multiplies with ResourceNoReplenishRadiusStructures (Game.ini): both at 2 gives 4× the radius.
 - `UseOptimizedHarvestingHealth`: When on, harvest yield comes from accumulated damage: every (per-item health ÷ HarvestHealthMultiplier) of damage gives one batch, remainder carried over.
 
 **Game.ini `[/Script/ShooterGame.ShooterGameMode]`**
@@ -722,14 +723,16 @@ Notes:
 | `MaxActiveResourceCaches` † | ✔ | int = 8 | ↑ max active resource caches | Higher limit | Lower limit |
 | `MaxActiveResourceCachesSP` † | ✔ | int = 8 | ↑ max active resource caches SP | Higher limit | Lower limit |
 | `PlayerHarvestingDamageMultiplier` | ✔ × | float = 1 | ↑ damage dealt | More damage | Less damage |
-| `ResourceNoReplenishRadiusPlayers` | ✗ | float = 1 | ↑ resource no replenish radius players | Larger area | Smaller area |
-| `ResourceNoReplenishRadiusStructures` | ✔ × | float = 1 | ↑ resource no replenish radius structures | Larger area | Smaller area |
+| `ResourceNoReplenishRadiusPlayers` † | ✔ | float = 1 | ↑ resource no replenish radius players | Larger area | Smaller area |
+| `ResourceNoReplenishRadiusStructures` † | ✔ | float = 1 | ↑ resource no replenish radius structures | Larger area | Smaller area |
 
 Notes:
 
 - `FishingLootQualityMultiplier`: Fishing rod / net: loot quality × this; 0 is special-cased.
 - `MaxActiveResourceCaches`: Lost Colony resource caches: maximum active at once = this.
 - `MaxActiveResourceCachesSP`: Lost Colony resource caches (single player): maximum active at once = this.
+- `ResourceNoReplenishRadiusPlayers`: Resources don't respawn while a player is within each resource's own radius, scaled by this. StructurePreventResourceRadiusMultiplier doesn't apply to it.
+- `ResourceNoReplenishRadiusStructures`: Resources don't respawn within each resource's own radius of a structure, scaled by this and by StructurePreventResourceRadiusMultiplier (GameUserSettings.ini). The two multiply: both at 2 gives 4× the radius.
 
 ### Items, crafting & loot
 

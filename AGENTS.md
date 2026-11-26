@@ -30,6 +30,10 @@ Run through this every time you start a task:
 - [ ] Command delegates to domain service via `d.*`? → [Adding a CLI command](docs/dev/how-to/add-cli-command.md)
 - [ ] `--json` uses a JSON struct in `json_output.go`? → [Adding a CLI command](docs/dev/how-to/add-cli-command.md)
 
+**Local environment:** if `AGENTS.local.md` exists in the repo root, read it.
+It holds machine-local notes (the production server, SSH access, how to run
+ark-cli there) and is never committed.
+
 ## Behavioral guardrails
 
 ### Critical — bypassing these breaks things

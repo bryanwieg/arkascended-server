@@ -122,7 +122,7 @@ func checkSupportedChanges(before *types.Project, afterProject *ark.ComposeProje
 		delete(m, ark.SchedulesExtensionKey)
 		return m
 	}
-	if !maps.EqualFunc(otherExtensions(before), otherExtensions(after), func(a, b any) bool { return reflect.DeepEqual(a, b) }) {
+	if !maps.EqualFunc(otherExtensions(before), otherExtensions(after), reflect.DeepEqual) {
 		return fmt.Errorf("%w; only the %s extension can change", errUnsupportedSave, ark.SchedulesExtensionKey)
 	}
 	if v, ok := after.Extensions[ark.SchedulesExtensionKey]; ok && schedulesChanged(afterProject) {

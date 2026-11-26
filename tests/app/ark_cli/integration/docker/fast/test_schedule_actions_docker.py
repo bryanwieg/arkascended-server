@@ -42,8 +42,19 @@ def test_rcon_schedule_runs_command(
         - check schedule shows last_status success.
     """
     instance = started_instance_cli["instance"]
-    cli("create", "schedule", "rcon", "--instance", instance, "--name", "chat", "--cron", "0 * * * *",
-        "--command", "ServerChat costs $5")
+    cli(
+        "create",
+        "schedule",
+        "rcon",
+        "--instance",
+        instance,
+        "--name",
+        "chat",
+        "--cron",
+        "0 * * * *",
+        "--command",
+        "ServerChat costs $5",
+    )
     assert "ServerChat costs $$5" in Path(env["COMPOSE_FILE"]).read_text()
 
     result = cli("run", "schedule", "--name", "chat")
@@ -101,9 +112,7 @@ def test_restart_schedule_restarts_instance(
     cli("check", "instance", "--instance", instance)
 
 
-def test_action_schedule_skips_stopped_instance(
-    cli: Callable[..., object], compose_client: DockerClient
-) -> None:
+def test_action_schedule_skips_stopped_instance(cli: Callable[..., object], compose_client: DockerClient) -> None:
     """rcon, save and restart schedules skip a stopped instance with a warning.
 
     Scenario:
@@ -116,10 +125,29 @@ def test_action_schedule_skips_stopped_instance(
         - The instance is still not running afterwards (the restart does not start it).
     """
     instance = f"pytest-ark-{uuid.uuid4().hex[:8]}"
-    cli("create", "instance", "--name", instance, "--server-password", "ServerPass123",
-        "--admin-password", "AdminPass123")
-    cli("create", "schedule", "rcon", "--instance", instance, "--name", "stopped-rcon", "--cron", "0 * * * *",
-        "--command", "ServerChat hello")
+    cli(
+        "create",
+        "instance",
+        "--name",
+        instance,
+        "--server-password",
+        "ServerPass123",
+        "--admin-password",
+        "AdminPass123",
+    )
+    cli(
+        "create",
+        "schedule",
+        "rcon",
+        "--instance",
+        instance,
+        "--name",
+        "stopped-rcon",
+        "--cron",
+        "0 * * * *",
+        "--command",
+        "ServerChat hello",
+    )
     cli("create", "schedule", "save", "--instance", instance, "--name", "stopped-save", "--cron", "0 * * * *")
     cli("create", "schedule", "restart", "--instance", instance, "--name", "stopped-restart", "--cron", "0 * * * *")
 

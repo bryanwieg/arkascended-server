@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.9.0...cli-v0.10.0) (2026-11-27)
+
+
+### Features
+
+* **cli:** new instances get cpu_shares 4096 so the server comes first under CPU load ([#63](https://github.com/bryanwieg/arkascended-server/issues/63)) ([f45596b](https://github.com/bryanwieg/arkascended-server/commit/f45596b1b680ba9dbfbe6ba4ee82de85c1f1a0dd))
+
+
+### Performance Improvements
+
+* **backup:** zstd level 9 for tar.zst, archive at low CPU and disk priority ([#62](https://github.com/bryanwieg/arkascended-server/issues/62)) ([f6c47da](https://github.com/bryanwieg/arkascended-server/commit/f6c47da8251fa33ed255bd4d7a878b36a860e70c))
+
 ## [0.9.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.8.0...cli-v0.9.0) (2026-11-27)
 
 

@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/compose-spec/compose-go/v2 v2.17.0
 	github.com/containerd/errdefs v1.0.0
-	github.com/docker/cli v29.10.0+incompatible
+	github.com/docker/cli v29.10.1+incompatible
 	github.com/docker/compose/v5 v5.8.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/moby/buildkit v0.35.1

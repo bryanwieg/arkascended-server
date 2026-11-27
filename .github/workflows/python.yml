@@ -1,27 +1,50 @@
 # Python lint: ruff check + format check (ruff.toml) for container scripts,
-# tests and run-tests.py.
+# tests and run-tests.py. Reports on every PR (a required check); skips when
+# no python file changed or this content already passed.
 name: Python lint
 
 on:
   pull_request:
-    paths:
-      - "**.py"
-      - "ruff.toml"
-      - ".github/workflows/python.yml"
-  push:
-    branches: [main]
-    paths:
-      - "**.py"
-      - "ruff.toml"
-      - ".github/workflows/python.yml"
+    types: [opened, synchronize, reopened]
+  workflow_dispatch: # bot branches
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      work: ${{ steps.group.outputs.work }}
+      hash: ${{ steps.group.outputs.hash }}
+      ruff-passed: ${{ steps.ruff.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # origin/main and the merge base
+      - id: group
+        run: |
+          work=$(.github/changed.sh python)
+          hash=$(.github/changed.sh hash python)
+          echo "work=$work" >> "$GITHUB_OUTPUT"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+      - id: ruff
+        uses: actions/cache/restore@v6
+        with:
+          path: .passed
+          key: passed-ruff-${{ steps.group.outputs.hash }}
+          lookup-only: true
+
   ruff:
+    needs: changes
+    # Runs (and fails) when changes failed: a skipped required check counts as passed.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.work == 'true' && needs.changes.outputs.ruff-passed != 'true')) }}
     runs-on: ubuntu-latest
     steps:
+      - if: needs.changes.result != 'success'
+        run: |
+          echo "changes job did not succeed" >&2
+          exit 1
       - uses: actions/checkout@v7
       - uses: astral-sh/ruff-action@v4.1.0
         with:
@@ -31,3 +54,8 @@ jobs:
         with:
           version: 0.17.5
           args: format --check --diff
+      - run: echo "${{ needs.changes.outputs.hash }}" > .passed
+      - uses: actions/cache/save@v6
+        with:
+          path: .passed
+          key: passed-ruff-${{ needs.changes.outputs.hash }}

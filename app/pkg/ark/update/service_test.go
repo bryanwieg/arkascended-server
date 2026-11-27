@@ -156,20 +156,20 @@ func TestParseSteamLatestBuildIDErrors(t *testing.T) {
 const steamBuild200 = `{"data":{"2430930":{"depots":{"branches":{"public":{"buildid":"200"}}}}}}`
 
 type buildRig struct {
-	builds  []ark.BuildRequest
+	builds []ark.BuildRequest
 	// withFiles[i]: builds[i]'s context held ark-files/ when it ran.
 	withFiles []bool
 	failTag   string
-	runs    []ark.RunContainerRequest
-	copies  []string
-	copyErr error
-	removed []string
-	exists  map[string]bool
-	pulls   []string
-	pullErr error
-	baseID  string
-	free    int64
-	steam   error
+	runs      []ark.RunContainerRequest
+	copies    []string
+	copyErr   error
+	removed   []string
+	exists    map[string]bool
+	pulls     []string
+	pullErr   error
+	baseID    string
+	free      int64
+	steam     error
 }
 
 func (r *buildRig) service() *Service {

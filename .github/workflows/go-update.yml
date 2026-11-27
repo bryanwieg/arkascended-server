@@ -1,8 +1,8 @@
 # Weekly: if go.dev has a newer stable Go release than go.work's `go` line (which CI's
-# setup-go and local builds use), open a PR bumping it and start the CLI tests and lint
-# on its branch (PRs opened with GITHUB_TOKEN don't trigger CI, but workflow_dispatch
-# does). auto-merge.yml merges the PR once they pass. Dependabot covers the golang image
-# in app/ark-web/Dockerfile but can't update go.work.
+# setup-go and local builds use), open a PR bumping it, with its `Release:` line, and start
+# the checks (python, cli, image, version) on its branch (PRs opened with GITHUB_TOKEN don't
+# trigger CI, but workflow_dispatch does). auto-merge.yml merges the PR once they pass.
+# Dependabot covers the golang image in app/ark-web/Dockerfile but can't update go.work.
 name: Go update
 
 on:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write # start cli.yml on the branch
+  actions: write # start the checks on the branch
   contents: write
   pull-requests: write
 
@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # cli-v* tags for release-version.py latest
+          fetch-tags: true
       - name: Open a PR for a newer Go
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,11 +48,18 @@ jobs:
           # build: releases ark-cli, so the published binary is built with the new Go.
           title="build: update Go to $latest"
           sed -i "s/^go .*/go $latest/" go.work
+          description="Go $current → $latest ([release notes](https://go.dev/doc/devel/release)). The checks run on this branch; auto-merge.yml merges it when they pass."
+          # Before the push: a failure here leaves no branch without a PR.
+          latest_tag="$(python3 .github/release-version.py latest)"
+          release="$(python3 .github/release-version.py next --title "$title" --latest-tag "$latest_tag")"
+          body="$description"
+          [[ -z "$release" ]] || body+=$'\n\nRelease: '"$release"
           git switch -c "$branch"
           git -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -am "$title"
           git push -u origin "$branch"
-          gh pr create --base main --head "$branch" --title "$title" \
-            --body "Go $current → $latest ([release notes](https://go.dev/doc/devel/release)). The CLI tests and lint run on this branch; auto-merge.yml merges it when they pass."
-          gh workflow run cli.yml --ref "$branch"
+          gh pr create --base main --head "$branch" --title "$title" --body "$body"
+          for workflow in python.yml cli.yml image.yml version.yml; do
+            gh workflow run "$workflow" --ref "$branch"
+          done

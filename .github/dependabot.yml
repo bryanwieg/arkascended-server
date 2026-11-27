@@ -1,7 +1,8 @@
 # Weekly version updates, one grouped PR per ecosystem. PR titles are Conventional
-# Commits because PRs are squash-merged with the title as the commit: release-please
-# releases the CLI on `deps:` and `build:` (the image recipe is embedded in ark-cli);
-# `ci:` and `chore:` don't release. Security updates (repository setting) open PRs as soon as an alert appears.
+# Commits because PRs are squash-merged with the title as the commit. A merged PR releases
+# ark-cli when its description states `Release: X.Y.Z`; auto-merge.yml writes that line from
+# the title (release-version.py): `deps:` and `build:` release (the image recipe is embedded
+# in ark-cli), `ci:` and `chore:` don't. Security updates (repository setting) open PRs as soon as an alert appears.
 version: 2
 updates:
   - package-ecosystem: gomod

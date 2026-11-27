@@ -1,22 +1,31 @@
-# Daily: merge automated update PRs whose checks all passed, so nobody has to watch them.
-# - Update PRs: Dependabot (dependabot/*), GE-Proton (chore/proton-update-*), Go
-#   (chore/go-update-*) and the base refresh (chore/base-refresh-*). Merged when every
-#   check on the head commit completed without failing (at least one must have run);
-#   left alone while checks are running.
-#   A failed check, or a passing PR still unmergeable after 3 days, opens one issue per PR,
-#   which is the only thing to act on. Issues close themselves once their PR is merged or closed.
-# - The release PR (release-please--*) is merged too, so updates ship as an ark-cli release.
-# Merges made with GITHUB_TOKEN don't trigger push workflows, so after merging this starts
-# image.yml (publishes a changed base image) and release.yml (tags and builds the release).
+# Hourly: keep automated update PRs current and merge one whose checks all passed, so
+# nobody has to watch them.
+# - Bot PRs: Dependabot (dependabot/*, authored by Dependabot), GE-Proton
+#   (chore/proton-update-*), Go (chore/go-update-*) and the base refresh
+#   (chore/base-refresh-*), all with their head in this repository. Other PRs on those
+#   branches are named in the summary and left alone.
+# - Each bot PR's `Release:` line is kept matching its title and the latest cli-v* tag
+#   (release-version.py); a PR behind main is updated through the update-branch API. Both
+#   start the checks again (pushes and edits made with GITHUB_TOKEN trigger nothing, but
+#   workflow_dispatch does). A chore/* PR whose branch can't be updated is closed and opened
+#   again from main by its update workflow.
+# - Merged when the newest runs of ruff, lint, test, unit, smoke and version passed or
+#   skipped and nothing failed; one merge per run, so each merge releases on its own.
+#   A failed check, checks missing after a day, or a passing PR still unmergeable after
+#   3 days opens one issue per PR, which is the only thing to act on. Issues close
+#   themselves once their PR is merged or closed.
+# Merges made with GITHUB_TOKEN don't trigger push workflows, so this starts image.yml
+# (publishes a changed base image) after a merge and release.yml (tags and builds the
+# release) on every run, which retries a missed or failed release each hour.
 name: Auto-merge updates
 
 on:
   schedule:
-    - cron: "0 10 * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
-  actions: write # start image.yml and release.yml on main
+  actions: write # start the checks, the update workflows, image.yml and release.yml
   checks: read
   contents: write
   issues: write
@@ -26,7 +35,11 @@ jobs:
   merge:
     runs-on: ubuntu-latest
     steps:
-      - name: Merge passing updates, report failing ones
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # cli-v* tags for release-version.py latest
+          fetch-tags: true
+      - name: Update and merge passing bot PRs, report failing ones
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -34,6 +47,9 @@ jobs:
           set -euo pipefail
           label="automated-update"
           gh label create "$label" --color FBCA04 --description "Automated update needing attention" >/dev/null 2>&1 || true
+          latest_tag="$(python3 .github/release-version.py latest)"
+          body="$RUNNER_TEMP/body.md"
+          summary() { echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
 
           report_failure() { # $1 PR number, $2 PR title, $3 PR URL, $4 reason
             local title="Automated update failed: $2 (#$1)"
@@ -43,51 +59,123 @@ jobs:
             if [[ "$open" == 0 ]]; then
               gh issue create --label "$label" --title "$title" \
                 --body "$3 was not merged: $4. Fix or close the PR, then close this issue."
-              echo "Reported #$1: $4" >> "$GITHUB_STEP_SUMMARY"
+              summary "Reported #$1: $4"
             fi
           }
 
+          dispatch() { # $1 branch, then the workflows to start on it
+            local branch="$1" workflow
+            shift
+            for workflow in "$@"; do
+              gh workflow run "$workflow" --ref "$branch" || summary "Could not start $workflow on $branch"
+            done
+          }
+
+          release_current() { # $1 PR number, $2 title; true when $body's Release: line matches, else rewrites it
+            local expected stated
+            expected="$(python3 .github/release-version.py next --title "$2" --latest-tag "$latest_tag")"
+            stated="$(python3 .github/release-version.py parse --body-file "$body" 2>/dev/null)" || stated="invalid"
+            [[ "$stated" != "$expected" ]] || return 0
+            { grep -Ev '^[[:space:]]*Release:' "$body" || true; [[ -z "$expected" ]] || printf '\nRelease: %s\n' "$expected"; } > "$body.new"
+            if gh pr edit "$1" --body-file "$body.new"; then
+              summary "Set #$1's Release: line to ${expected:-none}"
+            else
+              summary "Could not edit #$1's Release: line"
+            fi
+            return 1
+          }
+
+          older_than() { # $1 created timestamp, $2 days
+            (( $(date +%s) - $(date -d "$1" +%s) > $2 * 86400 ))
+          }
+
+          checks=(python.yml cli.yml image.yml version.yml)
           merged=0
-          release_pr=""
-          while IFS=$'\t' read -r number branch sha created url title; do
+          while IFS=$'\t' read -r number branch sha created url state trusted title; do
             case "$branch" in
-              release-please--*) release_pr="$number"; continue ;;
-              dependabot/* | chore/proton-update-* | chore/base-refresh-* | chore/go-update-*) ;;
+              dependabot/*) updater="" ;;
+              chore/proton-update-*) updater=proton-update.yml ;;
+              chore/go-update-*) updater=go-update.yml ;;
+              chore/base-refresh-*) updater=base-refresh.yml ;;
               *) continue ;;
             esac
-            checks="$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
-              --jq '[.check_runs[] | {status, conclusion}]')"
-            total="$(jq length <<<"$checks")"
-            pending="$(jq '[.[] | select(.status != "completed")] | length' <<<"$checks")"
-            failed="$(jq '[.[] | select(.conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not))] | length' <<<"$checks")"
+            if [[ "$trusted" != true ]]; then
+              summary "Skipped #$number: a fork, or $branch not authored by Dependabot"
+              continue
+            fi
+            rebase_hint=""
+            [[ -n "$updater" ]] || rebase_hint=" (comment \`@dependabot rebase\` on it)"
+            if ! gh pr view "$number" --json body --jq .body > "$body"; then
+              summary "Skipped #$number: could not read its description"
+              continue
+            fi
+
+            if [[ "$state" == BEHIND ]]; then
+              if gh api -X PUT "repos/$GH_REPO/pulls/$number/update-branch" -f expected_head_sha="$sha" >/dev/null; then
+                # The update is asynchronous; dispatching before the head moves would check the old commit.
+                for _ in {1..12}; do
+                  [[ "$(gh pr view "$number" --json headRefOid --jq .headRefOid)" == "$sha" ]] || break
+                  sleep 5
+                done
+                release_current "$number" "$title" || true
+                dispatch "$branch" "${checks[@]}"
+                summary "Updated #$number with main; checks started"
+              elif [[ -n "$updater" ]]; then
+                # GITHUB_TOKEN may not push main's workflow changes into the branch: start over from main.
+                if gh pr close "$number" --delete-branch \
+                  --comment "Could not be updated with main; $updater opens a fresh PR."; then
+                  dispatch main "$updater"
+                  summary "Closed #$number (could not be updated); $updater opens it again"
+                else
+                  summary "Could not close #$number after a failed update; next run retries"
+                fi
+              elif older_than "$created" 3; then
+                report_failure "$number" "$title" "$url" "it could not be updated with main for 3 days$rebase_hint"
+              else
+                summary "Could not update #$number with main; next run retries"
+              fi
+              continue
+            fi
+
+            if ! release_current "$number" "$title"; then
+              dispatch "$branch" version.yml
+              continue
+            fi
+
+            if ! runs="$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" \
+              --jq '[.check_runs | group_by(.name)[] | max_by(.id) | {name, status, conclusion}]')"; then
+              summary "Skipped #$number: could not read its checks"
+              continue
+            fi
+            missing="$(jq -r '["ruff", "lint", "test", "unit", "smoke", "version"] - map(.name) | join(" ")' <<<"$runs")"
+            pending="$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")"
+            failed="$(jq '[.[] | select(.conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not))] | length' <<<"$runs")"
             if (( failed > 0 )); then
               report_failure "$number" "$title" "$url" "$failed check(s) failed on $sha"
-            elif (( total == 0 )); then
-              # The update workflows start the checks themselves; none after a day means that failed.
-              if (( $(date +%s) - $(date -d "$created" +%s) > 86400 )); then
-                report_failure "$number" "$title" "$url" "no checks ran on $sha"
-              fi
             elif (( pending > 0 )); then
-              echo "Waiting for #$number ($pending check(s) running)" >> "$GITHUB_STEP_SUMMARY"
+              summary "Waiting for #$number ($pending check(s) running)"
+            elif [[ -n "$missing" ]]; then
+              # The update workflows and this one start the checks; still missing after a day means that failed.
+              if older_than "$created" 1; then
+                report_failure "$number" "$title" "$url" "check(s) $missing did not run on $sha"
+              else
+                summary "Waiting for #$number (no $missing yet)"
+              fi
+            elif (( merged > 0 )); then
+              summary "#$number passed; one merge per run, next run merges it"
             elif gh pr merge "$number" --squash --subject "$title (#$number)" --body ""; then
-              merged=$((merged + 1))
-              echo "Merged #$number: $title" >> "$GITHUB_STEP_SUMMARY"
-            elif (( $(date +%s) - $(date -d "$created" +%s) > 3 * 86400 )); then
-              report_failure "$number" "$title" "$url" "it passed its checks but could not be merged for 3 days (conflict?)"
+              merged=1
+              summary "Merged #$number: $title"
+            elif older_than "$created" 3; then
+              report_failure "$number" "$title" "$url" "it passed its checks but could not be merged for 3 days (conflict?)$rebase_hint"
             else
-              echo "Could not merge #$number yet (conflict or behind main); next run retries" >> "$GITHUB_STEP_SUMMARY"
+              summary "Could not merge #$number yet (conflict?); next run retries"
             fi
           done < <(gh pr list --state open --limit 100 \
-            --json number,headRefName,headRefOid,createdAt,url,title \
-            --jq '.[] | [.number, .headRefName, .headRefOid, .createdAt, .url, .title] | @tsv')
-
-          # Last, so the release includes what merged before it. It changes only the
-          # changelog and version, and release-please updates it again on the next run.
-          if [[ -n "$release_pr" ]] && gh pr merge "$release_pr" --squash \
-            --subject "$(gh pr view "$release_pr" --json title --jq .title) (#$release_pr)" --body ""; then
-            merged=$((merged + 1))
-            echo "Merged release PR #$release_pr" >> "$GITHUB_STEP_SUMMARY"
-          fi
+            --json number,headRefName,headRefOid,createdAt,url,mergeStateStatus,isCrossRepository,author,title \
+            --jq '.[] | [.number, .headRefName, .headRefOid, .createdAt, .url, .mergeStateStatus,
+              ((.isCrossRepository | not) and ((.headRefName | startswith("dependabot/") | not) or .author.login == "app/dependabot")),
+              .title] | @tsv')
 
           # Close failure issues whose PR is no longer open: merged, or closed (e.g. superseded
           # by a Dependabot group). Runs after the merges above, so it also covers those.
@@ -98,7 +186,7 @@ jobs:
               state="$(gh pr view "$pr" --json state --jq .state)"
               if [[ "$state" != OPEN ]]; then
                 gh issue close "$issue" --comment "Resolved: #$pr is ${state,,}."
-                echo "Closed #$issue (#$pr ${state,,})" >> "$GITHUB_STEP_SUMMARY"
+                summary "Closed #$issue (#$pr ${state,,})"
               fi
             done
 
@@ -106,5 +194,5 @@ jobs:
             gh workflow run image.yml --ref main
           fi
           # Always: a merge can succeed even when gh reports an error (e.g. a 502), and
-          # release-please does nothing when there is nothing to release.
+          # release.yml also finishes a release an earlier run left incomplete.
           gh workflow run release.yml --ref main

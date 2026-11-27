@@ -1,7 +1,8 @@
 # Weekly: if GloriousEggroll/proton-ge-custom has a newer GE-Proton release than
-# container/base.dockerfile's PROTON_VERSION, open a PR bumping it and start the image
-# build + smoke tests on its branch (PRs opened with GITHUB_TOKEN don't trigger CI, but
-# workflow_dispatch does). auto-merge.yml merges the PR once they pass.
+# container/base.dockerfile's PROTON_VERSION, open a PR bumping it, with its `Release:` line,
+# and start the checks (python, cli, image, version) on its branch (PRs opened with
+# GITHUB_TOKEN don't trigger CI, but workflow_dispatch does). auto-merge.yml merges the PR
+# once they pass.
 name: GE-Proton update
 
 on:
@@ -10,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write # start image.yml on the branch
+  actions: write # start the checks on the branch
   contents: write
   pull-requests: write
 
@@ -19,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # cli-v* tags for release-version.py latest
+          fetch-tags: true
       - name: Open a PR for a newer GE-Proton
         env:
           GH_TOKEN: ${{ github.token }}
@@ -44,11 +48,18 @@ jobs:
           fi
           title="build(container): update GE-Proton to $latest"
           sed -i "s/^ARG PROTON_VERSION=.*/ARG PROTON_VERSION=$latest/" "$file"
+          description="GE-Proton $current → $latest ([release](https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/$tag)). The checks run on this branch; auto-merge.yml merges it when they pass."
+          # Before the push: a failure here leaves no branch without a PR.
+          latest_tag="$(python3 .github/release-version.py latest)"
+          release="$(python3 .github/release-version.py next --title "$title" --latest-tag "$latest_tag")"
+          body="$description"
+          [[ -z "$release" ]] || body+=$'\n\nRelease: '"$release"
           git switch -c "$branch"
           git -c user.name="github-actions[bot]" \
             -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
             commit -am "$title"
           git push -u origin "$branch"
-          gh pr create --base main --head "$branch" --title "$title" \
-            --body "GE-Proton $current → $latest ([release](https://github.com/GloriousEggroll/proton-ge-custom/releases/tag/$tag)). The image build and smoke tests run on this branch; auto-merge.yml merges it when they pass."
-          gh workflow run image.yml --ref "$branch"
+          gh pr create --base main --head "$branch" --title "$title" --body "$body"
+          for workflow in python.yml cli.yml image.yml version.yml; do
+            gh workflow run "$workflow" --ref "$branch"
+          done

@@ -82,7 +82,7 @@ def _fake_tar_create(monkeypatch: pytest.MonkeyPatch, mod, codes: list[int]) -> 
         calls.append(code)
         if code == 0:
             return real_run(cmd, **kwargs)
-        Path(cmd[2]).write_text("half")
+        Path(cmd[cmd.index("-czf") + 1]).write_text("half")
         return subprocess.CompletedProcess(cmd, code, "", "file changed as we read it")
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)

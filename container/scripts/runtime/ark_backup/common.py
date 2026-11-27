@@ -22,12 +22,15 @@ def tar_create_args(output: Path, source_dir: Path, excludes: Sequence[str], des
     output_name = output.name
     target = str(dest or output)
     source = [*(f"--exclude={item}" for item in excludes), "-C", str(source_dir), "."]
+    # Lowest CPU and idle disk priority: the ARK server in the same container comes first.
+    tar = ["nice", "-n", "19", "ionice", "-c", "3", "tar"]
     if output_name.endswith(".tar"):
-        return ["tar", "-cf", target, *source]
+        return [*tar, "-cf", target, *source]
     if output_name.endswith(".tar.gz"):
-        return ["tar", "-czf", target, *source]
+        return [*tar, "-czf", target, *source]
     if output_name.endswith(".tar.zst"):
-        return ["tar", "--zstd", "-cf", target, *source]
+        # Level 9: a quarter smaller than gzip -6, and faster; zstd runs one thread.
+        return [*tar, "-I", "zstd -9", "-cf", target, *source]
     raise ValueError(f"output must end with .tar, .tar.gz, or .tar.zst: {output}")
 
 

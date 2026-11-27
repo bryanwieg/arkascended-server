@@ -1,7 +1,7 @@
 # Reconfigure an Instance
 
-Change session name, passwords, mods, cluster, ports or timezone of an
-existing instance.
+Change session name, passwords, mods, cluster, ports, timezone or CPU
+priority of an existing instance.
 
 ## Apply one or more setting changes
 
@@ -22,6 +22,7 @@ Any combination in one command:
 | `--cluster-id` | `CLUSTER_ID`: cluster for character, item and dino transfers |
 | `--asa-port` | Game UDP port (host and container port kept in sync) |
 | `--rcon-port` | Published RCON host port (maps to `27020/tcp`) used by stop/save/backup |
+| `--cpu-shares` | `cpu_shares`: CPU weight when the host's CPU is busy (`create instance` writes 4096; Docker's default is 1024) |
 | `--tz` | `TZ` of the container (e.g. `America/New_York`) |
 | `--map-name` | `MAP_NAME`; only if not set yet, see [Change the map](#change-the-map) |
 

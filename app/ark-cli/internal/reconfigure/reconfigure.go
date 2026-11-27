@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/types"
@@ -43,6 +44,7 @@ type reconfigureCommandRequest struct {
 	asaPortSet        bool
 	rconPortSet       bool
 	rconHostIPSet     bool
+	cpuSharesSet      bool
 
 	tz             string
 	mapName        string
@@ -54,6 +56,7 @@ type reconfigureCommandRequest struct {
 	asaPort        int
 	rconPort       int
 	rconHostIP     string // "" publishes on all interfaces; see setRCONHostIP
+	cpuShares      int64
 }
 
 func (r reconfigureCommandRequest) hasSettingUpdates() bool {
@@ -66,7 +69,8 @@ func (r reconfigureCommandRequest) hasSettingUpdates() bool {
 		r.clusterIDSet ||
 		r.asaPortSet ||
 		r.rconPortSet ||
-		r.rconHostIPSet
+		r.rconHostIPSet ||
+		r.cpuSharesSet
 }
 
 func RunReconfigure(d *core.AppDeps, args []string) error {
@@ -86,6 +90,7 @@ func RunReconfigure(d *core.AppDeps, args []string) error {
 	clusterID := fs.String("cluster-id", "", "Set CLUSTER_ID environment value (instances with the same ID share transfers; \"\" clears it).")
 	asaPort := fs.String("asa-port", "", "Set published ARK UDP port (host and container port are kept in sync).")
 	rconPort := fs.String("rcon-port", "", "Set published RCON TCP host port (maps to 27020/tcp).")
+	cpuShares := fs.String("cpu-shares", "", "Set compose cpu_shares, the instance's CPU weight under load (2-262144; Docker's default is 1024).")
 	force := fs.Bool("force", false, "Allow reconfiguring while the instance is running (restart required for changes to take effect).")
 	restartNow := fs.Bool("restart", false, "Restart the target instance immediately after updating compose.")
 
@@ -118,6 +123,7 @@ func RunReconfigure(d *core.AppDeps, args []string) error {
 		*clusterID,
 		*asaPort,
 		*rconPort,
+		*cpuShares,
 		cleared...,
 	)
 	if err != nil {
@@ -139,7 +145,8 @@ func buildReconfigureCommandRequest(
 	mods,
 	clusterID,
 	asaPort,
-	rconPort string,
+	rconPort,
+	cpuShares string,
 	cleared ...string, // clearableFlags passed with an empty value
 ) (reconfigureCommandRequest, error) {
 	if err := runtime.ValidateComposeName(instance, "instance"); err != nil {
@@ -163,6 +170,7 @@ func buildReconfigureCommandRequest(
 		clusterIDSet:      clusterID != "" || slices.Contains(cleared, "cluster-id"),
 		asaPortSet:        asaPort != "",
 		rconPortSet:       rconPort != "",
+		cpuSharesSet:      cpuShares != "",
 		tz:                tz,
 		mapName:           mapName,
 		sessionName:       sessionName,
@@ -226,6 +234,13 @@ func buildReconfigureCommandRequest(
 		}
 		req.rconPort = parsed
 	}
+	if req.cpuSharesSet {
+		parsed, err := strconv.ParseInt(cpuShares, 10, 64)
+		if err != nil || parsed < 2 || parsed > 262144 {
+			return reconfigureCommandRequest{}, fmt.Errorf("Error: --cpu-shares must be a whole number from 2 to 262144, got %q.", cpuShares)
+		}
+		req.cpuShares = parsed
+	}
 	if !req.hasSettingUpdates() {
 		return reconfigureCommandRequest{}, errors.New("Error: provide at least one setting flag to reconfigure.")
 	}
@@ -272,6 +287,12 @@ func runReconfigureCommand(req reconfigureCommandRequest) error {
 		return err
 	}
 	changed = changed || portChanged
+	if req.cpuSharesSet && svc.CPUShares != req.cpuShares {
+		if err := composeutil.MutateService(project, req.instance, func(s *types.ServiceConfig) { s.CPUShares = req.cpuShares }); err != nil {
+			return err
+		}
+		changed = true
+	}
 
 	if changed {
 		if err := core.CurrentAppDeps().ComposeService.SaveProject(core.CurrentAppDeps().Context(), composeFile, composeProject); err != nil {

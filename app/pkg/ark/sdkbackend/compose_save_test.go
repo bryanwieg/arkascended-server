@@ -134,6 +134,22 @@ func TestSaveProjectMapFormAndMissingSections(t *testing.T) {
 	}
 }
 
+func TestSaveProjectSetsCPUShares(t *testing.T) {
+	compose := "services:\n  asa1:\n    image: ark-server:latest\n    mem_reservation: 12G\n  asa2:\n    image: ark-server:latest\n    cpu_shares: 1024  # old\n    init: true\n"
+	saved, err := saveRoundTrip(t, map[string]string{"compose.yaml": compose}, func(p *types.Project) {
+		mutateService(t, p, "asa1", func(s *types.ServiceConfig) { s.CPUShares = 4096 })
+		mutateService(t, p, "asa2", func(s *types.ServiceConfig) { s.CPUShares = 8192 })
+	})
+	if err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	want := "services:\n  asa1:\n    image: ark-server:latest\n    mem_reservation: 12G\n    cpu_shares: 4096\n" +
+		"  asa2:\n    image: ark-server:latest\n    cpu_shares: 8192\n    init: true\n"
+	if saved != want {
+		t.Fatalf("saved file differs.\n--- got\n%s\n--- want\n%s", saved, want)
+	}
+}
+
 func TestSaveProjectRefusesEditsItCannotMakeSafely(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -150,6 +166,11 @@ func TestSaveProjectRefusesEditsItCannotMakeSafely(t *testing.T) {
 			name:    "environment inherited through a merge key",
 			compose: "x-base: &base\n  environment:\n    - MAP_NAME=TheIsland_WP\nservices:\n  asa1:\n    <<: *base\n    image: ark-server:latest\n",
 			mutate:  func(s *types.ServiceConfig) { composeutil.SetEnv(s.Environment, "ASA_PORT", "7778") },
+		},
+		{
+			name:    "cpu_shares removed",
+			compose: "services:\n  asa1:\n    image: ark-server:latest\n    cpu_shares: 4096\n",
+			mutate:  func(s *types.ServiceConfig) { s.CPUShares = 0 },
 		},
 		{
 			name:    "change outside the editable fields",

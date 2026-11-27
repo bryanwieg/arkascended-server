@@ -34,6 +34,7 @@ func TestBuildReconfigureCommandRequestRequiresSettingFlag(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err == nil {
 		t.Fatal("expected missing settings error")
@@ -47,6 +48,7 @@ func TestBuildReconfigureCommandRequestRejectsAllTarget(t *testing.T) {
 		false,
 		false,
 		"America/New_York",
+		"",
 		"",
 		"",
 		"",
@@ -76,6 +78,7 @@ func TestBuildReconfigureCommandRequestParsesPorts(t *testing.T) {
 		"",
 		"27015",
 		"27020",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("buildReconfigureCommandRequest: %v", err)
@@ -103,6 +106,7 @@ func TestBuildReconfigureCommandRequestValidatesPasswords(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err == nil {
 		t.Fatal("expected password validation error")
@@ -111,7 +115,7 @@ func TestBuildReconfigureCommandRequestValidatesPasswords(t *testing.T) {
 
 func TestBuildReconfigureCommandRequestRejectsMalformedMods(t *testing.T) {
 	for _, mods := range []string{"940975;1386057", "abc", "940975,"} {
-		_, err := buildReconfigureCommandRequest("asa1", "", false, false, "", "", "", "", "", mods, "", "", "")
+		_, err := buildReconfigureCommandRequest("asa1", "", false, false, "", "", "", "", "", mods, "", "", "", "")
 		if err == nil || !strings.Contains(err.Error(), "--mods") {
 			t.Fatalf("mods %q: expected --mods error, got %v", mods, err)
 		}
@@ -119,7 +123,7 @@ func TestBuildReconfigureCommandRequestRejectsMalformedMods(t *testing.T) {
 }
 
 func TestBuildReconfigureCommandRequestRejectsMalformedClusterID(t *testing.T) {
-	_, err := buildReconfigureCommandRequest("asa1", "", false, false, "", "", "", "", "", "", "my cluster", "", "")
+	_, err := buildReconfigureCommandRequest("asa1", "", false, false, "", "", "", "", "", "", "my cluster", "", "", "")
 	if err == nil || !strings.Contains(err.Error(), "--cluster-id") {
 		t.Fatalf("expected --cluster-id error, got %v", err)
 	}
@@ -540,6 +544,7 @@ func TestBuildReconfigureRequestWarnsForMapNameMissingWP(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -572,6 +577,7 @@ func TestBuildReconfigureRequestNoWarningForMapNameWithWP(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -581,5 +587,34 @@ func TestBuildReconfigureRequestNoWarningForMapNameWithWP(t *testing.T) {
 	}
 	if strings.Contains(warnBuf.String(), "WARNING") {
 		t.Fatal("expected no warning for map name with _WP suffix")
+	}
+}
+
+func TestBuildReconfigureCommandRequestValidatesCPUShares(t *testing.T) {
+	for _, v := range []string{"1", "262145", "abc", "4096.5"} {
+		_, err := buildReconfigureCommandRequest("asa1", "", false, false, "", "", "", "", "", "", "", "", "", v)
+		if err == nil || !strings.Contains(err.Error(), "--cpu-shares") {
+			t.Fatalf("cpu-shares %q: expected --cpu-shares error, got %v", v, err)
+		}
+	}
+}
+
+func TestRunReconfigureSetsCPUShares(t *testing.T) {
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	seed := "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:latest\n    mem_reservation: 12G\n"
+	if err := os.WriteFile(composePath, []byte(seed), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	withPatchedAppDeps(t, nil, func() {
+		if err := RunReconfigure(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--instance", "asa1", "--cpu-shares", "4096"}); err != nil {
+			t.Fatalf("runReconfigure: %v", err)
+		}
+	})
+	project, err := testutil.LoadComposeFromPathForTest(composePath)
+	if err != nil {
+		t.Fatalf("LoadComposeFromPathForTest: %v", err)
+	}
+	if got := project.Services["asa1"].CPUShares; got != 4096 {
+		t.Fatalf("expected cpu_shares 4096, got %d", got)
 	}
 }

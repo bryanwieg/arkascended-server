@@ -30,10 +30,10 @@ def common_mod_fixture():
 
 
 def test_archive_args_produces_plain_tar_command(common_mod) -> None:
-    """archive_args returns a plain tar -cf command for a .tar output path."""
+    """archive_args returns a plain tar -cf command at low priority for a .tar output path."""
     output = Path("/home/ark-user/maintenance/backup.tar")
     args = common_mod.archive_args(output)
-    assert args[0] == "tar"
+    assert args[:7] == ["nice", "-n", "19", "ionice", "-c", "3", "tar"]
     assert "-cf" in args
     assert str(output) in args
 
@@ -47,10 +47,10 @@ def test_archive_args_produces_gzip_tar_command(common_mod) -> None:
 
 
 def test_archive_args_produces_zstd_tar_command(common_mod) -> None:
-    """archive_args returns a tar --zstd -cf command for a .tar.zst output path."""
+    """archive_args compresses a .tar.zst output with zstd level 9."""
     output = Path("/home/ark-user/maintenance/backup.tar.zst")
     args = common_mod.archive_args(output)
-    assert "--zstd" in args
+    assert args[args.index("-I") + 1] == "zstd -9"
     assert str(output) in args
 
 
@@ -75,6 +75,12 @@ def test_archive_args_exact_gzip_command(common_mod) -> None:
     """archive_args keeps its exact instance command: excludes Logs and clusters, archives Saved."""
     output = Path("/home/ark-user/maintenance/backup.tar.gz")
     assert common_mod.archive_args(output) == [
+        "nice",
+        "-n",
+        "19",
+        "ionice",
+        "-c",
+        "3",
         "tar",
         "-czf",
         str(output),
@@ -91,7 +97,23 @@ def test_tar_create_args_writes_to_dest_with_output_compression(common_mod) -> N
     output = Path("/out/cluster.tar.zst")
     dest = Path("/out/cluster.tar.zst.partial")
     args = common_mod.tar_create_args(output, Path("/data"), ["./skip"], dest=dest)
-    assert args == ["tar", "--zstd", "-cf", str(dest), "--exclude=./skip", "-C", "/data", "."]
+    assert args == [
+        "nice",
+        "-n",
+        "19",
+        "ionice",
+        "-c",
+        "3",
+        "tar",
+        "-I",
+        "zstd -9",
+        "-cf",
+        str(dest),
+        "--exclude=./skip",
+        "-C",
+        "/data",
+        ".",
+    ]
 
 
 def _fake_completed(stdout: str = "", stderr: str = "", returncode: int = 0) -> subprocess.CompletedProcess:

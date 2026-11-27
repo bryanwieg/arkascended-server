@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.8.0...cli-v0.9.0) (2026-11-27)
+
+
+### Features
+
+* **cli:** rcon, save and restart schedules, stored in docker-compose.yaml ([#57](https://github.com/bryanwieg/arkascended-server/issues/57)) ([cb44cfb](https://github.com/bryanwieg/arkascended-server/commit/cb44cfb6f5a1ce9a48869c15f4f196f511ebd4f2))
+* **cli:** scheduled updates and an image build without bash or a container CLI ([#59](https://github.com/bryanwieg/arkascended-server/issues/59)) ([b4335c6](https://github.com/bryanwieg/arkascended-server/commit/b4335c661f99748d9f86a1f95a2286c5e86032f6))
+
+
+### Performance Improvements
+
+* **update:** build the server image from its context, without the temporary files image ([#60](https://github.com/bryanwieg/arkascended-server/issues/60)) ([bebd3de](https://github.com/bryanwieg/arkascended-server/commit/bebd3de815fbc72c51b93590d41f317909875286))
+
 ## [0.8.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.7.2...cli-v0.8.0) (2026-11-26)
 
 

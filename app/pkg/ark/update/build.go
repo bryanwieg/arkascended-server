@@ -20,8 +20,8 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 )
 
-// FilesImageRepo is the local server files image, built from the SteamCMD
-// download and removed once the runtime image is built.
+// FilesImageRepo is the server files image older ark-cli versions built;
+// image cleanup still removes the ones they left behind.
 const FilesImageRepo = "ark-server-files"
 
 // StateDir returns <compose file's directory>/.ark-manage as an absolute path.
@@ -84,10 +84,15 @@ func (s *Service) existingBuild(ctx context.Context, image, buildID string) (Bui
 }
 
 func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (BuildResult, error) {
+	contextDir := filepath.Join(stateDir, "build", "context")
+	arkFiles := filepath.Join(contextDir, "ark-files")
+	// A killed earlier build may have left the server files here; they must not count against free space.
+	if err := os.RemoveAll(arkFiles); err != nil {
+		return BuildResult{}, fmt.Errorf("Error: could not remove %s: %w", arkFiles, err)
+	}
 	if err := s.checkBuildDisk(stateDir); err != nil {
 		return BuildResult{}, err
 	}
-	contextDir := filepath.Join(stateDir, "build", "context")
 	if err := arkcontainer.Extract(contextDir); err != nil {
 		return BuildResult{}, fmt.Errorf("Error: could not write the image build files to %s: %w", contextDir, err)
 	}
@@ -96,22 +101,33 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 		return BuildResult{}, err
 	}
 
-	filesImage := FilesImageRepo + ":" + buildID
+	// The download (work/out) is moved into the context for the stage 1 build only;
+	// work/cache keeps the install between builds.
+	outDir := filepath.Join(stateDir, "build", "work", "out")
+	defer os.RemoveAll(outDir)
+	defer os.RemoveAll(arkFiles)
 	s.logger.Info("downloading the ARK server with SteamCMD", "build_id", buildID)
-	if err := s.buildFilesImage(ctx, stateDir, filepath.Join(contextDir, "files"), filesImage, buildID); err != nil {
+	if err := s.downloadServerFiles(ctx, stateDir, filepath.Join(contextDir, "files"), buildID); err != nil {
 		return BuildResult{}, fmt.Errorf("Error: server files build failed: %w", err)
+	}
+	if err := os.Rename(outDir, arkFiles); err != nil {
+		return BuildResult{}, fmt.Errorf("Error: could not move the server files into the build context: %w", err)
 	}
 
 	baseTag := DefaultLocalImageName + ":" + LocalBaseTagSuffix
-	s.logger.Info("building base image", "tag", baseTag, "files_image", filesImage)
+	s.logger.Info("building base image", "tag", baseTag)
 	if err := s.engine.BuildImage(ctx, ark.BuildRequest{
 		Dockerfile: filepath.Join(contextDir, LocalDockerfilePath),
 		Tag:        baseTag,
 		Context:    contextDir,
 		NoCache:    envOrDefault("ARK_BUILD_NO_CACHE", "") != "",
-		BuildArgs:  map[string]string{"BASE_IMAGE": baseImage, "ARK_FILES_IMAGE": filesImage},
+		BuildArgs:  map[string]string{"BASE_IMAGE": baseImage},
 	}); err != nil {
 		return BuildResult{}, fmt.Errorf("Error: base image build failed: %w", err)
+	}
+	// So the labels build does not upload the server files with its context.
+	if err := os.RemoveAll(arkFiles); err != nil {
+		return BuildResult{}, fmt.Errorf("Error: could not remove %s: %w", arkFiles, err)
 	}
 	version, err := s.engine.ReadFileFromImage(ctx, baseTag, ContainerVersionPath)
 	if err != nil {
@@ -141,17 +157,13 @@ func (s *Service) buildImage(ctx context.Context, stateDir, buildID string) (Bui
 	}); err != nil {
 		return BuildResult{}, fmt.Errorf("Error: labeled image build failed: %w", err)
 	}
-	if err := s.engine.RemoveImage(ctx, filesImage); err != nil {
-		s.logger.Warn("could not remove the server files image", "image", filesImage, "error", err)
-	}
 	s.logger.Info("build complete", "tag", image)
 	return BuildResult{Image: image, BuildID: buildID, Version: version, Built: true}, nil
 }
 
-// buildFilesImage downloads the server with SteamCMD in a container
-// (download.sh, into stateDir/build/work) and builds filesImage from work/out.
-// work/cache keeps the install between builds; work/out is removed.
-func (s *Service) buildFilesImage(ctx context.Context, stateDir, filesDir, filesImage, buildID string) error {
+// downloadServerFiles downloads the server with SteamCMD in a container
+// (download.sh) into stateDir/build/work/out, using work/cache.
+func (s *Service) downloadServerFiles(ctx context.Context, stateDir, filesDir, buildID string) error {
 	const steamcmdImage = "arkascended-steamcmd"
 	workDir := filepath.Join(stateDir, "build", "work")
 	stateSum := sha256.Sum256([]byte(stateDir))
@@ -178,8 +190,6 @@ func (s *Service) buildFilesImage(ctx context.Context, stateDir, filesDir, files
 	if err := s.seedDepotCache(ctx, filepath.Join(workDir, "cache", "depotcache")); err != nil {
 		return err
 	}
-	outDir := filepath.Join(workDir, "out")
-	defer os.RemoveAll(outDir)
 	_ = os.Remove(filepath.Join(workDir, "failure")) // a reason left by an earlier run
 	exitCode, err := s.engine.RunContainer(ctx, ark.RunContainerRequest{
 		// Named per compose directory, so a run a killed scheduler left behind is replaced.
@@ -201,23 +211,7 @@ func (s *Service) buildFilesImage(ctx context.Context, stateDir, filesDir, files
 		}
 		return fmt.Errorf("exit code %d", exitCode)
 	}
-	// BuildImage needs the Dockerfile inside its context.
-	dockerfile, err := os.ReadFile(filepath.Join(filesDir, "dockerfile"))
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "dockerfile"), dockerfile, 0o644); err != nil { //nolint:gosec // G703: outDir is under the caller's own <compose dir>/.ark-manage path
-		return err
-	}
-	return s.engine.BuildImage(ctx, ark.BuildRequest{
-		Dockerfile: filepath.Join(outDir, "dockerfile"),
-		Tag:        filesImage,
-		Context:    outDir,
-		BuildArgs:  map[string]string{"ARK_STEAM_BUILD_ID": buildID},
-	})
+	return nil
 }
 
 // seedDepotCache fills a missing depot cache from ARK_DEPOTCACHE_SEED_IMAGE

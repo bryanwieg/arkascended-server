@@ -1,20 +1,17 @@
 # ARK server image: the base (base.dockerfile) plus one ARK build's server files.
 # BASE_IMAGE: ghcr.io/bryanwieg/ark-server-base:<tag> (pulled, or built from base.dockerfile).
-# ARK_FILES_IMAGE: the local server files image for the Steam build (files/build.sh).
+# ark-files/: download.sh's output (steam-client, layers/0..4), moved into the context for this build.
 ARG BASE_IMAGE
-ARG ARK_FILES_IMAGE
-
-FROM ${ARK_FILES_IMAGE} AS ark_files
 
 FROM ${BASE_IMAGE} AS runtime
 
 # Proton's STEAM_COMPAT_CLIENT_INSTALL_PATH points at SteamCMD's client files.
-COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/steam-client /home/ark-user/.local/share/Steam
-COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/0 /home/ark-user/ark-server
-COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/1 /home/ark-user/ark-server
-COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/2 /home/ark-user/ark-server
-COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/3 /home/ark-user/ark-server
-COPY --from=ark_files --chown=ark-user:ark-user /home/ark-user/layers/4 /home/ark-user/ark-server
+COPY --chown=ark-user:ark-user ark-files/steam-client /home/ark-user/.local/share/Steam
+COPY --chown=ark-user:ark-user ark-files/layers/0 /home/ark-user/ark-server
+COPY --chown=ark-user:ark-user ark-files/layers/1 /home/ark-user/ark-server
+COPY --chown=ark-user:ark-user ark-files/layers/2 /home/ark-user/ark-server
+COPY --chown=ark-user:ark-user ark-files/layers/3 /home/ark-user/ark-server
+COPY --chown=ark-user:ark-user ark-files/layers/4 /home/ark-user/ark-server
 # After the ARK files, so our XAudio redist wins if ARK ever ships the same file.
 RUN cp /home/ark-user/redist/xaudio2_9redist.dll /home/ark-user/ark-server/ShooterGame/Binaries/Win64/
 

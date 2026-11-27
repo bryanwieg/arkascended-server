@@ -27,7 +27,7 @@ import (
 // clearSchedulerEnv unsets every variable DetectServiceSettings reads.
 func clearSchedulerEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DOCKER_HOST", "TZ", "ARK_BACKUP_DIR", "COMPOSE_PROJECT_NAME", "XDG_RUNTIME_DIR", "ARK_SCHEDULER_SOCKET", "ARK_SCHEDULER_SOCKET_GID"} {
+	for _, k := range []string{"DOCKER_HOST", "TZ", "ARK_BACKUP_DIR", "COMPOSE_PROJECT_NAME", "XDG_RUNTIME_DIR", "ARK_SCHEDULER_SOCKET", "ARK_SCHEDULER_SOCKET_GID", "ARK_UPDATE_WEBHOOK_URL"} {
 		testutil.SetEnv(t, k, "")
 	}
 }
@@ -289,6 +289,24 @@ func TestRenderServiceOmitsBackupDirWhenUnset(t *testing.T) {
 	got := RenderService(ServiceSettings{Image: "i", ComposeDir: "/srv/ark", Runtime: "docker", Socket: "/s", TZ: "UTC", ComposeFile: "/srv/ark/c.yml"})
 	if strings.Contains(got, "ARK_BACKUP_DIR") || strings.Count(got, `:/srv/ark"`) != 1 || strings.Contains(got, "ports:") {
 		t.Fatalf("RenderService:\n%s", got)
+	}
+}
+
+func TestRenderServicePassesWebhookURL(t *testing.T) {
+	base := ServiceSettings{Image: "i", ComposeDir: "/srv/ark", Runtime: "docker", Socket: "/s", TZ: "UTC", ComposeFile: "/srv/ark/c.yml"}
+	if got := RenderService(base); strings.Contains(got, "ARK_UPDATE_WEBHOOK_URL") {
+		t.Fatalf("unset webhook rendered:\n%s", got)
+	}
+	const url = "https://hooks.example/x?sig=a$b"
+	withURL := base
+	withURL.WebhookURL = url
+	got := RenderService(withURL)
+	if !strings.Contains(got, `- "ARK_UPDATE_WEBHOOK_URL=https://hooks.example/x?sig=a$$b"`) {
+		t.Fatalf("webhook not escaped:\n%s", got)
+	}
+	env := loadRendered(t, got).Project.Services[ark.SchedulerService].Environment["ARK_UPDATE_WEBHOOK_URL"]
+	if env == nil || *env != url {
+		t.Fatalf("loaded ARK_UPDATE_WEBHOOK_URL = %v, want %q", env, url)
 	}
 }
 

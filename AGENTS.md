@@ -61,9 +61,16 @@ ark-cli there) and is never committed.
   regarding the environment var ARK_TMP_DIR.
 - Do not commit agent plans to Git.
 - **Never push to, commit to, or merge into `main`.** Work on a feature
-  branch, push it, and open a pull request; the maintainer merges, squash
-  only. *Why:* every change gets review and CI, and the squash commit's
-  Conventional Commit title drives release-please.
+  branch, push it, and open a pull request; the maintainer merges (squash by
+  default). *Why:* every change gets review and CI.
+- **PR titles are Conventional Commits, and a releasable PR states
+  `Release: X.Y.Z` in its description** (`feat`, `fix`, `perf`, `revert`,
+  `deps`, `build` or a breaking change; none for other types). Get the version
+  with `python3 .github/release-version.py next --title "<title>" --latest-tag
+  "$(python3 .github/release-version.py latest)"` after `git fetch --tags`.
+  *Why:* the required `version` check fails on a wrong or missing line, and
+  merging a PR with the line releases that version; see
+  [ci.md](docs/dev/reference/ci.md#releases).
 
 ### Preferences — follow unless you have a reason not to
 
@@ -89,7 +96,7 @@ ark-cli there) and is never committed.
 | [Backend reference](docs/dev/reference/backends.md) | Interface methods, conformance tests, Podman requirements |
 | [Add a backend method](docs/dev/how-to/add-backend-method.md) | Extending `ContainerEngine`/`ComposeService` |
 | [Image build pipeline](docs/dev/reference/image-build.md) | Image build stages, build/update env vars, CI build scripts |
-| [CI and releases](docs/dev/reference/ci.md) | GitHub Actions workflows, release-please versioning, image smoke tests |
+| [CI and releases](docs/dev/reference/ci.md) | GitHub Actions checks, change groups, `Release:` line versioning, image smoke tests |
 | [Repo map](docs/dev/reference/repo-map.md) | Discovering file locations across host CLI, domain packages, container scripts, and tests |
 | [Configuration reference](docs/user/reference/configuration.md) | Adding or using environment variables in container scripts or CLI |
 | [Dev environment setup](docs/dev/tutorials/dev-environment.md) | Clone → build → first test passing |

@@ -1,47 +1,26 @@
 # Container pipeline:
-# - every change under container/: Python unit tests for the container scripts, plus the lite
-#   tests (`-m lite`): container and CLI tests on the lite image (real runtime scripts, a fake ARK
-#   server, no ARK files; tests/helpers/lite_image.py), including a real OOM kill
-# - daily, manual, and pushes to main under container/: build the image from Steam's current
-#   ARK build and run the smoke tests (healthy start and clean stop). No ARK image is published:
-#   ark-cli builds the image on each host. The daily run is an early warning that a new ARK
-#   build breaks the image. On main, a passing run publishes the ARK-free base image
+# - PRs and dispatched bot branches: `unit` (Python unit tests for the container scripts and the
+#   CI scripts, plus the lite tests (`-m lite`): container and CLI tests on the lite image (real
+#   runtime scripts, a fake ARK server, no ARK files; tests/helpers/lite_image.py), including a
+#   real OOM kill) and `smoke` (build the image from Steam's current ARK build, then a healthy
+#   start and clean stop). Both report on every PR (required checks) and skip when nothing in
+#   their group (.github/changed.sh) changed or this content already passed.
+# - daily: `smoke` on main, the early warning that a new ARK build breaks the image; a failure
+#   opens an issue. No ARK image is published: ark-cli builds the image on each host.
+# - main (base.dockerfile pushes, manual, daily): `publish-base` pushes the ARK-free base image
 #   (container/base.dockerfile) to GHCR when that tag is missing.
 name: Container image
 
 on:
   pull_request:
-    paths:
-      - "container/**"
-      - "tests/container/unit/**"
-      - "tests/container/integration/**"
-      - "tests/app/ark_cli/integration/**"
-      - "tests/fixtures/lite_image/**"
-      - "tests/helpers/**"
-      - "tests/conftest.py"
-      - "app/ark-cli/**"
-      - "app/pkg/**"
-      - "requirements-dev.txt"
-      - ".github/build-image.sh"
-      - ".github/workflows/image.yml"
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
     paths:
-      - "container/**"
-      - "tests/container/unit/**"
-      - "tests/container/integration/**"
-      - "tests/app/ark_cli/integration/**"
-      - "tests/fixtures/lite_image/**"
-      - "tests/helpers/**"
-      - "tests/conftest.py"
-      - "app/ark-cli/**"
-      - "app/pkg/**"
-      - "requirements-dev.txt"
-      - ".github/build-image.sh"
-      - ".github/workflows/image.yml"
+      - "container/base.dockerfile"
   schedule:
     - cron: "17 6 * * *"
-  workflow_dispatch:
+  workflow_dispatch: # bot branches; on main, publish-base only
 
 permissions:
   contents: read
@@ -50,15 +29,57 @@ env:
   IMAGE_NAME: ark-server
 
 jobs:
+  changes:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      unit-work: ${{ steps.group.outputs.unit-work }}
+      unit-hash: ${{ steps.group.outputs.unit-hash }}
+      unit-passed: ${{ steps.unit.outputs.cache-hit }}
+      smoke-work: ${{ steps.group.outputs.smoke-work }}
+      smoke-hash: ${{ steps.group.outputs.smoke-hash }}
+      smoke-passed: ${{ steps.smoke.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # origin/main and the merge base
+      - id: group
+        run: |
+          for group in unit smoke; do
+            work=$(.github/changed.sh "$group")
+            hash=$(.github/changed.sh hash "$group")
+            echo "$group-work=$work" >> "$GITHUB_OUTPUT"
+            echo "$group-hash=$hash" >> "$GITHUB_OUTPUT"
+          done
+      - id: unit
+        uses: actions/cache/restore@v6
+        with:
+          path: .passed
+          key: passed-unit-${{ steps.group.outputs.unit-hash }}
+          lookup-only: true
+      - id: smoke
+        uses: actions/cache/restore@v6
+        with:
+          path: .passed
+          key: passed-smoke-${{ steps.group.outputs.smoke-hash }}
+          lookup-only: true
+
   unit:
+    needs: changes
+    # Runs (and fails) when changes failed: a skipped required check counts as passed.
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && (needs.changes.result != 'success' || (needs.changes.outputs.unit-work == 'true' && needs.changes.outputs.unit-passed != 'true')) }}
     runs-on: ubuntu-latest
     steps:
+      - if: needs.changes.result != 'success'
+        run: |
+          echo "changes job did not succeed" >&2
+          exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
       - run: pip install -r requirements-dev.txt
-      - run: pytest -m unit tests/container/unit
+      - run: pytest -m unit tests/container/unit tests/test_ci_workflows.py tests/test_release_version.py
       # The CLI lite tests build ark-cli.
       - uses: actions/setup-go@v7
         with:
@@ -78,21 +99,26 @@ jobs:
       # the session never builds the ARK image. Includes a real kernel OOM kill under a cgroup limit.
       # docker/ only: podman/conftest.py switches the whole session to Podman when imported.
       - run: pytest -rs -m lite tests/container/integration tests/app/ark_cli/integration/docker
+      - run: echo "${{ needs.changes.outputs.unit-hash }}" > .passed
+      - uses: actions/cache/save@v6
+        with:
+          path: .passed
+          key: passed-unit-${{ needs.changes.outputs.unit-hash }}
 
   smoke:
-    needs: unit
-    # PRs run only the unit tests, except Dependabot's Docker updates, which change
-    # what the image is built from (auto-merge.yml merges them only if this passes).
-    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'dependabot/docker/')
+    needs: [changes, unit]
+    # Daily on main without unit or markers; on PRs like unit, once unit passed or skipped.
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (needs.changes.result != 'skipped' && (needs.changes.result != 'success' || (needs.changes.outputs.smoke-work == 'true' && needs.changes.outputs.smoke-passed != 'true' && (needs.unit.result == 'success' || needs.unit.result == 'skipped'))))) }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write # publish the base image to GHCR
     timeout-minutes: 360
     concurrency:
-      group: image-smoke
-      cancel-in-progress: false
+      group: image-smoke-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name != 'schedule' }}
     steps:
+      - if: github.event_name != 'schedule' && needs.changes.result != 'success'
+        run: |
+          echo "changes job did not succeed" >&2
+          exit 1
       # Clear images and build cache first: leftover layers from an earlier run
       # sit next to the rebuilt ones and fill the disk. Runs before the build, so
       # a crashed run can't leave the next one short of space.
@@ -126,17 +152,13 @@ jobs:
           go-version-file: go.work
           cache: false
       - name: Build
-        id: build
         env:
           # The SteamCMD install isn't reused on a fresh runner; dropping it once the
           # server files are in the build context leaves room for the runtime image.
           ARK_BUILD_DELETE_CACHE: "1"
           # Docker's default seccomp profile blocks SteamCMD on GitHub-hosted runners.
           STEAMCMD_DOCKER_OPTS: --security-opt seccomp=unconfined
-        run: |
-          ./.github/build-image.sh | tee build.log
-          # build-image.sh prints BASE_IMAGE=<ref> last.
-          echo "base_image=$(tail -1 build.log | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+        run: ./.github/build-image.sh
       # A healthy start and clean stop (run-tests.py --suite smoke).
       - name: Prepare hosted runner for the smoke tests
         if: runner.environment == 'github-hosted'
@@ -190,26 +212,40 @@ jobs:
           include-hidden-files: true  # .tests/ is a dot-directory
           if-no-files-found: ignore
           retention-days: 14
-      # After the smoke tests passed: publish the base (ARK-free) for hosts to pull.
+      - if: github.event_name != 'schedule'
+        run: echo "${{ needs.changes.outputs.smoke-hash }}" > .passed
+      - if: github.event_name != 'schedule'
+        uses: actions/cache/save@v6
+        with:
+          path: .passed
+          key: passed-smoke-${{ needs.changes.outputs.smoke-hash }}
+
+  # The base (ARK-free) for hosts to pull, tagged like build-image.sh and ark-cli do.
+  publish-base:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # publish the base image to GHCR
+    steps:
+      - uses: actions/checkout@v7
       - uses: docker/login-action@v4
-        if: github.ref == 'refs/heads/main'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish base image
-        if: github.ref == 'refs/heads/main'
-        env:
-          BASE: ${{ steps.build.outputs.base_image }}
         run: |
-          if docker manifest inspect "$BASE" >/dev/null 2>&1; then
-            echo "Base $BASE already published" >> "$GITHUB_STEP_SUMMARY"
+          base="ghcr.io/bryanwieg/ark-server-base:$(sha256sum container/base.dockerfile | cut -c1-12)"
+          if docker manifest inspect "$base" >/dev/null 2>&1; then
+            echo "Base $base already published" >> "$GITHUB_STEP_SUMMARY"
           else
-            docker push "$BASE"
-            echo "Published $BASE" >> "$GITHUB_STEP_SUMMARY"
+            docker build -f container/base.dockerfile -t "$base" container
+            docker push "$base"
+            echo "Published $base" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # A failing smoke run on main (daily, or after a merge) opens an issue, so nobody has
+  # A failing daily smoke run on main opens an issue, so nobody has
   # to watch the runs: it is the early warning that a new ARK build breaks the image.
   alert:
     needs: smoke

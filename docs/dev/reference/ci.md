@@ -1,64 +1,130 @@
 # CI and Releases
 
-GitHub Actions: one test pipeline per shipped artifact (the `ark-cli` binary and
-the ARK-free base image), Python lint, a [release-please](https://github.com/googleapis/release-please)
-release workflow for `ark-cli`, and update workflows whose PRs merge themselves
-once tested (see [automated updates](#automated-updates)).
+GitHub Actions: checks on every pull request, one release per merged PR that
+states a version, base image publishing on `main`, and update workflows whose
+PRs merge themselves once tested (see [automated updates](#automated-updates)).
 
-Path-filtered workflows also trigger on changes to their own workflow file.
+## Checks
+
+Six check contexts report on **every** PR (opened, synchronized, reopened) and on
+every `workflow_dispatch` run of a branch. The `main` ruleset requires all six on
+an up-to-date branch. *Why every PR:* a required check that never reports blocks
+the PR, so no check workflow has `paths` filters; a job without work is skipped,
+and GitHub counts a skipped check as passed.
+
+| Check | Workflow | Group | Does |
+|---|---|---|---|
+| `ruff` | `python.yml` | `python` | `ruff check` + `ruff format --check` (`ruff.toml`) |
+| `test` | `cli.yml` | `go` | `go vet` + `go test` for `app/ark-cli`, `app/pkg/ark`, `app/ark-web`, `container` |
+| `lint` | `cli.yml` | `go` | `golangci-lint` (`.golangci.yml`), new findings only |
+| `unit` | `image.yml` | `unit` | `pytest -m unit` for the container scripts and the CI scripts, then every `lite` test on the [lite image](test-architecture.md#lite-image-no-ark-server) (container and CLI, including a real OOM kill); the Go build cache the tests use (`.go-cache`) is cached between runs |
+| `smoke` | `image.yml` | `smoke` | builds the image from Steam's current ARK build, then a healthy start and clean stop; see [image smoke tests](#image-smoke-tests) |
+| `version` | `version.yml` | none | the PR's `Release:` line matches its title and the latest `cli-v*` tag; see [releases](#releases). Also re-runs when the description is edited |
+
+**Change groups** (`.github/changed.sh`, the only place the paths live):
+`changed.sh GROUP` prints `true` when the branch's diff against its merge base
+with `origin/main` touches the group, and `changed.sh hash GROUP` prints a
+sha256 of the group's tracked files at `HEAD`. Docs (`*.md`, `docs/`) never
+count. Each group includes its own workflow file and `changed.sh`.
+
+| Group | Paths (summary) |
+|---|---|
+| `python` | `*.py`, `ruff.toml` |
+| `go` | `app/**`, `container/**` (embedded in `ark-cli`), `go.work*`, `.golangci.yml` |
+| `unit` | `container/**`, `app/ark-cli/**`, `app/pkg/**`, container and CLI tests, the lite image, the CI scripts and their tests, `release.yml` |
+| `smoke` | what the image build and a start/stop use: `container/base.dockerfile`, `container/dockerfile`, the build and install files, the start/stop runtime scripts and their slow tests, the test framework, `run-tests.py`, `requirements-dev.txt`, `.github/build-image.sh`. A smoke path is always a unit path too |
+
+**Pass markers:** a job that passes saves an Actions cache entry
+`passed-<job>-<group hash>` (one prefix per job). The `changes` job of each
+workflow looks the markers up (`lookup-only`); a job skips when its group has no
+work or its own marker exists, so re-running unchanged content (a rebase, a
+docs commit, a bot re-dispatch) costs nothing. *Why per job:* `test` passing must
+never skip `lint` on the same hash.
+
+**A failed `changes` job fails the checks:** each required job runs under
+`!cancelled()` when `changes` did not succeed and its first step exits 1.
+*Why:* a job skipped because a need failed counts as passed.
+
+`smoke` runs on a PR once `unit` passed or was skipped. Its concurrency group is
+per ref (`image-smoke-<ref>`), cancelling an older run of the same branch, so
+runs of different PRs never cancel each other.
+
+**Pushes run no checks.** PR runs come from `pull_request`; a push to `main`
+runs only `release.yml` and, when `container/base.dockerfile` changed,
+`image.yml`'s `publish-base`.
 
 | Workflow | Triggers | Does |
 |---|---|---|
-| `cli.yml` | PR / push to `main` touching `app/**`, `container/**` (embedded in `ark-cli`), `go.work*`, `.golangci.yml`; called by `release.yml`; manual (started by `go-update.yml`) | `go vet` + `go test` for `app/ark-cli`, `app/pkg/ark`, `app/ark-web`, `container`. `golangci-lint` (`.golangci.yml`) reporting new findings only (manual runs: new since `origin/main`); skipped on releases. On a release: builds static `ark-cli-<version>-linux-amd64` with the version stamped, checks `--version`, uploads it plus `.sha256` to the GitHub release. |
-| `image.yml` | PR / push to `main` touching `container/**`, `app/ark-cli/**`, `app/pkg/**`, `tests/container/unit/**`, the container and CLI integration tests, `tests/helpers/**`, `tests/fixtures/lite_image/**`, `requirements-dev.txt`, `.github/build-image.sh`; daily 06:17 UTC; manual | Job `unit`: `pytest -m unit tests/container/unit`, then every `lite` test on the [lite image](test-architecture.md#lite-image-no-ark-server) (container and CLI, including a real OOM kill); the Go build cache the tests use (`.go-cache`) is cached between runs. Job `smoke` (not on PRs, except Dependabot `dependabot/docker/*`): builds the image, runs the smoke tests, on `main` publishes the base image. Job `alert`: issue on a failed `main` run. See [image smoke tests](#image-smoke-tests). |
-| `python.yml` | PR / push to `main` touching `**.py`, `ruff.toml` | `ruff check` + `ruff format --check` (`ruff.toml`). |
+| `python.yml`, `version.yml` | PR; manual (bot branches) | the checks above |
+| `cli.yml` | PR; manual (bot branches); called by `release.yml` with a tag | the checks above; with a tag only: builds static `ark-cli-<version>-linux-amd64` with the version stamped, checks `--version`, uploads it plus `.sha256` to the GitHub release |
+| `image.yml` | PR; manual; daily 06:17 UTC; push to `main` touching `container/base.dockerfile` | `unit` and `smoke` on PRs and dispatched branches; daily `smoke` on `main` (job `alert` opens an issue on failure); `publish-base` on `main` (below) |
+| `release.yml` | push to `main`; manual (started by `auto-merge.yml`) | see [releases](#releases) |
 | `base-refresh.yml` | 07:00 UTC on the 1st of each month; manual | See [base image refresh](#base-image-refresh). |
-| `proton-update.yml` | Mondays 08:00 UTC; manual | PR for a newer GE-Proton release (`ARG PROTON_VERSION` in `container/base.dockerfile`); starts `image.yml` on it. |
-| `go-update.yml` | Tuesdays 08:00 UTC; manual | PR for a newer stable Go in `go.work`; starts `cli.yml` on it. |
-| `auto-merge.yml` | daily 10:00 UTC; manual | Merges passing update PRs and the release PR; opens issues for failed ones. |
-| `release.yml` | push to `main`; manual (started by `auto-merge.yml`) | Maintains the release PR. When it merges: tags `cli-v<semver>`, creates the GitHub release, calls `cli.yml` to attach the binary. |
+| `proton-update.yml` | Mondays 08:00 UTC; manual | PR for a newer GE-Proton release (`ARG PROTON_VERSION` in `container/base.dockerfile`) |
+| `go-update.yml` | Tuesdays 08:00 UTC; manual | PR for a newer stable Go in `go.work` |
+| `auto-merge.yml` | hourly; manual | See [automated updates](#automated-updates). |
 
 All under `.github/workflows/`.
 
-## Versioning
+## Base image publishing
 
-One release, `ark-cli` (component `cli`), covers the whole repository except
-`app/ark-web` (package `.` in `release-please-config.json`, `exclude-paths`).
-The image recipe in `container/` is embedded in `ark-cli`, so recipe changes reach
-hosts only through a CLI release.
-
-| Release | Tag | Changelog | Version source |
-|---|---|---|---|
-| `ark-cli` | `cli-v<semver>` | `app/ark-cli/CHANGELOG.md` | git tag, stamped with `-ldflags "-X main.version=..."`; `ark-cli --version` prints it (`dev` for local builds) |
-
-Pre-1.0 (`bump-minor-pre-major`): breaking changes and `feat` bump the minor
-version, other releasable types the patch. Releasable types (the
-`changelog-sections`): `feat`, `fix`, `perf`, `revert`, `deps`, `build` (image
-recipe changes, e.g. a GE-Proton update). Current version:
-`.release-please-manifest.json`. `container/CHANGELOG.md` is the history of the
-former separate container release (up to 0.2.0).
-
-**PRs are squash-merged only**, PR title as the commit subject, blank body
-(repository settings: merge commits and rebase merges off,
-`squash_merge_commit_title=PR_TITLE`, `squash_merge_commit_message=BLANK`), so the
-PR title must be a Conventional Commit. *Why:* release-please also reads
-Conventional Commit lines in a commit's body. A merge commit's body is the PR
-title, and a squash body of commit messages repeats them, so either lists every
-change twice in the changelog.
-
-**History:** the repository was recreated as one commit when it went public, so
-older tags are not here.
+Job `publish-base` (`image.yml`) runs on `main` only: on a push touching
+`container/base.dockerfile`, on a manual run on `main` (which `auto-merge.yml`
+starts after a merge) and daily. It needs neither `unit` nor `smoke`. If GHCR
+lacks `ghcr.io/bryanwieg/ark-server-base:<tag>` (the tag is the first 12 hex of
+the sha256 of `container/base.dockerfile`, like `build-image.sh` and `ark-cli`
+compute it), it builds the base, logs in with `GITHUB_TOKEN` (`packages:
+write`) and pushes it. Other branches build the base locally when GHCR lacks it
+and publish nothing.
 
 No ARK image is published: `ark-cli` builds `ark-server:<steam-build-id>` on each
-host from its embedded recipe (see [image build](image-build.md)). Only the
-ARK-free base image is published (below).
+host from its embedded recipe (see [image build](image-build.md)).
+
+## Releases
+
+One release, `ark-cli`, tagged `cli-v<semver>`, covers the whole repository
+except `app/ark-web` (scope `web`). The image recipe in `container/` is embedded
+in `ark-cli`, so recipe changes reach hosts only through a CLI release. The
+version is stamped with `-ldflags "-X main.version=..."`; `ark-cli --version`
+prints it (`dev` for local builds).
+
+**A PR releases when its description states `Release: X.Y.Z`.**
+`.github/release-version.py` computes the expected line from the PR title (a
+Conventional Commit) and the latest `cli-v*` tag; the `version` check fails
+unless the description states exactly that, or no line when none is expected:
+
+- pre-1.0, a breaking change (`!`) or `feat` bumps the minor version; from 1.0 a
+  breaking change bumps the major;
+- `fix`, `perf`, `revert`, `deps`, `build` (image recipe changes, e.g. a
+  GE-Proton update) bump the patch;
+- other types and scope `web` release nothing: no `Release:` line.
+
+`release.yml` (push to `main`, or `gh workflow run release.yml --ref main`)
+first finishes every `cli-v*` tag missing its GitHub release or binary. Then,
+for each first-parent commit on `main` after the latest tag, oldest first, whose
+merged PR states `Release: X.Y.Z`, it tags `cli-vX.Y.Z`, creates the GitHub
+release (PR title and link: the GitHub releases are the changelog) and calls
+`cli.yml` with the tag to attach the binary. Runs take turns (`concurrency:
+release`).
+
+**Recovery:** a merged PR whose `Release:` line is wrong stops releases at that commit; later PRs wait. Fix that PR's description,
+then start `release.yml` (or wait for `auto-merge.yml`'s hourly start).
+
+**Merges:** squash is the default (PR title as the subject, blank body); merge
+commits are allowed when a PR's commits should stay; rebase merges are blocked.
+The `Release:` line is read from the PR, not the commit message, so either merge
+kind releases.
+
+**History:** the repository was recreated as one commit when it went public, so
+older tags are not here. Earlier releases were cut by release-please;
+`app/ark-cli/CHANGELOG.md` and `container/CHANGELOG.md` (the former separate
+container release, up to 0.2.0) are that history.
 
 ## Image smoke tests
 
 The `smoke` job checks that the image still builds and starts with Steam's
-current ARK build. It gates nothing except Dependabot Docker PRs (via
-`auto-merge.yml`); the daily run is an early warning that a new ARK build breaks
-the image before hosts update to it.
+current ARK build. It runs on PRs that touch the `smoke` group; the daily run on `main` is an early
+warning that a new ARK build breaks the image before hosts update to it.
 
 1. Free disk: `docker image prune -af` and `docker builder prune -af`, before the
    build so a crashed run can't leave the next one short of space. On
@@ -79,22 +145,16 @@ the image before hosts update to it.
    test gets a collapsible log group with its pytest report and compose, docker
    and framework logs (last 300 lines each). On failure `.tests/` is uploaded as
    artifact `test-artifacts` (14 days).
-5. On `main` only, after the smoke tests pass: if GHCR lacks
-   `ghcr.io/bryanwieg/ark-server-base:<tag>` (`build-image.sh` prints
-   `BASE_IMAGE=<ref>` last; the tag is a hash of `container/base.dockerfile`), it
-   logs in with `GITHUB_TOKEN` (`packages: write`) and pushes it. Other branches
-   build the base locally when GHCR lacks it and publish nothing.
-
-One smoke run at a time (`concurrency: image-smoke`, no cancel). A run takes
-15-35 minutes.
+A run takes 15-35 minutes. On PRs and dispatched branches it saves its pass
+marker; the daily run saves none.
 
 ## Base image refresh
 
 `base-refresh.yml` sets the `# refresh: YYYY-MM` line in
 `container/base.dockerfile` to the current month (no-op if already set), pushes
 `chore/base-refresh-YYYY-MM`, opens
-`build(container): refresh the base image (YYYY-MM)` and starts `image.yml` on the
-branch. Merging it changes the base tag, so `main` rebuilds the base with current
+`build(container): refresh the base image (YYYY-MM)` with its `Release:` line and
+starts the check workflows on the branch. Merging it changes the base tag, so `main` rebuilds the base with current
 Ubuntu packages and publishes it.
 
 ## Repository settings
@@ -104,12 +164,13 @@ No secrets or variables needed; workflows use `GITHUB_TOKEN`. The GHCR package
 `org.opencontainers.image.source` label) and public, so hosts pull it
 anonymously.
 
-- **Merges:** squash only (PR title, blank body); branches deleted after merge.
-- **Ruleset `main`:** changes only through pull requests, squash only (no required
-  approvals or checks: workflows are path-filtered, so a required check would
-  block docs-only PRs); no force pushes or deletion.
+- **Merges:** squash default (PR title, blank body), merge commits allowed,
+  rebase merges blocked; branches deleted after merge.
+- **Ruleset `main`:** changes only through pull requests; requires `ruff`,
+  `lint`, `test`, `unit`, `smoke` and `version` on an up-to-date branch (no
+  required approvals); no force pushes or deletion.
 - **Actions:** workflow token read-only by default and may create pull requests
-  (release-please and the update workflows need it); workflows from external
+  (the update workflows need it); workflows from external
   contributors need approval.
 - **Security:** secret scanning with push protection; Dependabot alerts and
   security updates.
@@ -135,37 +196,40 @@ Dependabot PRs once their checks pass.
 
 Updates merge and release themselves; the only thing to act on is an issue.
 
-| Update | Opened by | Tested by |
+| Update | Opened by | Branch, title |
 |---|---|---|
-| GE-Proton (`chore/proton-update-*`, `build(container):`) | `proton-update.yml`, Mondays | `image.yml` started on the branch: base + image build and smoke tests |
-| Base refresh (`chore/base-refresh-*`, `build(container):`) | `base-refresh.yml`, monthly | same |
-| Go (`chore/go-update-*`, `build:`) | `go-update.yml`, Tuesdays | `cli.yml` started on the branch: Go tests and lint |
-| Dependabot Docker (`dependabot/docker/*`) | Dependabot, weekly | `image.yml` on the PR, smoke tests included |
-| Dependabot Go, Actions, pip (`dependabot/*`) | Dependabot, weekly | the PR's normal path-filtered checks |
+| GE-Proton | `proton-update.yml`, Mondays | `chore/proton-update-*`, `build(container):` |
+| Base refresh | `base-refresh.yml`, monthly | `chore/base-refresh-*`, `build(container):` |
+| Go | `go-update.yml`, Tuesdays | `chore/go-update-*`, `build:` |
+| Dependabot | Dependabot, weekly | `dependabot/*` |
 
+The update workflows write the PR's `Release:` line (`release-version.py next`).
 PRs opened with `GITHUB_TOKEN` don't trigger workflows, but `workflow_dispatch`
-does, so the update workflows start `image.yml` / `cli.yml` on their branches;
-the runs report on the branch's head commit.
+does, so they start `python.yml`, `cli.yml`, `image.yml` and `version.yml` on
+their branches; the runs report on the branch's head commit, and skip without
+work like on any PR.
 
-`auto-merge.yml`, per update PR, reads the check runs on the head commit:
+`auto-merge.yml`, hourly, per bot PR (head in this repository; a `dependabot/*`
+branch only when authored by Dependabot; others, such as forks with bot branch
+names, are named in the summary and left alone):
 
-- all completed, none failed (success/skipped/neutral), at least one: squash-merge
-  (subject `<PR title> (#<n>)`, blank body);
-- any failed: open an issue labelled `automated-update` (one per PR), leave the PR
-  open;
-- checks still running: wait;
+- rewrites its `Release:` line when it no longer matches the title and the
+  latest tag, and updates a PR behind `main` through the update-branch API; both
+  start the checks again by dispatch. A `chore/*` PR whose branch can't be
+  updated is closed and opened again from `main` by its update workflow;
+- all six checks' newest runs passed or skipped, none failed: squash-merge
+  (subject `<PR title> (#<n>)`, blank body), **at most one per run**, so each
+  merge releases on its own;
+- any failed: open an issue labelled `automated-update` (one per PR), leave the
+  PR open;
 - no checks after a day, or passing but unmergeable for 3 days: open an issue.
 
-Then it merges the release PR (`release-please--*`) so updates ship as an
-`ark-cli` release, and closes `automated-update` issues whose PR is no longer
-open. Merges made with `GITHUB_TOKEN` don't trigger push workflows, so it starts
-`image.yml` on `main` (if it merged anything, to publish a changed base) and
-always `release.yml`.
+Then it closes `automated-update` issues whose PR is no longer open. Merges made
+with `GITHUB_TOKEN` don't trigger push workflows, so it starts `image.yml` on
+`main` after a merge (publishes a changed base) and `release.yml` on every run,
+which retries a missed or failed release each hour.
 
 A failing smoke run on `main` opens the issue "Image smoke test failing on main"
 (or comments on the open one). Hosts keep their current image meanwhile:
 `ark-cli` only moves to a new build after it starts healthy, and rolls back
 otherwise.
-
-Release PRs are opened with `GITHUB_TOKEN`, so no workflows run on them; they
-change only the changelog and version files.

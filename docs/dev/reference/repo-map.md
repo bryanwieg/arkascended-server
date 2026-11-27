@@ -208,15 +208,18 @@ See [image-build.md](image-build.md).
   checks natively.
 - `.github/ci-integration.sh` — integration smoke test (create, start, backup,
   stop, restore); not wired into a workflow
-- `.github/workflows/` — GitHub Actions: `cli.yml` (Go tests, CLI release
-  binary), `image.yml` (container unit tests, build and smoke tests, base image
-  publishing), `python.yml` (ruff lint), `base-refresh.yml` (monthly base
-  refresh PR), `proton-update.yml` and `go-update.yml` (GE-Proton and Go update
-  PRs), `auto-merge.yml` (merges passing automated updates and the release PR),
-  `release.yml` (release-please). See [ci.md](ci.md).
+- `.github/changed.sh` — CI change groups: whether a branch touches a group,
+  and a hash of the group's files for pass markers
+- `.github/release-version.py` — the expected `Release: X.Y.Z` line from a PR
+  title and the latest `cli-v*` tag, and its check
+- `.github/workflows/` — GitHub Actions: `cli.yml` (Go tests and lint, CLI
+  release binary), `image.yml` (container unit tests, build and smoke tests,
+  base image publishing), `python.yml` (ruff lint), `version.yml` (the PR's
+  `Release:` line), `base-refresh.yml` (monthly base refresh PR),
+  `proton-update.yml` and `go-update.yml` (GE-Proton and Go update PRs),
+  `auto-merge.yml` (hourly: merges one passing bot PR), `release.yml` (tags and
+  releases each merged PR that states a version). See [ci.md](ci.md).
 - `.github/dependabot.yml` — Dependabot config
-- `release-please-config.json`, `.release-please-manifest.json` — release
-  versioning for the CLI and container
 - `docker-compose.dev.yaml` — dev compose file building `container/dockerfile`, plus an `ark-scheduler` service built from `app/ark-cli/ark-cli`
 - `clean-repo.sh` — remove generated temp data, logs and caches
   (`--dry-run`)

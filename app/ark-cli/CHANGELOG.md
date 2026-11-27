@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.10.0...cli-v0.11.0) (2026-11-27)
+
+
+### Features
+
+* **cli:** reconfigure instance --cpu-shares sets an existing instance's CPU weight ([#65](https://github.com/bryanwieg/arkascended-server/issues/65)) ([747d12a](https://github.com/bryanwieg/arkascended-server/commit/747d12af3b697595db4e284203b8d03c0758fff0))
+
 ## [0.10.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.9.0...cli-v0.10.0) (2026-11-27)
 
 

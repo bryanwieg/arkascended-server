@@ -24,7 +24,7 @@ func ParseCron(expr string) (cron.Schedule, error) {
 
 // KnownType reports whether t is a schedule type the runner executes.
 func KnownType(t string) bool {
-	return t == TypeBackup || t == TypeRCON || t == TypeSave || t == TypeRestart
+	return t == TypeBackup || t == TypeRCON || t == TypeSave || t == TypeRestart || t == TypeUpdate
 }
 
 // ValidateCronExpr reports whether expr is a valid standard cron expression.

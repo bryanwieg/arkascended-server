@@ -19,7 +19,7 @@ func RunCreateSchedule(d *core.AppDeps, args []string) error {
 	switch args[0] {
 	case schedule.TypeBackup:
 		return runCreateScheduleBackup(args[1:])
-	case schedule.TypeRCON, schedule.TypeSave, schedule.TypeRestart:
+	case schedule.TypeRCON, schedule.TypeSave, schedule.TypeRestart, schedule.TypeUpdate:
 		return runCreateScheduleAction(args[0], args[1:])
 	default:
 		return fmt.Errorf("Error: unknown create schedule command: %s", args[0])

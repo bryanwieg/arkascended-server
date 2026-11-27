@@ -91,3 +91,19 @@ func TestEnsureLocalImagesSurfaceImageInspectError(t *testing.T) {
 		}
 	})
 }
+
+// TestUpdateRefusesBelowBuildDiskDefault validates update instance checks free disk before building.
+// - Expect: with too little free disk and no SteamCMD cache, the build refuses with the default.
+func TestUpdateRefusesBelowBuildDiskDefault(t *testing.T) {
+	t.Setenv("ARK_BUILD_REQUIRED_FREE_GB", "")
+	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
+	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n")
+	withLocalSteamCheck(t, "81.1", "100", "200", func(d *core.AppDeps) {
+		d.DiskUsageForPath = func(string) (int64, int64, error) { return 89 << 30, 100 << 30, nil }
+	}, func() {
+		err := RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--instance", "asa1"})
+		if err == nil || !strings.Contains(err.Error(), "needs about 90 GB free") {
+			t.Fatalf("want the free-disk refusal, got %v", err)
+		}
+	})
+}

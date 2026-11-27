@@ -37,7 +37,8 @@ Before enabling, check two things:
   it. The scheduler does not see your shell's environment, so an automatic
   restart would otherwise recreate an instance with other values. Do not use
   `HOME`, `TMPDIR`, `TZ`, `DOCKER_HOST`, `COMPOSE_FILE`,
-  `COMPOSE_PROJECT_NAME`, `ARK_CONTAINER_RUNTIME` or `ARK_BACKUP_DIR` in
+  `COMPOSE_PROJECT_NAME`, `ARK_CONTAINER_RUNTIME`, `ARK_BACKUP_DIR` or
+  `ARK_UPDATE_WEBHOOK_URL` in
   `${VAR}` references: the scheduler sets these itself, whatever `.env` says.
 - `docker-compose.yaml` must be a regular file in that directory, not a link
   to a file elsewhere: the scheduler mounts only the compose directory.

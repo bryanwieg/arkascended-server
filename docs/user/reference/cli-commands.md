@@ -742,7 +742,8 @@ Every variable the compose file interpolates (`${VAR}`) must be set in `.env`
 next to it, or a restart by the scheduler recreates the instance with other
 values. The compose file must not interpolate a variable the scheduler service
 sets itself: `HOME`, `TMPDIR`, `TZ`, `DOCKER_HOST`, `COMPOSE_FILE`,
-`COMPOSE_PROJECT_NAME`, `ARK_CONTAINER_RUNTIME`, `ARK_BACKUP_DIR`. Inside the
+`COMPOSE_PROJECT_NAME`, `ARK_CONTAINER_RUNTIME`, `ARK_BACKUP_DIR`,
+`ARK_UPDATE_WEBHOOK_URL`. Inside the
 scheduler those resolve to its own values, whatever `.env` says.
 
 The service it writes:
@@ -754,8 +755,10 @@ The service it writes:
   compose directory as `working_dir`.
 - Environment: `TZ` (the `TZ` of the instance whose name sorts first, else the shell's, else `UTC`),
   `DOCKER_HOST`, `ARK_CONTAINER_RUNTIME`, `HOME=<compose dir>/.ark-manage`,
-  `TMPDIR=<compose dir>/.ark-tmp`, `COMPOSE_FILE`, and `COMPOSE_PROJECT_NAME`
-  and `ARK_BACKUP_DIR` when set.
+  `TMPDIR=<compose dir>/.ark-tmp`, `COMPOSE_FILE`, and `COMPOSE_PROJECT_NAME`,
+  `ARK_BACKUP_DIR` and `ARK_UPDATE_WEBHOOK_URL` when set (`ARK_UPDATE_WEBHOOK_URL`
+  is copied from your shell in plain text; rerunning `enable scheduler` without
+  it removes it).
 - Rootful Docker: `user: <your uid>:<gid>` and `group_add: [<socket gid>]`
   (override the gid with `ARK_SCHEDULER_SOCKET_GID`), so the files it writes
   are yours. Rootless Docker and Podman: container root, which is your user.

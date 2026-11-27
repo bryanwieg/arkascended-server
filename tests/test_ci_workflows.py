@@ -157,6 +157,11 @@ def test_group_hash(tmp_path: Path) -> None:
     commit(tmp_path, {"a.py": "2\n"})
     assert group_hash(tmp_path, "python") != before["python"]
 
+    changed_bytes = group_hash(tmp_path, "python")
+    (tmp_path / "a.py").chmod(0o755)
+    commit(tmp_path, {})
+    assert group_hash(tmp_path, "python") != changed_bytes  # mode-only change
+
     for args in (("nope", "a.py"), ("hash", "nope"), ("python",)):  # last: no origin/main
         result = changed(*args, cwd=tmp_path)
         assert result.returncode == 2, args

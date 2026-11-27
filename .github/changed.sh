@@ -74,9 +74,9 @@ if [[ ${1:-} == hash ]]; then
 	group=${2:-}
 	check_group "$group"
 	tree=$(git ls-tree -r HEAD) || die "git ls-tree failed"
-	# Blob ids and paths of the group's files: same bytes, same hash.
+	# Mode, blob id and path of the group's files: same bytes and exec bit, same hash.
 	while IFS=$'\t' read -r meta path; do
-		if in_group "$group" "$path"; then printf '%s\t%s\n' "${meta##* }" "$path"; fi
+		if in_group "$group" "$path"; then printf '%s\t%s\n' "$meta" "$path"; fi
 	done <<<"$tree" | sha256sum | cut -d' ' -f1
 	exit 0
 fi

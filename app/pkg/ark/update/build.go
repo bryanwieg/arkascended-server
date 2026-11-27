@@ -209,7 +209,7 @@ func (s *Service) buildFilesImage(ctx context.Context, stateDir, filesDir, files
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(outDir, "dockerfile"), dockerfile, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(outDir, "dockerfile"), dockerfile, 0o644); err != nil { //nolint:gosec // G703: outDir is under the caller's own <compose dir>/.ark-manage path
 		return err
 	}
 	return s.engine.BuildImage(ctx, ark.BuildRequest{

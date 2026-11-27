@@ -85,6 +85,18 @@ jobs:
             return 1
           }
 
+          recheck_version() { # $1 branch, $2 head sha: re-run its pull_request version run, else dispatch one
+            local run
+            # GitHub keeps judging the PR by its pull_request run, so a second (dispatched) run can't replace a failed one.
+            run="$(gh run list --workflow version.yml --event pull_request --commit "$2" --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')" || run=""
+            if [[ -n "$run" ]]; then
+              gh run rerun "$run" || summary "Could not re-run version on $1"
+            else
+              dispatch "$1" version.yml
+            fi
+          }
+
           older_than() { # $1 created timestamp, $2 days
             (( $(date +%s) - $(date -d "$1" +%s) > $2 * 86400 ))
           }
@@ -138,7 +150,7 @@ jobs:
             fi
 
             if ! release_current "$number" "$title"; then
-              dispatch "$branch" version.yml
+              recheck_version "$branch" "$sha"
               continue
             fi
 

@@ -128,10 +128,6 @@ def test_local_image_rebuild_produces_labeled_image(
     real_build = image_label(compose_client, "ark-server:latest", "io.ark.server.build_id")
     assert real_build.isdigit(), f"ark-server:latest needs a numeric build_id label, got {real_build!r}"
     real_tag = f"ark-server:{real_build}-{image_label(compose_client, 'ark-server:latest', 'io.ark.recipe')}"
-    relabel_image(compose_client, "ark-server:latest", {"io.ark.server.build_id": "1"}, test_artifact_dir / "relabel")
-    relabeled_id = compose_client.image.inspect("ark-server:latest").id
-    # Untag only: the original image stays reachable through its ark-server:<version> tag.
-    compose_client.image.remove(real_tag, force=False)
     # Share SteamCMD's install between runs, so only the first run downloads the whole server.
     shared_work = build_cache_dir(repo_root) / "steamcmd-work"
     shared_work.mkdir(exist_ok=True)
@@ -161,8 +157,14 @@ def test_local_image_rebuild_produces_labeled_image(
             )
 
     poller = threading.Thread(target=poll_files_images, daemon=True)
+    relabel_image(compose_client, "ark-server:latest", {"io.ark.server.build_id": "1"}, test_artifact_dir / "relabel")
+    relabeled_id = compose_client.image.inspect("ark-server:latest").id
     poller.start()
     try:
+        # Untag only: the original image stays reachable through its ark-server:<version> tag.
+        # A killed earlier run may already have removed it.
+        if compose_client.image.exists(real_tag):
+            compose_client.image.remove(real_tag, force=False)
         run_cmd(
             [str(bare_bin / "ark-cli"), "update", "instance", "--instance", instance],
             env=env,

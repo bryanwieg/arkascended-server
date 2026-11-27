@@ -7,6 +7,7 @@ import (
 	"ark-cli/internal/core"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,6 +32,11 @@ func TestEnsureLocalImagesBuildsWhenMissing(t *testing.T) {
 		}
 		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
 		d.Engine = &arktest.MockEngine{
+			// download.sh's output, so the build can move work/out into the context.
+			RunContainerFn: func(_ context.Context, req ark.RunContainerRequest) (int, error) {
+				work := strings.TrimSuffix(req.Binds[len(req.Binds)-1], ":/work")
+				return 0, os.MkdirAll(filepath.Join(work, "out", "steam-client"), 0o755)
+			},
 			ImageExistsFn: func(_ context.Context, image string) (bool, error) {
 				return false, nil
 			},

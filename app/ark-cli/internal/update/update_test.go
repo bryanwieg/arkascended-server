@@ -261,6 +261,11 @@ func TestRunUpdateRebuildsLocalImageOncePerUniqueImage(t *testing.T) {
 		}
 		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
 		d.Engine = &arktest.MockEngine{
+			// download.sh's output, so the build can move work/out into the context.
+			RunContainerFn: func(_ context.Context, req ark.RunContainerRequest) (int, error) {
+				work := strings.TrimSuffix(req.Binds[len(req.Binds)-1], ":/work")
+				return 0, os.MkdirAll(filepath.Join(work, "out", "steam-client"), 0o755)
+			},
 			ImageLabelsFn: func(_ context.Context, image string) (map[string]string, error) {
 				return map[string]string{
 					"io.ark.server.version":  "81.1",
@@ -291,8 +296,8 @@ func TestRunUpdateRebuildsLocalImageOncePerUniqueImage(t *testing.T) {
 	if steamCalls != 2 {
 		t.Fatalf("expected one cached steam check call and one build lookup, got %d", steamCalls)
 	}
-	if rebuildCalls != 4 {
-		t.Fatalf("expected one rebuild (4 image builds) for shared image, got %d", rebuildCalls)
+	if rebuildCalls != 3 {
+		t.Fatalf("expected one rebuild (3 image builds: steamcmd, server, labels) for shared image, got %d", rebuildCalls)
 	}
 }
 

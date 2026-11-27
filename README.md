@@ -7,8 +7,8 @@ updates.
 ## Prerequisites
 
 - Linux host with about 24 GB RAM
-- About 90 GB free disk for the first build (current and previous image, the
-  SteamCMD cache and the build peak), about 80 GB once the SteamCMD cache
+- About 70 GB free disk for the first build (current and previous image, the
+  SteamCMD cache and the build peak), about 60 GB once the SteamCMD cache
   exists
 - Docker Engine 28+ with the Compose v2 plugin (`ark-cli` checks
   `docker compose version` at startup), or rootless Podman 5+ with a compose

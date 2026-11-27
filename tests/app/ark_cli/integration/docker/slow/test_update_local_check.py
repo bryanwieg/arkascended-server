@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -92,10 +94,13 @@ def test_local_image_rebuild_produces_labeled_image(
         real Steam API, and the real build's ark-server:<build-id>-<recipe-id> tag is removed,
         so update instance has to build it (downloading ARK with SteamCMD). The
         original image keeps its ark-server:<version> tag until the build
-        replaces it, so a failed build can restore ark-server:latest.
+        replaces it, so a failed build can restore ark-server:latest. Leftover
+        ark-server-files images are removed first, and the engine is polled for
+        them every 5 s while update instance runs.
 
     Expected:
         - update instance exits zero (the build succeeds).
+        - No ark-server-files image exists at any point of the run.
         - The rebuilt ark-server:latest image has a non-empty
           io.ark.server.version label matching the xx.yy format.
         - The rebuilt ark-server:latest image has a non-empty
@@ -124,10 +129,6 @@ def test_local_image_rebuild_produces_labeled_image(
     real_build = image_label(compose_client, "ark-server:latest", "io.ark.server.build_id")
     assert real_build.isdigit(), f"ark-server:latest needs a numeric build_id label, got {real_build!r}"
     real_tag = f"ark-server:{real_build}-{image_label(compose_client, 'ark-server:latest', 'io.ark.recipe')}"
-    relabel_image(compose_client, "ark-server:latest", {"io.ark.server.build_id": "1"}, test_artifact_dir / "relabel")
-    relabeled_id = compose_client.image.inspect("ark-server:latest").id
-    # Untag only: the original image stays reachable through its ark-server:<version> tag.
-    compose_client.image.remove(real_tag, force=False)
     # Share SteamCMD's install between runs, so only the first run downloads the whole server.
     shared_work = build_cache_dir(repo_root) / "steamcmd-work"
     shared_work.mkdir(exist_ok=True)
@@ -145,18 +146,42 @@ def test_local_image_rebuild_produces_labeled_image(
         "ARK_CONTAINER_RUNTIME": "docker",
         "DOCKER_HOST": test_env.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
     }
+    for leftover in compose_client.image.list("ark-server-files"):
+        compose_client.image.remove(leftover.id, force=True)
+    seen_files_images: list[str] = []
+    done = threading.Event()
+
+    def poll_files_images() -> None:
+        while not done.wait(5):
+            seen_files_images.extend(
+                t for image in compose_client.image.list("ark-server-files") for t in image.repo_tags
+            )
+
+    # The future keeps an engine error from the poll, so the test cannot pass unchecked.
+    pool = ThreadPoolExecutor(max_workers=1)
+    relabel_image(compose_client, "ark-server:latest", {"io.ark.server.build_id": "1"}, test_artifact_dir / "relabel")
+    relabeled_id = compose_client.image.inspect("ark-server:latest").id
+    poller = pool.submit(poll_files_images)
     try:
+        # Untag only: the original image stays reachable through its ark-server:<version> tag.
+        # A killed earlier run may already have removed it.
+        if compose_client.image.exists(real_tag):
+            compose_client.image.remove(real_tag, force=False)
         run_cmd(
             [str(bare_bin / "ark-cli"), "update", "instance", "--instance", instance],
             env=env,
             cwd=repo_root,
         )
     finally:
+        done.set()
         # A failed build must not leave the fake-labeled image as ark-server:latest.
         if compose_client.image.inspect("ark-server:latest").id == relabeled_id:
             compose_client.image.tag(original_id, "ark-server:latest")
             compose_client.image.tag(original_id, real_tag)
             compose_client.image.remove(relabeled_id, force=False)
+
+    poller.result()
+    assert not seen_files_images, f"the build must not make a files image, saw {seen_files_images}"
 
     version = image_label(
         compose_client,

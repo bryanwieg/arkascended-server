@@ -58,11 +58,12 @@ if ! "$container_runtime" image inspect "$base_ref" >/dev/null 2>&1 &&
 fi
 
 # Server files: download Steam's current ARK build with SteamCMD (container/files)
-# into a local files image. WORK_DIR keeps the SteamCMD install so later builds
-# download only changed files; ARK_BUILD_DELETE_CACHE=1 drops it once the files
-# image exists (CI, to save disk).
-files_repo="ark-server-files"
+# into the work dir, then move it into the context as ark-files for the stage 1
+# build only. WORK_DIR keeps the SteamCMD install so later builds download only
+# changed files; ARK_BUILD_DELETE_CACHE=1 drops it once the files are in the
+# context (CI, to save disk).
 work_dir="${ARK_BUILD_WORK_DIR:-$repo_root/.ark-tmp/build-work}"
+ark_files="$context_path/ark-files"
 steam_build_id="$(
   curl -fsS --max-time 30 https://api.steamcmd.net/v1/info/2430930 |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["2430930"]["depots"]["branches"]["public"]["buildid"])'
@@ -71,17 +72,21 @@ if [[ ! "$steam_build_id" =~ ^[0-9]+$ ]]; then
   echo "ERROR: could not read ARK's current build ID from Steam (got '$steam_build_id')." >&2
   exit 1
 fi
-files_image="${files_repo}:${steam_build_id}"
 ARK_STEAM_BUILD_ID="$steam_build_id" CONTAINER_RUNTIME="$container_runtime" WORK_DIR="$work_dir" \
-  "$repo_root/container/files/build.sh" "$files_repo"
+  "$repo_root/container/files/build.sh"
+# A killed earlier run may have left ark-files; mv would nest out inside it.
+rm -rf "$ark_files"
+trap 'rm -rf "$ark_files"' EXIT
+mv "$work_dir/out" "$ark_files"
 if [[ "${ARK_BUILD_DELETE_CACHE:-}" == 1 ]]; then
   rm -rf "$work_dir"
 fi
 
 "${build_cmd[@]}" -f "$dockerfile_path" -t "$base_tag" \
   --build-arg BASE_IMAGE="$base_ref" \
-  --build-arg ARK_FILES_IMAGE="$files_image" \
   "$context_path"
+# So the labels build does not upload the server files with its context.
+rm -rf "$ark_files"
 
 ark_version="$(
   "$container_runtime" run --rm "$base_tag" cat /home/ark-user/ARK_SERVER_VERSION
@@ -101,5 +106,4 @@ ark_build_id="$(
   --build-arg ARK_RECIPE_ID="$recipe_id" \
   "$context_path"
 
-"$container_runtime" image rm "$files_image" >/dev/null  # only needed during the build
 echo "BASE_IMAGE=$base_ref"  # last line: CI publishes this tag

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Build the server files image with only Docker (or Podman) installed:
-# SteamCMD runs in a throwaway container (download.sh), then the dockerfile
-# copies its output in.
+# Download the ARK server files with only Docker (or Podman) installed: SteamCMD
+# runs in a throwaway container (download.sh) and writes $WORK_DIR/out
+# (steam-client, layers/0..4). The caller owns out afterwards; it is removed on failure.
 #
-# Usage: ./build.sh [image] [extra build args, e.g. --push -t image:latest]
-#   image defaults to ark-server-files; it is tagged <image>:<build ID>.
+# Usage: ./build.sh
 # Env:
 #   ARK_STEAM_BUILD_ID    build to download; default: Steam's current public build
 #   STEAMCMD_DOCKER_OPTS  extra options for the SteamCMD container, e.g.
@@ -16,12 +15,10 @@
 #                         ark-server:latest, skipped when it doesn't exist
 #   WORK_DIR              work folder; default ./work. work/cache keeps the SteamCMD
 #                         install (about 12 GB) so later builds download only changed
-#                         files; work/out is rebuilt each run and removed afterwards
+#                         files; work/out is rebuilt each run
 set -euo pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-image="${1:-ark-server-files}"
-shift $(( $# > 0 ? 1 : 0 ))
 rt="${CONTAINER_RUNTIME:-docker}"
 work="$(realpath -m "${WORK_DIR:-$root/work}")"
 
@@ -57,13 +54,12 @@ if [[ ! -d "$work/cache/depotcache" ]] && "$rt" image inspect "$seed" >/dev/null
   fi
   "$rt" rm "$seed_id" >/dev/null
 fi
-trap 'rm -rf "$work/out"' EXIT
 # shellcheck disable=SC2086 # STEAMCMD_DOCKER_OPTS holds separate options
-"$rt" run --rm ${STEAMCMD_DOCKER_OPTS:-} "${user[@]}" \
+if ! "$rt" run --rm ${STEAMCMD_DOCKER_OPTS:-} "${user[@]}" \
   -e ARK_STEAM_BUILD_ID="$build_id" \
   -v "$root:/src:ro" -v "$work:/work" \
-  arkascended-steamcmd bash /src/download.sh /work
-
-"$rt" build -f "$root/dockerfile" --build-arg ARK_STEAM_BUILD_ID="$build_id" \
-  -t "${image}:${build_id}" "$@" "$work/out"
-echo "Built ${image}:${build_id}"
+  arkascended-steamcmd bash /src/download.sh /work; then
+  rm -rf "$work/out"
+  exit 1
+fi
+echo "Downloaded ARK build $build_id to $work/out"

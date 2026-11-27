@@ -62,7 +62,6 @@ in_group() {
 			;;
 		esac
 		;;
-	*) die "unknown group: $group" ;;
 	esac
 	return 1
 }

@@ -268,3 +268,15 @@ def test_publish_base_on_main() -> None:
     job = workflow("image.yml")["jobs"]["publish-base"]
     assert job["if"] == "github.ref == 'refs/heads/main'"
     assert "needs" not in job
+
+
+def test_smoke_gated_and_daily() -> None:
+    data = workflow("image.yml")
+    gate = data["jobs"]["smoke"]["if"]
+    assert "needs.changes.outputs.smoke-work == 'true'" in gate
+    assert "github.event_name == 'schedule'" in gate
+    (schedule,) = data["on"]["schedule"]
+    minute, hour, *rest = schedule["cron"].split()
+    assert minute.isdigit(), schedule
+    assert hour.isdigit(), schedule
+    assert rest == ["*", "*", "*"], schedule

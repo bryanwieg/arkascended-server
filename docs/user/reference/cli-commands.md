@@ -85,6 +85,7 @@ required. Refuses a running instance unless `--force`.
 | `--cluster-id` | `CLUSTER_ID` (letters, digits, `_`, `-`). Instances with the same ID share transfers. `""` clears it. |
 | `--asa-port` | Published game UDP port (host and container port kept equal). |
 | `--rcon-port` | Published RCON TCP host port (maps to the container's `RCON_PORT`, default 27020/tcp). |
+| `--cpu-shares` | Compose `cpu_shares`: the instance's CPU weight when the host's CPU is busy (2–262144; Docker's default is 1024, `create instance` writes 4096). Can be raised or lowered, not removed. |
 | `--force` | Allow changes while running; a restart is still needed to apply them. |
 | `--restart` | After saving, restart the instance if it was running. A stopped instance is not started. |
 | `--compose-file` | |

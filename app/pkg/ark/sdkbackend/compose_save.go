@@ -24,7 +24,7 @@ import (
 // every other byte is kept. Re-marshaling the loaded project instead would bake in .env values and
 // env_file secrets, make paths absolute, drop comments, and delete services whose profile is inactive.
 
-var errUnsupportedSave = errors.New("ark-cli can only change image, environment, labels, ports and x-ark-schedules")
+var errUnsupportedSave = errors.New("ark-cli can only change image, cpu_shares, environment, labels, ports and x-ark-schedules")
 
 // lineEdits collects replacements (start line → end line and new lines) and insertions after a line.
 type lineEdits struct {
@@ -141,6 +141,9 @@ func checkSupportedChanges(before *types.Project, afterProject *ark.ComposeProje
 		if a.Image == "" && b.Image != "" {
 			return fmt.Errorf("%w; service %s lost its image", errUnsupportedSave, name)
 		}
+		if a.CPUShares == 0 && b.CPUShares != 0 {
+			return fmt.Errorf("%w; service %s removed cpu_shares", errUnsupportedSave, name)
+		}
 		for k := range b.Environment {
 			if _, ok := a.Environment[k]; !ok {
 				return fmt.Errorf("%w; service %s removed environment variable %s", errUnsupportedSave, name, k)
@@ -171,8 +174,8 @@ func verifySaved(wantProject *ark.ComposeProject, got *types.Project) error {
 			return fmt.Errorf("service %s is missing after the edit", name)
 		case !reflect.DeepEqual(withoutEditableFields(w), withoutEditableFields(g)):
 			return fmt.Errorf("service %s changed other settings after the edit", name)
-		case w.Image != g.Image, !reflect.DeepEqual(w.Environment, g.Environment), !reflect.DeepEqual(w.Labels, g.Labels):
-			return fmt.Errorf("service %s does not have the requested image, environment or labels after the edit", name)
+		case w.Image != g.Image, w.CPUShares != g.CPUShares, !reflect.DeepEqual(w.Environment, g.Environment), !reflect.DeepEqual(w.Labels, g.Labels):
+			return fmt.Errorf("service %s does not have the requested image, cpu_shares, environment or labels after the edit", name)
 		case len(w.Ports) != len(g.Ports):
 			return fmt.Errorf("service %s does not have the requested ports after the edit", name)
 		}
@@ -186,7 +189,7 @@ func verifySaved(wantProject *ark.ComposeProject, got *types.Project) error {
 }
 
 func withoutEditableFields(s types.ServiceConfig) types.ServiceConfig {
-	s.Image, s.Environment, s.Labels, s.Ports = "", nil, nil, nil
+	s.Image, s.CPUShares, s.Environment, s.Labels, s.Ports = "", 0, nil, nil, nil
 	s.CustomLabels = nil // derived by the loader from the file's path, not stored in the file
 	return s
 }
@@ -216,6 +219,12 @@ func diffService(lines []string, edits *lineEdits, services *ast.MappingNode, na
 	if a.Image != b.Image {
 		value := strings.Repeat(" ", keyIndent) + "image: " + yamlScalar(a.Image)
 		if err := setEntry(lines, edits, svc, "image", value, svcEnd); err != nil {
+			return err
+		}
+	}
+	if a.CPUShares != b.CPUShares {
+		value := strings.Repeat(" ", keyIndent) + "cpu_shares: " + strconv.FormatInt(a.CPUShares, 10)
+		if err := setEntry(lines, edits, svc, "cpu_shares", value, svcEnd); err != nil {
 			return err
 		}
 	}

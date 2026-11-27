@@ -159,11 +159,11 @@ Commands use `docker-compose.yaml` in the current directory; override with
 
 - `container/base.dockerfile` — base image (packages, GE-Proton, XAudio, `ark-user`),
   published to `ghcr.io/bryanwieg/ark-server-base:<hash>`
-- `container/dockerfile` — runtime image on the base: server files from the local
-  files image, runtime scripts; runs server as `ark-user`
+- `container/dockerfile` — runtime image on the base: server files from `ark-files/`
+  in the build context, runtime scripts; runs server as `ark-user`
 - `container/dockerfile.labels` — labeled variant; adds version/build-id tags
-- `container/files/` — temporary server files image: `build.sh`, `download.sh`,
-  `steamcmd.dockerfile`, `dockerfile`, `scripts/installer/` (SteamCMD install
+- `container/files/` — downloads the server files (no image): `build.sh`, `download.sh`,
+  `steamcmd.dockerfile`, `scripts/installer/` (SteamCMD install
   in a throwaway container, layer split)
 - `container/embed.go` — Go module `arkcontainer` embedding the build recipe
   (`dockerfile`, scripts, `files/`) in the `ark-cli` binary; extracted to

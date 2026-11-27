@@ -21,7 +21,7 @@ For contributors and coding agents.
 - [Test logging](reference/test-logging.md): per-test artifact layout, framework trace semantics
 - [Runtime call graph](reference/runtime-call-graph.md): startup/shutdown, default INI build, backup/restore flows
 - [Backend reference](reference/backends.md): interfaces, constructors, conformance tests, Podman requirements
-- [Image build pipeline](reference/image-build.md): base and server-files images, layer cache, build/update env vars
+- [Image build pipeline](reference/image-build.md): base image, server files download, layer cache, build/update env vars
 - [CI and releases](reference/ci.md): workflows, versioning, smoke tests, Dependabot, automated updates
 - [Performance testing](reference/performance-testing/README.md): Proton/Wine benchmark scripts and findings
 

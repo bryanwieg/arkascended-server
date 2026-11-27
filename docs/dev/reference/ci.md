@@ -70,7 +70,7 @@ the image before hosts update to it.
    and builds `ark-server:latest`. `STEAMCMD_DOCKER_OPTS=--security-opt
    seccomp=unconfined` (Docker's default seccomp profile blocks SteamCMD on
    hosted runners). `ARK_BUILD_DELETE_CACHE=1` drops the SteamCMD install once
-   the server files image exists, to leave room for the runtime image.
+   the server files are in the build context, to leave room for the runtime image.
 3. Hosted runners only: sets the Proton kernel settings with `sysctl`, clears the
    build cache, adds a 16 GB swap file (one server outgrows the runner's RAM and
    is OOM-killed without it).

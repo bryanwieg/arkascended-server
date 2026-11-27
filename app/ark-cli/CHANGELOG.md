@@ -1,5 +1,9 @@
 # Changelog
 
+Releases from 0.12 on are described in
+[GitHub Releases](https://github.com/bryanwieg/arkascended-server/releases);
+this file ends at 0.11.0.
+
 ## [0.11.0](https://github.com/bryanwieg/arkascended-server/compare/cli-v0.10.0...cli-v0.11.0) (2026-11-27)
 
 

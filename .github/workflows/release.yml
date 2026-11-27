@@ -1,6 +1,8 @@
-# Keeps the release PR open (release-please) and, when it merges, tags the release
-# and builds and uploads the ark-cli binary. One release covers app/ and container/:
-# the image recipe is embedded in ark-cli, so recipe changes ship only in a CLI release.
+# Releases ark-cli per merged PR: every commit on main whose PR description states
+# `Release: X.Y.Z` becomes tag and GitHub release cli-vX.Y.Z, with the binary
+# attached by cli.yml. One release covers app/ and container/: the image recipe is
+# embedded in ark-cli, so recipe changes ship only in a CLI release.
+# Each run first finishes tags an earlier run left without release or binary.
 # Reusable-workflow calls are needed because tags and releases created with
 # GITHUB_TOKEN do not trigger other workflows. workflow_dispatch: auto-merge.yml
 # starts it after merging, since merges by GITHUB_TOKEN don't trigger the push event.
@@ -13,28 +15,130 @@ on:
 
 permissions: {}
 
+# Runs take turns, so two never tag the same commit; a run cancelled while
+# pending loses nothing, the next one releases what it would have.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  release-please:
+  finish:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: write
-      pull-requests: write
+      pull-requests: read
     outputs:
-      cli_tag: ${{ steps.rp.outputs.release_created == 'true' && steps.rp.outputs.tag_name || '' }}
+      tags: ${{ steps.finish.outputs.tags }}
     steps:
-      - uses: googleapis/release-please-action@v5
-        id: rp
+      - uses: actions/checkout@v7
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          fetch-depth: 0 # all tags
+      - id: finish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tags=()
+          # Newest first, until one is complete: everything older was finished before.
+          for tag in $(git tag -l 'cli-v*' --sort=-v:refname | grep -E '^cli-v[0-9]+\.[0-9]+\.[0-9]+$'); do
+            version="${tag#cli-v}"
+            if ! assets=$(gh release view "$tag" --json assets --jq '.assets[].name'); then
+              sha=$(git rev-list -n1 "$tag")
+              notes=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+                --jq "[.[] | select(.merge_commit_sha == \"$sha\")][0] | .title + \"\n\n\" + .html_url")
+              gh release create "$tag" --verify-tag --title "cli: v$version" --notes "$notes"
+              assets=""
+              echo "- \`$tag\`: created the missing release" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            if grep -qxF "ark-cli-$version-linux-amd64" <<< "$assets"; then
+              break
+            fi
+            echo "- \`$tag\`: binary missing, building it" >> "$GITHUB_STEP_SUMMARY"
+            tags=("$tag" "${tags[@]}") # oldest first
+          done
+          echo "tags=$(jq -cn '$ARGS.positional' --args "${tags[@]}")" >> "$GITHUB_OUTPUT"
 
-  cli:
-    needs: release-please
-    if: needs.release-please.outputs.cli_tag != ''
+  finish-cli:
+    needs: finish
+    if: needs.finish.outputs.tags != '[]'
+    strategy:
+      max-parallel: 1
+      matrix:
+        tag: ${{ fromJSON(needs.finish.outputs.tags) }}
     permissions:
       contents: write
       pull-requests: read # cli.yml's lint job (golangci-lint only-new-issues)
     uses: ./.github/workflows/cli.yml
     with:
-      tag: ${{ needs.release-please.outputs.cli_tag }}
+      tag: ${{ matrix.tag }}
+
+  release:
+    needs: [finish, finish-cli]
+    # Runs when finish-cli was skipped (nothing to finish), not when it failed.
+    if: ${{ !cancelled() && needs.finish.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.finish-cli.result) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      tags: ${{ steps.release.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # all tags, and main's history since the latest one
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest=$(python3 .github/release-version.py latest)
+          body="$RUNNER_TEMP/body.md"
+          tags=()
+          for sha in $(git rev-list --first-parent --reverse "$latest..HEAD"); do
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+              --jq "[.[] | select(.merge_commit_sha == \"$sha\")][0] // empty")
+            if [ -z "$pr" ]; then
+              echo "- ${sha:0:7}: no merged PR, skipped" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            title=$(jq -r .title <<< "$pr")
+            url=$(jq -r .html_url <<< "$pr")
+            jq -r '.body // ""' <<< "$pr" > "$body"
+            stated=$(python3 .github/release-version.py parse --body-file "$body")
+            expected=$(python3 .github/release-version.py next --title "$title" --latest-tag "$latest")
+            if [ -z "$stated$expected" ]; then
+              echo "- ${sha:0:7} $title: no release, skipped" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            tag="cli-v$stated"
+            existing=$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)
+            if [ -n "$stated" ] && [ "$existing" = "$sha" ]; then
+              echo "- ${sha:0:7} $title: \`$tag\` exists, skipped" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            if [ -n "$stated" ] && [ -n "$existing" ]; then
+              echo "$tag already exists on $existing, not on $sha" >&2
+              exit 1
+            fi
+            python3 .github/release-version.py check --title "$title" --body-file "$body" --latest-tag "$latest"
+            gh release create "$tag" --target "$sha" --title "cli: v$stated" --notes "$title"$'\n\n'"$url"
+            echo "- ${sha:0:7} $title: released \`$tag\`" >> "$GITHUB_STEP_SUMMARY"
+            tags+=("$tag")
+            latest="$tag"
+          done
+          echo "tags=$(jq -cn '$ARGS.positional' --args "${tags[@]}")" >> "$GITHUB_OUTPUT"
+
+  cli:
+    needs: release
+    # !cancelled(): release ran after a skipped finish-cli, which would skip this too.
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.tags != '[]' }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        tag: ${{ fromJSON(needs.release.outputs.tags) }}
+    permissions:
+      contents: write
+      pull-requests: read # cli.yml's lint job (golangci-lint only-new-issues)
+    uses: ./.github/workflows/cli.yml
+    with:
+      tag: ${{ matrix.tag }}

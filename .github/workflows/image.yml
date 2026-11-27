@@ -121,7 +121,7 @@ jobs:
         id: build
         env:
           # The SteamCMD install isn't reused on a fresh runner; dropping it once the
-          # server files image exists leaves room for the runtime image.
+          # server files are in the build context leaves room for the runtime image.
           ARK_BUILD_DELETE_CACHE: "1"
           # Docker's default seccomp profile blocks SteamCMD on GitHub-hosted runners.
           STEAMCMD_DOCKER_OPTS: --security-opt seccomp=unconfined

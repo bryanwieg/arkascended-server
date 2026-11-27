@@ -17,6 +17,7 @@ docs/superpowers/
 .go-cache/
 .go-temp/
 container/files/work/
+container/ark-files/
 .ark-tmp/
 .ark-manage/
 

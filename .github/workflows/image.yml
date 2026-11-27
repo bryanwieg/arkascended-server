@@ -66,6 +66,14 @@ jobs:
           cache-dependency-path: |
             go.work.sum
             app/**/go.sum
+      # The tests build ark-cli with GOCACHE=.go-cache (tests/helpers/artifacts.py); without it
+      # each run compiles from scratch (about 40 s). Keyed on the sources, so a change saves a new
+      # entry and the last one is restored.
+      - uses: actions/cache@v6
+        with:
+          path: .go-cache
+          key: ark-cli-gocache-${{ runner.os }}-${{ hashFiles('go.work', 'go.work.sum', 'app/**/go.sum', 'app/**/*.go', 'container/**') }}
+          restore-keys: ark-cli-gocache-${{ runner.os }}-
       # Lite tests run on a small image built from the runtime scripts and a fake ARK server, so
       # the session never builds the ARK image. Includes a real kernel OOM kill under a cgroup limit.
       # docker/ only: podman/conftest.py switches the whole session to Podman when imported.

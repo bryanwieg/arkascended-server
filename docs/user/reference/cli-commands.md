@@ -44,7 +44,10 @@ Common flags:
 Add an instance service to the compose file (created if missing). Session name
 is set to the instance name. RCON host port is the next free TCP port from
 27020, published on `127.0.0.1` only. The new service uses
-`image: ark-server:latest` until the first `start instance` builds and pins it.
+`image: ark-server:latest` until the first `start instance` builds and pins it. It gets
+`cpu_shares: 4096`, four times Docker's default of 1024, so the server comes
+first when the host's CPU is busy, for example during an image build. It
+limits nothing while the CPU has room to spare.
 
 | Flag | Default | Description |
 |---|---|---|

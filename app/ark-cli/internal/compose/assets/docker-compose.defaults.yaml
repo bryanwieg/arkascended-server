@@ -28,6 +28,9 @@ services:
       - "{{INSTANCE}}-saved:/home/ark-user/ark-server/ShooterGame/Saved"
       - "ark-cluster-1:/home/ark-user/ark-server/ShooterGame/Saved/clusters"
     mem_reservation: 12G
+    # 4x Docker's default cpu_shares (1024): when the CPU is busy, the server outranks other containers
+    # (image builds, the scheduler). It caps nothing while the CPU is idle.
+    cpu_shares: 4096
 
 volumes:
   {{INSTANCE}}-saved:

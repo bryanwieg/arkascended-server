@@ -1,0 +1,52 @@
+# Release version check: the PR's `Release: X.Y.Z` line must match its title
+# type and the latest cli-v* tag (.github/release-version.py check). Reports on
+# every PR (a required check) and re-runs when the description is edited.
+name: Release version
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch: # bot branches: checks the branch's open PR
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # gh pr list on dispatch
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # cli-v* tags for release-version.py latest
+          fetch-tags: true
+      # Title and body come from a JSON file, never from expressions in shell.
+      - name: Read the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            jq '.pull_request' "$GITHUB_EVENT_PATH" > pr.json
+          else
+            gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json title,body > prs.json
+            count=$(jq length prs.json)
+            if [[ "$count" != 1 ]]; then
+              echo "branch $GITHUB_REF_NAME has $count open PRs; need exactly one" | tee -a "$GITHUB_STEP_SUMMARY" >&2
+              exit 1
+            fi
+            jq '.[0]' prs.json > pr.json
+          fi
+          jq -r '.body // ""' pr.json > body.md
+      - name: Check the Release line
+        run: |
+          title=$(jq -r .title pr.json)
+          if ! {
+            tag=$(python3 .github/release-version.py latest) &&
+              python3 .github/release-version.py check --title "$title" --body-file body.md --latest-tag "$tag"
+          } 2> reason; then
+            tee -a "$GITHUB_STEP_SUMMARY" < reason >&2
+            exit 1
+          fi
+          echo "Release line matches the title after $tag" >> "$GITHUB_STEP_SUMMARY"

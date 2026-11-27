@@ -74,6 +74,15 @@ Set `ARK_UPDATE_WEBHOOK_URL` to be notified: on `build_failed`, `rolled_back`
 or `rollback_failed`, `ark-cli` posts a Discord-format JSON message to that
 URL. See [Configuration variables](../reference/configuration.md).
 
+## Scheduled updates
+
+An `update` schedule (see [Schedule updates](../how-to/schedule-backups.md#schedule-updates))
+runs `update instance --rollout` inside the scheduler container, for running
+targets only: stopped ones are skipped, and a run with every target stopped
+records `skipped` and builds nothing. The first failure or rollback ends the
+run. The scheduler posts to `ARK_UPDATE_WEBHOOK_URL` when `enable scheduler`
+was run with it set; its alerts name the scheduler container, not the host.
+
 ## Old images are removed
 
 After `update instance`, and after every `start instance` or `restart instance`,

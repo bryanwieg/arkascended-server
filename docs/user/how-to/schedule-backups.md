@@ -96,6 +96,33 @@ schedule does not start it. When every target is stopped, the run records
 `skipped`; `check schedule` and the scheduler's health treat that as a
 successful run, so a stopped instance does not make the schedule fail.
 
+## Schedule updates
+
+An `update` schedule runs `ark-cli update instance --rollout` for each running
+target. It takes the same flags as the action schedules above.
+
+```sh
+ark-cli create schedule update --instance all --name nightly-update --cron "0 6 * * *"
+```
+
+- Stopped targets are skipped with the warning above; a run whose every target
+  is stopped records `skipped` and builds nothing. An update killed after its
+  stop can leave the instance stopped, and later runs then record `skipped`
+  until you start it.
+- The first failed or rolled-back target ends the run; the remaining targets
+  are skipped with a warning.
+- When Steam cannot be reached, the run records success and the table shows a
+  warning row for the instance.
+- A build downloads the server files and can take hours. Schedules run one at
+  a time, so other schedules wait for it; a backup delayed more than an hour counts
+  as overdue and fails in `check scheduler` (see below).
+- Missed update runs are not caught up. Schedule updates away from host reboot
+  windows: stopping the scheduler mid-update kills it (SIGKILL) after 8 minutes.
+- For failure alerts, set `ARK_UPDATE_WEBHOOK_URL` before `enable scheduler`
+  (see [Configuration](../reference/configuration.md)). The URL is stored in
+  plain text in `docker-compose.yaml`; rerunning `enable scheduler` without it
+  removes it. Alerts name the scheduler container, not the host.
+
 ## When schedules run
 
 - The scheduler rereads `docker-compose.yaml` every minute, so a new or changed

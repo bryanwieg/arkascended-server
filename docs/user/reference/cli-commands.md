@@ -630,7 +630,7 @@ scheduler's `TZ`. `TZ=`/`CRON_TZ=` prefixes and `@every` are refused.
 ark-cli create schedule backup --instance asa-server-1 --name nightly-asa1 --cron "0 3 * * *"
 ```
 
-### create schedule rcon, save and restart
+### create schedule rcon, save, restart and update
 
 Action schedules for running instances:
 
@@ -639,6 +639,7 @@ Action schedules for running instances:
 | `rcon` | The RCON command `--command` (required); the server's reply goes to the run log. |
 | `save` | RCON `saveworld`. |
 | `restart` | `restart instance`: the stop's `SHUTDOWN_WARNING_MINUTES` countdown (reason `scheduled restart`) while players are online, save, stop, start. |
+| `update` | `update instance --rollout` per running target; the first failure ends the run. A run with every target stopped builds nothing. See [Schedule updates](../how-to/schedule-backups.md#schedule-updates). |
 
 | Flag | Default | Description |
 |---|---|---|
@@ -659,6 +660,7 @@ scheduler's health.
 ark-cli create schedule rcon --instance all --name hourly-chat --cron "0 * * * *" --command "ServerChat Backup in 5 minutes"
 ark-cli create schedule save --instance asa-server-1 --name save-asa1 --cron "*/30 * * * *"
 ark-cli create schedule restart --instance asa-server-1 --name nightly-restart --cron "0 5 * * *"
+ark-cli create schedule update --instance all --name nightly-update --cron "0 6 * * *"
 ```
 
 ### update schedule

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -156,10 +157,11 @@ def test_local_image_rebuild_produces_labeled_image(
                 t for image in compose_client.image.list("ark-server-files") for t in image.repo_tags
             )
 
-    poller = threading.Thread(target=poll_files_images, daemon=True)
+    # The future keeps an engine error from the poll, so the test cannot pass unchecked.
+    pool = ThreadPoolExecutor(max_workers=1)
     relabel_image(compose_client, "ark-server:latest", {"io.ark.server.build_id": "1"}, test_artifact_dir / "relabel")
     relabeled_id = compose_client.image.inspect("ark-server:latest").id
-    poller.start()
+    poller = pool.submit(poll_files_images)
     try:
         # Untag only: the original image stays reachable through its ark-server:<version> tag.
         # A killed earlier run may already have removed it.
@@ -172,13 +174,13 @@ def test_local_image_rebuild_produces_labeled_image(
         )
     finally:
         done.set()
-        poller.join()
         # A failed build must not leave the fake-labeled image as ark-server:latest.
         if compose_client.image.inspect("ark-server:latest").id == relabeled_id:
             compose_client.image.tag(original_id, "ark-server:latest")
             compose_client.image.tag(original_id, real_tag)
             compose_client.image.remove(relabeled_id, force=False)
 
+    poller.result()
     assert not seen_files_images, f"the build must not make a files image, saw {seen_files_images}"
 
     version = image_label(

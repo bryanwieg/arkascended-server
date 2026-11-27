@@ -258,10 +258,10 @@ func (s *Service) ensureBaseImage(ctx context.Context, contextDir string) (strin
 	return ref, nil
 }
 
-// checkBuildDisk requires ARK_BUILD_REQUIRED_FREE_GB (default 90) GiB free at
+// checkBuildDisk requires ARK_BUILD_REQUIRED_FREE_GB (default 70) GiB free at
 // stateDir, minus what the SteamCMD cache in work/cache already holds.
 func (s *Service) checkBuildDisk(stateDir string) error {
-	raw := envOrDefault("ARK_BUILD_REQUIRED_FREE_GB", "90")
+	raw := envOrDefault("ARK_BUILD_REQUIRED_FREE_GB", "70")
 	required, err := strconv.Atoi(raw)
 	if err != nil || required <= 0 {
 		return fmt.Errorf("Error: ARK_BUILD_REQUIRED_FREE_GB must be a positive whole number, got %q", raw)

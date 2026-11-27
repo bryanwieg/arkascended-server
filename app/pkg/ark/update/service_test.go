@@ -337,9 +337,9 @@ func TestBuildLocalImageRefusesWithoutWork(t *testing.T) {
 		cache           int64
 		setup           func(*buildRig)
 	}{
-		{name: "low disk", want: "needs about 90 GB free", setup: func(r *buildRig) { r.free = 10 << 30 }},
-		{name: "75 GiB free without cache", want: "needs about 90 GB free", setup: func(r *buildRig) { r.free = 75 << 30 }},
-		{name: "75 GiB free with 20 GiB cache", cache: 20 << 30, setup: func(r *buildRig) { r.free = 75 << 30 }},
+		{name: "low disk", want: "needs about 70 GB free", setup: func(r *buildRig) { r.free = 10 << 30 }},
+		{name: "65 GiB free without cache", want: "needs about 70 GB free", setup: func(r *buildRig) { r.free = 65 << 30 }},
+		{name: "65 GiB free with 20 GiB cache", cache: 20 << 30, setup: func(r *buildRig) { r.free = 65 << 30 }},
 		{name: "bad disk override", env: "lots", want: "ARK_BUILD_REQUIRED_FREE_GB must be a positive whole number"},
 		{name: "steam offline", want: "cannot read ARK's current build", setup: func(r *buildRig) { r.steam = errors.New("offline") }},
 		{name: "steam moved on", want: "built ARK build 201, but Steam reported 200", setup: func(r *buildRig) { r.baseID = "201" }},

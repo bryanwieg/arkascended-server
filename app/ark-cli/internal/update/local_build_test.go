@@ -99,10 +99,10 @@ func TestUpdateRefusesBelowBuildDiskDefault(t *testing.T) {
 	composePath := filepath.Join(t.TempDir(), "docker-compose.yaml")
 	writeUpdateComposeFixture(t, composePath, "name: test\nservices:\n  asa1:\n    labels: {ark.port.asa: '27015'}\n    image: ark-server:100\n")
 	withLocalSteamCheck(t, "81.1", "100", "200", func(d *core.AppDeps) {
-		d.DiskUsageForPath = func(string) (int64, int64, error) { return 89 << 30, 100 << 30, nil }
+		d.DiskUsageForPath = func(string) (int64, int64, error) { return 50 << 30, 100 << 30, nil }
 	}, func() {
 		err := RunUpdate(core.CurrentAppDeps(), []string{"--compose-file", composePath, "--instance", "asa1"})
-		if err == nil || !strings.Contains(err.Error(), "needs about 90 GB free") {
+		if err == nil || !strings.Contains(err.Error(), "needs about 70 GB free") {
 			t.Fatalf("want the free-disk refusal, got %v", err)
 		}
 	})

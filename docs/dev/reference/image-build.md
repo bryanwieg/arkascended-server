@@ -39,7 +39,7 @@ Triggers:
 `BuildLocalImage` (`app/pkg/ark/update/build.go`) returns at once if
 `ark-server:<build-id>-<recipe-id>` exists. Otherwise it takes the `image-build`
 lock in `.ark-manage/locks` (rechecks the image inside it), then requires
-`ARK_BUILD_REQUIRED_FREE_GB` (default 90) GiB free in `.ark-manage`, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`.
+`ARK_BUILD_REQUIRED_FREE_GB` (default 70) GiB free in `.ark-manage`, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`.
 
 Recipe ID (`arkcontainer.RecipeID()`): first 12 hex chars of a SHA-256 over every
 embedded file, path and contents (`__pycache__` skipped). *Why:* without it an
@@ -178,11 +178,11 @@ on `main` it publishes only the base (see [ci.md](ci.md)).
 - `ARK_BUILD_NO_CACHE`: any non-empty value disables the cache for the stage-1
   (`container/dockerfile`) build. Used by integration tests to force a real build.
   Not needed for ARK updates; changed server files miss the `COPY` cache anyway.
-- `ARK_BUILD_REQUIRED_FREE_GB` (default `90`): minimum free GiB in `.ark-manage`, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`.
-  Must be a positive integer. A rebuild with an existing SteamCMD install peaked at
-  86 GiB of disk on the engine's filesystem and took 6 minutes
-  (the SteamCMD install, 11.5 GiB, counted in; a host's first build also
-  downloads it).
+- `ARK_BUILD_REQUIRED_FREE_GB` (default `70`): minimum free GiB in `.ark-manage`, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`.
+  Must be a positive integer. A rebuild with an existing SteamCMD install used
+  56 GiB of disk on the engine's filesystem at its peak and took about 9 minutes;
+  with the 11.5 GiB SteamCMD install a host's first build also downloads, the
+  peak is 67 GiB.
 
 ## CI/manual build script
 

@@ -1323,3 +1323,79 @@ func TestScheduleCommandsUseComposeFileFlag(t *testing.T) {
 		t.Fatalf("run state not under the compose file's .ark-manage: %v", err)
 	}
 }
+
+func TestRunScheduleUpdateRollsOutRunningTargets(t *testing.T) {
+	run := func(t *testing.T, running []string, failOn string) (actionRun, []string) {
+		var calls []string
+		var got actionRun
+		withPatchedAppDeps(t, func(d *core.AppDeps) {
+			d.RunUpdateFromSchedule = func(args []string) error {
+				calls = append(calls, strings.Join(args, " "))
+				if args[1] == failOn {
+					return errors.New("rolled back")
+				}
+				return nil
+			}
+		}, func() {
+			got = runActionSchedule(t, "    type: update\n    instance: all\n", running, nil, nil)
+		})
+		return got, calls
+	}
+	t.Run("running updated, stopped skipped", func(t *testing.T) {
+		got, calls := run(t, []string{"asa2"}, "")
+		// runActionSchedule points testComposeFile at this subtest's temp dir.
+		if want := "[--instance asa2 --rollout --compose-file " + testComposeFile() + "]"; got.err != nil || fmt.Sprint(calls) != want || got.state.LastStatus != "success" {
+			t.Fatalf("err %v, calls %v state %+v", got.err, calls, got.state)
+		}
+		if !strings.Contains(got.log, "Warning: asa1 is stopped; update command unsuccessful") {
+			t.Fatalf("log:\n%s", got.log)
+		}
+	})
+	t.Run("first failure ends the run", func(t *testing.T) {
+		got, calls := run(t, []string{"asa1", "asa2"}, "asa1")
+		if got.err == nil || len(calls) != 1 || got.state.LastStatus != "failed" || !strings.Contains(got.state.LastError, "asa1: rolled back") {
+			t.Fatalf("err %v, calls %v, state %+v", got.err, calls, got.state)
+		}
+		if !strings.Contains(got.log, "skipped update of asa2 after asa1 failed") {
+			t.Fatalf("log:\n%s", got.log)
+		}
+	})
+	t.Run("all stopped", func(t *testing.T) {
+		got, calls := run(t, nil, "")
+		if got.err != nil || len(calls) != 0 || got.state.LastStatus != "skipped" {
+			t.Fatalf("err %v, calls %v, state %+v", got.err, calls, got.state)
+		}
+	})
+}
+
+func TestCreateScheduleUpdate(t *testing.T) {
+	tmp := t.TempDir()
+	overrideSchedulePathsForTest(t, tmp)
+	setEnv(t, "COMPOSE_FILE", filepath.Join(tmp, "docker-compose.yaml"))
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatalf("write compose: %v", err)
+	}
+	cron := []string{"--cron", "0 5 * * *"}
+	withScheduleComposeDeps(t, emptyServices("asa1"), nil, func() {
+		out := captureStdout(t, func() {
+			if err := RunCreateSchedule(core.CurrentAppDeps(), append([]string{"update", "--instance", "all", "--name", "nightly"}, cron...)); err != nil {
+				t.Fatalf("create: %v", err)
+			}
+		})
+		if !strings.Contains(out, "Created schedule nightly") {
+			t.Fatalf("output:\n%s", out)
+		}
+		err := RunCreateSchedule(core.CurrentAppDeps(), append([]string{"update", "--instance", "cluster", "--name", "x"}, cron...))
+		if err == nil || !strings.Contains(err.Error(), "backup-only") {
+			t.Fatalf("cluster: got %v", err)
+		}
+	})
+	file, err := core.CurrentAppDeps().ScheduleService.LoadScheduleFile(context.Background(), testStore, testComposeFile())
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := []schedule.BackupSchedule{{Name: "nightly", Type: schedule.TypeUpdate, Instance: "all", Enabled: true, Cron: "0 5 * * *"}}
+	if fmt.Sprint(file.Schedules) != fmt.Sprint(want) {
+		t.Fatalf("schedules = %+v, want %+v", file.Schedules, want)
+	}
+}

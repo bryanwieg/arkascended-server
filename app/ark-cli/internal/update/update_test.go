@@ -259,7 +259,6 @@ func TestRunUpdateRebuildsLocalImageOncePerUniqueImage(t *testing.T) {
 			}
 			return "", nil
 		}
-		d.Runtime.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) { return ark.ExecResult{}, nil }
 		d.DiskUsageForPath = func(string) (int64, int64, error) { return 100 << 30, 100 << 30, nil }
 		d.Engine = &arktest.MockEngine{
 			ImageLabelsFn: func(_ context.Context, image string) (map[string]string, error) {
@@ -292,8 +291,8 @@ func TestRunUpdateRebuildsLocalImageOncePerUniqueImage(t *testing.T) {
 	if steamCalls != 2 {
 		t.Fatalf("expected one cached steam check call and one build lookup, got %d", steamCalls)
 	}
-	if rebuildCalls != 2 {
-		t.Fatalf("expected one rebuild (2 buildx stages) for shared image, got %d", rebuildCalls)
+	if rebuildCalls != 4 {
+		t.Fatalf("expected one rebuild (4 image builds) for shared image, got %d", rebuildCalls)
 	}
 }
 

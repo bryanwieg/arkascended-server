@@ -4,6 +4,7 @@ import (
 	"ark-cli/internal/backup"
 	"ark-cli/internal/compose"
 	"ark-cli/internal/core"
+	"ark-cli/internal/update"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,6 +18,13 @@ func runBackupFromSchedule(d *core.AppDeps, name string, args []string) error {
 		return dep(name, args)
 	}
 	return backup.RunBackupFromScheduleImpl(name, args)
+}
+
+func runUpdateFromSchedule(d *core.AppDeps, args []string) error {
+	if dep := d.RunUpdateFromSchedule; dep != nil {
+		return dep(args)
+	}
+	return update.RunUpdate(d, args)
 }
 
 func RunRunSchedule(d *core.AppDeps, args []string) error {
@@ -96,10 +104,11 @@ func runSchedule(d *core.AppDeps, composeFile string, s schedule.BackupSchedule,
 	if err != nil {
 		return "", err
 	}
-	// Targets run one after another in name order; a failure does not stop the remaining ones.
+	// Targets run one after another in name order; a failure does not stop the remaining ones,
+	// except for update, where the first failure or rollback ends the run.
 	var errs []error
 	ran := 0
-	for _, service := range services {
+	for i, service := range services {
 		if _, ok := running[service]; !ok {
 			logWarn(fmt.Sprintf("Warning: %s is stopped; %s command unsuccessful", service, s.Type))
 			continue
@@ -107,6 +116,12 @@ func runSchedule(d *core.AppDeps, composeFile string, s schedule.BackupSchedule,
 		ran++
 		if err := runActionOn(d, s, composeFile, service, logLine, logWarn); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", service, err))
+			if s.Type == schedule.TypeUpdate {
+				if rest := services[i+1:]; len(rest) > 0 {
+					logWarn(fmt.Sprintf("Warning: skipped update of %s after %s failed", strings.Join(rest, ", "), service))
+				}
+				break
+			}
 		}
 	}
 	if ran == 0 {
@@ -115,9 +130,12 @@ func runSchedule(d *core.AppDeps, composeFile string, s schedule.BackupSchedule,
 	return "success", errors.Join(errs...)
 }
 
-// runActionOn sends the rcon command or saveworld to a running service, or restarts it the way
-// `restart instance --instance <service>` does.
+// runActionOn sends the rcon command or saveworld to a running service, restarts it the way
+// `restart instance --instance <service>` does, or updates it like `update instance --rollout`.
 func runActionOn(d *core.AppDeps, s schedule.BackupSchedule, composeFile, service string, logLine, logWarn func(string)) error {
+	if s.Type == schedule.TypeUpdate {
+		return runUpdateFromSchedule(d, []string{"--instance", service, "--rollout", "--compose-file", composeFile})
+	}
 	if s.Type == schedule.TypeRestart {
 		if err := compose.SetStopReason(d, composeFile, service, "scheduled restart"); err != nil {
 			logWarn(fmt.Sprintf("Warning: could not set the stop reason for %s: %v", service, err))

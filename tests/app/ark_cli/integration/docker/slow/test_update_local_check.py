@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from helpers.artifacts import build_cache_dir
 from helpers.infra import image_label, relabel_image
 
 if TYPE_CHECKING:
@@ -82,6 +83,9 @@ def test_local_image_rebuild_produces_labeled_image(
 ) -> None:
     """update instance builds the image for Steam's build when it is missing, with correct labels.
 
+    The update runs with a PATH holding only ark-cli (no bash, docker or podman),
+    as in the scheduler, so the build must go through the engine API.
+
     Scenario:
         An instance is created with the default local image. ark-server:latest is
         relabeled with an old build ID (1), so the CLI sees an update against the
@@ -124,11 +128,26 @@ def test_local_image_rebuild_produces_labeled_image(
     relabeled_id = compose_client.image.inspect("ark-server:latest").id
     # Untag only: the original image stays reachable through its ark-server:<version> tag.
     compose_client.image.remove(real_tag, force=False)
-    env = dict(test_env)
-    env["ARK_BUILD_NO_CACHE"] = "1"
+    # Share SteamCMD's install between runs, so only the first run downloads the whole server.
+    shared_work = build_cache_dir(repo_root) / "steamcmd-work"
+    shared_work.mkdir(exist_ok=True)
+    work_dir = test_artifact_dir / ".ark-manage" / "build" / "work"
+    work_dir.parent.mkdir(parents=True, exist_ok=True)
+    work_dir.symlink_to(shared_work, target_is_directory=True)
+    # A PATH with only ark-cli: the build must need neither bash nor a container CLI, as in the scheduler.
+    bare_bin = test_artifact_dir / "bare-bin"
+    bare_bin.mkdir()
+    (bare_bin / "ark-cli").symlink_to(cli_path)
+    env = {
+        **test_env,
+        "ARK_BUILD_NO_CACHE": "1",
+        "PATH": str(bare_bin),
+        "ARK_CONTAINER_RUNTIME": "docker",
+        "DOCKER_HOST": test_env.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
+    }
     try:
         run_cmd(
-            [str(cli_path), "update", "instance", "--instance", instance],
+            [str(bare_bin / "ark-cli"), "update", "instance", "--instance", instance],
             env=env,
             cwd=repo_root,
         )

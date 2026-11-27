@@ -16,7 +16,9 @@ import (
 
 	"github.com/containerd/errdefs"
 	goarchive "github.com/moby/go-archive"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/build"
+	"github.com/moby/moby/api/types/container"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/moby/moby/client/pkg/jsonmessage"
 	"github.com/moby/patternmatcher/ignorefile"
@@ -287,6 +289,83 @@ func (e *SDKEngine) ReadFileFromImage(ctx context.Context, image, path string) (
 		return "", fmt.Errorf("empty value reading %s from %s", path, image)
 	}
 	return value, nil
+}
+
+func (e *SDKEngine) RunContainer(ctx context.Context, req ark.RunContainerRequest) (int, error) {
+	e.logger.Debug("RunContainer", "name", req.Name, "image", req.Image, "cmd", req.Cmd)
+	if req.Name != "" {
+		// A run killed before its cleanup leaves its container behind under this name.
+		if _, err := e.cli.ContainerRemove(ctx, req.Name, dockerclient.ContainerRemoveOptions{Force: true}); err != nil && !errdefs.IsNotFound(err) {
+			return -1, fmt.Errorf("remove leftover container %s: %w", req.Name, err)
+		}
+	}
+	created, err := e.cli.ContainerCreate(ctx, dockerclient.ContainerCreateOptions{
+		Name:       req.Name,
+		Config:     &container.Config{Image: req.Image, Cmd: req.Cmd, Env: req.Env, User: req.User},
+		HostConfig: &container.HostConfig{Binds: req.Binds},
+	})
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return -1, fmt.Errorf("image %q: %w", req.Image, ark.ErrNotFound)
+		}
+		return -1, fmt.Errorf("create container from %s: %w", req.Image, err)
+	}
+	// Force-remove stops it too; it must also run after ctx is cancelled.
+	defer func() {
+		_, _ = e.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, dockerclient.ContainerRemoveOptions{Force: true})
+	}()
+	if _, err := e.cli.ContainerStart(ctx, created.ID, dockerclient.ContainerStartOptions{}); err != nil {
+		return -1, fmt.Errorf("start container from %s: %w", req.Image, err)
+	}
+	logs, err := e.cli.ContainerLogs(ctx, created.ID, dockerclient.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true})
+	if err != nil {
+		return -1, fmt.Errorf("logs of container from %s: %w", req.Image, err)
+	}
+	defer logs.Close()
+	out := req.Output
+	if out == nil {
+		out = io.Discard
+	}
+	// Following the logs ends when the container stops, so the wait below returns at once.
+	_, copyErr := stdcopy.StdCopy(out, out, logs)
+	if ctx.Err() != nil {
+		return -1, fmt.Errorf("run container from %s: %w", req.Image, ctx.Err())
+	}
+	if copyErr != nil {
+		return -1, fmt.Errorf("output of container from %s: %w", req.Image, copyErr)
+	}
+	wait := e.cli.ContainerWait(ctx, created.ID, dockerclient.ContainerWaitOptions{})
+	select {
+	case res := <-wait.Result:
+		if res.Error != nil && res.Error.Message != "" {
+			return -1, fmt.Errorf("wait for container from %s: %s", req.Image, res.Error.Message)
+		}
+		return int(res.StatusCode), nil
+	case err := <-wait.Error:
+		return -1, fmt.Errorf("wait for container from %s: %w", req.Image, err)
+	}
+}
+
+func (e *SDKEngine) CopyFromImage(ctx context.Context, image, srcPath, dstPath string) error {
+	e.logger.Debug("CopyFromImage", "image", image, "src", srcPath, "dst", dstPath)
+	// Created, never started, like `docker create`.
+	created, err := e.cli.ContainerCreate(ctx, dockerclient.ContainerCreateOptions{Image: image})
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return fmt.Errorf("image %q: %w", image, ark.ErrNotFound)
+		}
+		return fmt.Errorf("create temp container from %s: %w", image, err)
+	}
+	defer func() {
+		_, _ = e.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, dockerclient.ContainerRemoveOptions{Force: true})
+	}()
+	if err := e.CopyFromContainer(ctx, created.ID, srcPath, dstPath); err != nil {
+		if errdefs.IsNotFound(err) {
+			return fmt.Errorf("%s in image %s: %w: %w", srcPath, image, ark.ErrNotFound, err)
+		}
+		return err
+	}
+	return nil
 }
 
 func (e *SDKEngine) VolumeMountpoint(ctx context.Context, volume string) (string, bool) {

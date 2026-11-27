@@ -630,7 +630,7 @@ scheduler's `TZ`. `TZ=`/`CRON_TZ=` prefixes and `@every` are refused.
 ark-cli create schedule backup --instance asa-server-1 --name nightly-asa1 --cron "0 3 * * *"
 ```
 
-### create schedule rcon, save and restart
+### create schedule rcon, save, restart and update
 
 Action schedules for running instances:
 
@@ -639,6 +639,7 @@ Action schedules for running instances:
 | `rcon` | The RCON command `--command` (required); the server's reply goes to the run log. |
 | `save` | RCON `saveworld`. |
 | `restart` | `restart instance`: the stop's `SHUTDOWN_WARNING_MINUTES` countdown (reason `scheduled restart`) while players are online, save, stop, start. |
+| `update` | `update instance --rollout` per running target; the first failure ends the run. A run with every target stopped builds nothing. See [Schedule updates](../how-to/schedule-backups.md#schedule-updates). |
 
 | Flag | Default | Description |
 |---|---|---|
@@ -659,6 +660,7 @@ scheduler's health.
 ark-cli create schedule rcon --instance all --name hourly-chat --cron "0 * * * *" --command "ServerChat Backup in 5 minutes"
 ark-cli create schedule save --instance asa-server-1 --name save-asa1 --cron "*/30 * * * *"
 ark-cli create schedule restart --instance asa-server-1 --name nightly-restart --cron "0 5 * * *"
+ark-cli create schedule update --instance all --name nightly-update --cron "0 6 * * *"
 ```
 
 ### update schedule
@@ -740,7 +742,8 @@ Every variable the compose file interpolates (`${VAR}`) must be set in `.env`
 next to it, or a restart by the scheduler recreates the instance with other
 values. The compose file must not interpolate a variable the scheduler service
 sets itself: `HOME`, `TMPDIR`, `TZ`, `DOCKER_HOST`, `COMPOSE_FILE`,
-`COMPOSE_PROJECT_NAME`, `ARK_CONTAINER_RUNTIME`, `ARK_BACKUP_DIR`. Inside the
+`COMPOSE_PROJECT_NAME`, `ARK_CONTAINER_RUNTIME`, `ARK_BACKUP_DIR`,
+`ARK_UPDATE_WEBHOOK_URL`. Inside the
 scheduler those resolve to its own values, whatever `.env` says.
 
 The service it writes:
@@ -752,8 +755,10 @@ The service it writes:
   compose directory as `working_dir`.
 - Environment: `TZ` (the `TZ` of the instance whose name sorts first, else the shell's, else `UTC`),
   `DOCKER_HOST`, `ARK_CONTAINER_RUNTIME`, `HOME=<compose dir>/.ark-manage`,
-  `TMPDIR=<compose dir>/.ark-tmp`, `COMPOSE_FILE`, and `COMPOSE_PROJECT_NAME`
-  and `ARK_BACKUP_DIR` when set.
+  `TMPDIR=<compose dir>/.ark-tmp`, `COMPOSE_FILE`, and `COMPOSE_PROJECT_NAME`,
+  `ARK_BACKUP_DIR` and `ARK_UPDATE_WEBHOOK_URL` when set (`ARK_UPDATE_WEBHOOK_URL`
+  is copied from your shell in plain text; rerunning `enable scheduler` without
+  it removes it).
 - Rootful Docker: `user: <your uid>:<gid>` and `group_add: [<socket gid>]`
   (override the gid with `ARK_SCHEDULER_SOCKET_GID`), so the files it writes
   are yours. Rootless Docker and Podman: container root, which is your user.

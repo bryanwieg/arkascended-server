@@ -39,7 +39,7 @@ Triggers:
 `BuildLocalImage` (`app/pkg/ark/update/build.go`) returns at once if
 `ark-server:<build-id>-<recipe-id>` exists. Otherwise it takes the `image-build`
 lock in `.ark-manage/locks` (rechecks the image inside it), then requires
-`ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB free in `.ark-manage`.
+`ARK_BUILD_REQUIRED_FREE_GB` (default 90) GiB free in `.ark-manage`, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`.
 
 Recipe ID (`arkcontainer.RecipeID()`): first 12 hex chars of a SHA-256 over every
 embedded file, path and contents (`__pycache__` skipped). *Why:* without it an
@@ -51,8 +51,9 @@ Steps:
 
 0. **Base image:** `arkcontainer.BaseImageRef()`; local copy, else pull, else build
    from `base.dockerfile` (see [base image](#base-image)).
-1. **Server files:** `container/files/build.sh` downloads the Steam build in a
-   throwaway SteamCMD container and builds `ark-server-files:<build-id>`.
+1. **Server files:** `buildFilesImage` downloads the Steam build in a throwaway
+   SteamCMD container and builds `ark-server-files:<build-id>`, all through the
+   engine API.
 2. **Stage 1:** BuildKit build of `container/dockerfile` with `BASE_IMAGE` and
    `ARK_FILES_IMAGE` → `ark-server:base`.
 3. **Read version:** the CLI creates (does not start) a container from
@@ -95,8 +96,20 @@ monthly via PR; the new hash rebuilds the base with current Ubuntu packages. See
 
 ### Server files image
 
-SteamCMD runs outside BuildKit: `container/files/build.sh` runs `download.sh` in a
-throwaway container with work folder `<compose dir>/.ark-manage/build/work`:
+SteamCMD runs outside BuildKit. `buildFilesImage` (`app/pkg/ark/update/build.go`)
+does it through the engine API, with no bash or container CLI on the host:
+
+1. builds `arkascended-steamcmd` from `steamcmd.dockerfile`;
+2. seeds `work/cache/depotcache` from `ARK_DEPOTCACHE_SEED_IMAGE` if missing
+   (`CopyFromImage`);
+3. runs `download.sh` in a container `ark-steamcmd-build-<hash of state dir>`
+   (`RunContainer`; as the CLI's UID:GID on rootful engines), streaming its output
+   to `update.Service.Output`;
+4. builds `ark-server-files:<build-id>` from `work/out`.
+
+`container/files/build.sh` does the same for CI and manual builds only
+(`.github/build-image.sh`); `ark-cli` never calls it, and `STEAMCMD_DOCKER_OPTS`
+applies only there. Work folder `<compose dir>/.ark-manage/build/work`:
 
 - `work/cache`: persistent SteamCMD install (~12 GB); later updates download only
   changed files.
@@ -120,7 +133,7 @@ anything else reuses the cached `COPY` layers.
 Why outside BuildKit: the download used to be a build stage with cache mounts,
 which BuildKit evicted (default limits), so updates fell back to full downloads.
 Also, on GitHub-hosted runners Docker's default seccomp profile blocks SteamCMD;
-CI passes `STEAMCMD_DOCKER_OPTS="--security-opt seccomp=unconfined"`.
+CI passes `STEAMCMD_DOCKER_OPTS="--security-opt seccomp=unconfined"` to `build.sh`.
 
 ### Layer and cache layout
 
@@ -161,8 +174,11 @@ on `main` it publishes only the base (see [ci.md](ci.md)).
 - `ARK_BUILD_NO_CACHE`: any non-empty value disables the cache for the stage-1
   (`container/dockerfile`) build. Used by integration tests to force a real build.
   Not needed for ARK updates; the files image tag handles that.
-- `ARK_BUILD_REQUIRED_FREE_GB` (default `50`): minimum free GiB in `.ark-manage`.
-  Must be a positive integer.
+- `ARK_BUILD_REQUIRED_FREE_GB` (default `90`): minimum free GiB in `.ark-manage`, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`.
+  Must be a positive integer. A rebuild with an existing SteamCMD install peaked at
+  86 GiB of disk on the engine's filesystem and took 6 minutes
+  (the SteamCMD install, 11.5 GiB, counted in; a host's first build also
+  downloads it).
 
 ## CI/manual build script
 

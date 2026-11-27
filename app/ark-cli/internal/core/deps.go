@@ -38,6 +38,7 @@ type AppDeps struct {
 	RestartStartInstance   func(runtime.StartCommandRequest) error
 	RestartStopInstance    func(runtime.StopCommandRequest) error
 	RunBackupFromSchedule  func(string, []string) error
+	RunUpdateFromSchedule  func([]string) error
 	RunningServiceSnapshot func(string) (map[string]struct{}, error)
 	DiskUsageForPath       func(string) (int64, int64, error)
 	StopService            func(string, string) error

@@ -5,8 +5,8 @@ type ScheduleFile struct {
 	Schedules []BackupSchedule
 }
 
-// BackupSchedule is a single schedule entry of any type: backup, rcon, save or
-// restart. It keeps its historical name. store.go maps it to and from the compose file.
+// BackupSchedule is a single schedule entry of any type: backup, rcon, save,
+// restart or update. It keeps its historical name. store.go maps it to and from the compose file.
 type BackupSchedule struct {
 	Name         string
 	Type         string
@@ -26,6 +26,7 @@ const (
 	TypeRCON    = "rcon"
 	TypeSave    = "save"
 	TypeRestart = "restart"
+	TypeUpdate  = "update"
 )
 
 // RunState tracks the last execution status of a schedule.

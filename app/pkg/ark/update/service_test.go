@@ -1,8 +1,12 @@
 package update
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -153,7 +157,9 @@ const steamBuild200 = `{"data":{"2430930":{"depots":{"branches":{"public":{"buil
 
 type buildRig struct {
 	builds  []ark.BuildRequest
-	ran     []string
+	runs    []ark.RunContainerRequest
+	copies  []string
+	copyErr error
 	removed []string
 	exists  map[string]bool
 	pulls   []string
@@ -187,12 +193,16 @@ func (r *buildRig) service() *Service {
 			r.removed = append(r.removed, ref)
 			return nil
 		},
+		RunContainerFn: func(_ context.Context, req ark.RunContainerRequest) (int, error) {
+			r.runs = append(r.runs, req)
+			return 0, nil
+		},
+		CopyFromImageFn: func(_ context.Context, image, src, dst string) error {
+			r.copies = append(r.copies, image+":"+src+" -> "+dst)
+			return r.copyErr
+		},
 	})
 	s.FetchText = func(string) (string, error) { return steamBuild200, r.steam }
-	s.RunCommand = func(cmd []string, _ ark.CommandOptions) (ark.ExecResult, error) {
-		r.ran = cmd
-		return ark.ExecResult{}, nil
-	}
 	s.DiskUsage = func(string) (int64, int64, error) { return r.free, r.free, nil }
 	return s
 }
@@ -215,20 +225,14 @@ func TestBuildLocalImageBuildsFromEmbeddedRecipe(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(contextDir, "dockerfile")); err != nil {
 		t.Fatalf("recipe not extracted: %v", err)
 	}
-	wantCmd := []string{"env", "ARK_STEAM_BUILD_ID=200", "CONTAINER_RUNTIME=docker",
-		"WORK_DIR=" + filepath.Join(stateDir, "build", "work"),
-		"bash", filepath.Join(contextDir, "files", "build.sh"), FilesImageRepo}
-	if strings.Join(r.ran, " ") != strings.Join(wantCmd, " ") {
-		t.Fatalf("ran %v, want %v", r.ran, wantCmd)
+	if len(r.builds) != 4 {
+		t.Fatalf("expected 4 builds, got %d", len(r.builds))
 	}
-	if len(r.builds) != 2 {
-		t.Fatalf("expected 2 builds, got %d", len(r.builds))
+	if r.builds[2].Tag != "ark-server:base" || r.builds[2].BuildArgs["ARK_FILES_IMAGE"] != "ark-server-files:200" ||
+		r.builds[2].BuildArgs["BASE_IMAGE"] != arkcontainer.BaseImageRef() {
+		t.Fatalf("base build %+v", r.builds[2])
 	}
-	if r.builds[0].Tag != "ark-server:base" || r.builds[0].BuildArgs["ARK_FILES_IMAGE"] != "ark-server-files:200" ||
-		r.builds[0].BuildArgs["BASE_IMAGE"] != arkcontainer.BaseImageRef() {
-		t.Fatalf("base build %+v", r.builds[0])
-	}
-	labeled := r.builds[1]
+	labeled := r.builds[3]
 	if labeled.Tag != LocalImageRef("200") || strings.Join(labeled.ExtraTags, ",") != "ark-server:98.6,ark-server:latest" {
 		t.Fatalf("labeled build tags %q %v", labeled.Tag, labeled.ExtraTags)
 	}
@@ -248,11 +252,11 @@ func TestBuildLocalImageGetsTheBaseImage(t *testing.T) {
 		local      bool
 		pullErr    error
 		wantPull   bool
-		wantBuilds int // base build + the two runtime builds
+		wantBuilds int // base build + the steamcmd, files and two runtime builds
 	}{
-		{name: "local copy", local: true, wantBuilds: 2},
-		{name: "pulled", wantPull: true, wantBuilds: 2},
-		{name: "pull fails: built here", pullErr: errors.New("denied"), wantPull: true, wantBuilds: 3},
+		{name: "local copy", local: true, wantBuilds: 4},
+		{name: "pulled", wantPull: true, wantBuilds: 4},
+		{name: "pull fails: built here", pullErr: errors.New("denied"), wantPull: true, wantBuilds: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newBuildRig()
@@ -267,7 +271,7 @@ func TestBuildLocalImageGetsTheBaseImage(t *testing.T) {
 			if len(r.builds) != tc.wantBuilds {
 				t.Fatalf("got %d builds, want %d", len(r.builds), tc.wantBuilds)
 			}
-			if tc.wantBuilds == 3 && (r.builds[0].Tag != base || !strings.HasSuffix(r.builds[0].Dockerfile, "base.dockerfile")) {
+			if tc.wantBuilds == 5 && (r.builds[0].Tag != base || !strings.HasSuffix(r.builds[0].Dockerfile, "base.dockerfile")) {
 				t.Fatalf("first build %+v, want base.dockerfile tagged %s", r.builds[0], base)
 			}
 			if got := r.builds[len(r.builds)-2].BuildArgs["BASE_IMAGE"]; got != base {
@@ -284,17 +288,20 @@ func TestBuildLocalImageSkipsExistingBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Built || result.Image != LocalImageRef("200") || result.Version != "98.6" || r.ran != nil || len(r.builds) != 0 {
-		t.Fatalf("result %+v, ran %v, builds %d; want the existing image and no work", result, r.ran, len(r.builds))
+	if result.Built || result.Image != LocalImageRef("200") || result.Version != "98.6" || len(r.runs) != 0 || len(r.builds) != 0 {
+		t.Fatalf("result %+v, runs %d, builds %d; want the existing image and no work", result, len(r.runs), len(r.builds))
 	}
 }
 
 func TestBuildLocalImageRefusesWithoutWork(t *testing.T) {
 	for _, tc := range []struct {
 		name, env, want string
+		cache           int64
 		setup           func(*buildRig)
 	}{
-		{name: "low disk", want: "needs about 50 GB free", setup: func(r *buildRig) { r.free = 10 << 30 }},
+		{name: "low disk", want: "needs about 90 GB free", setup: func(r *buildRig) { r.free = 10 << 30 }},
+		{name: "75 GiB free without cache", want: "needs about 90 GB free", setup: func(r *buildRig) { r.free = 75 << 30 }},
+		{name: "75 GiB free with 20 GiB cache", cache: 20 << 30, setup: func(r *buildRig) { r.free = 75 << 30 }},
 		{name: "bad disk override", env: "lots", want: "ARK_BUILD_REQUIRED_FREE_GB must be a positive whole number"},
 		{name: "steam offline", want: "cannot read ARK's current build", setup: func(r *buildRig) { r.steam = errors.New("offline") }},
 		{name: "steam moved on", want: "built ARK build 201, but Steam reported 200", setup: func(r *buildRig) { r.baseID = "201" }},
@@ -305,7 +312,26 @@ func TestBuildLocalImageRefusesWithoutWork(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(r)
 			}
-			_, err := r.service().BuildLocalImage(context.Background(), t.TempDir())
+			stateDir := t.TempDir()
+			if tc.cache > 0 {
+				cacheFile := filepath.Join(stateDir, "build", "work", "cache", "steamapps.bin")
+				if err := os.MkdirAll(filepath.Dir(cacheFile), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(cacheFile, nil, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Truncate(cacheFile, tc.cache); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := r.service().BuildLocalImage(context.Background(), stateDir)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("err = %v, want the build to pass the disk check", err)
+				}
+				return
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
@@ -347,17 +373,111 @@ func TestBuildLocalImageReportsDownloadFailureReason(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := newBuildRig().service()
-			s.RunCommand = func([]string, ark.CommandOptions) (ark.ExecResult, error) {
+			s.engine.(*arktest.MockEngine).RunContainerFn = func(context.Context, ark.RunContainerRequest) (int, error) {
 				if tc.writes != "" {
 					if err := os.WriteFile(failure, []byte(tc.writes), 0o644); err != nil {
 						t.Fatal(err)
 					}
 				}
-				return ark.ExecResult{ExitCode: 8}, nil
+				return 8, nil
 			}
 			_, err := s.BuildLocalImage(context.Background(), stateDir)
 			if err == nil || !strings.HasSuffix(err.Error(), tc.want) {
 				t.Fatalf("got %v, want ...%q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestBuildLocalImageRunsSteamCMDThroughEngine: the SteamCMD image, its run and the
+// files image go through the engine with build.sh's names, binds, env and user.
+func TestBuildLocalImageRunsSteamCMDThroughEngine(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		rootless bool
+		wantUser string
+	}{
+		{"rootful", false, fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())},
+		{"rootless", true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newBuildRig()
+			s := r.service()
+			s.engine.(*arktest.MockEngine).RootlessFn = func(context.Context) (bool, error) { return tc.rootless, nil }
+			var output bytes.Buffer
+			s.Output = &output
+			stateDir := t.TempDir()
+			if _, err := s.BuildLocalImage(context.Background(), stateDir); err != nil {
+				t.Fatal(err)
+			}
+			filesDir := filepath.Join(stateDir, "build", "context", "files")
+			workDir := filepath.Join(stateDir, "build", "work")
+			if len(r.builds) != 4 || len(r.runs) != 1 {
+				t.Fatalf("got %d builds and %d runs, want 4 and 1", len(r.builds), len(r.runs))
+			}
+			steamcmd := r.builds[0]
+			if steamcmd.Tag != "arkascended-steamcmd" || steamcmd.Context != filesDir || steamcmd.Dockerfile != filepath.Join(filesDir, "steamcmd.dockerfile") {
+				t.Fatalf("steamcmd build %+v", steamcmd)
+			}
+			sum := sha256.Sum256([]byte(stateDir))
+			run := r.runs[0]
+			if run.Name != "ark-steamcmd-build-"+hex.EncodeToString(sum[:])[:12] || run.Image != "arkascended-steamcmd" ||
+				strings.Join(run.Cmd, " ") != "bash /src/download.sh /work" ||
+				strings.Join(run.Env, " ") != "ARK_STEAM_BUILD_ID=200" ||
+				strings.Join(run.Binds, " ") != filesDir+":/src:ro "+workDir+":/work" ||
+				run.User != tc.wantUser || run.Output != &output {
+				t.Fatalf("steamcmd run %+v", run)
+			}
+			files := r.builds[1]
+			outDir := filepath.Join(workDir, "out")
+			if files.Tag != "ark-server-files:200" || files.Context != outDir || files.Dockerfile != filepath.Join(outDir, "dockerfile") ||
+				files.BuildArgs["ARK_STEAM_BUILD_ID"] != "200" {
+				t.Fatalf("files build %+v", files)
+			}
+			if _, err := os.Stat(outDir); !os.IsNotExist(err) {
+				t.Fatalf("work/out must be removed after the build, stat: %v", err)
+			}
+		})
+	}
+}
+
+// TestBuildLocalImageSeedsDepotCache: the depot cache is seeded from the seed image only
+// when there is none, and a failed copy does not fail the build.
+func TestBuildLocalImageSeedsDepotCache(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		hasCache, hasImage bool
+		copyErr            error
+		wantCopy           bool
+	}{
+		{"no cache, seed image", false, true, nil, true},
+		{"copy fails", false, true, errors.New("no such path"), true},
+		{"cache exists", true, true, nil, false},
+		{"no seed image", false, false, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newBuildRig()
+			r.exists["ark-server:latest"] = tc.hasImage
+			r.copyErr = tc.copyErr
+			stateDir := t.TempDir()
+			depotCache := filepath.Join(stateDir, "build", "work", "cache", "depotcache")
+			if tc.hasCache {
+				if err := os.MkdirAll(depotCache, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := r.service().BuildLocalImage(context.Background(), stateDir); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"ark-server:latest:/home/ark-user/.local/share/Steam/depotcache -> " + depotCache}
+			if !tc.wantCopy {
+				want = nil
+			}
+			if strings.Join(r.copies, "\n") != strings.Join(want, "\n") {
+				t.Fatalf("copies %v, want %v", r.copies, want)
+			}
+			if len(r.runs) != 1 {
+				t.Fatalf("SteamCMD ran %d times, want 1", len(r.runs))
 			}
 		})
 	}

@@ -28,6 +28,7 @@ type ServiceSettings struct {
 	ComposeFile string // absolute path of the compose file enable scheduler used
 	ProjectName string // COMPOSE_PROJECT_NAME when set, else "" (the directory name then matches the host's)
 	HealthPort  int    // host port published for the health endpoint (container port 8099); 0 = not published
+	WebhookURL  string // ARK_UPDATE_WEBHOOK_URL when set, else ""
 }
 
 // HealthContainerPort is the scheduler's health endpoint port inside the container.
@@ -60,6 +61,7 @@ func DetectServiceSettings(d *core.AppDeps, composeFile string, project *ark.Com
 		ComposeFile: absFile,
 		ProjectName: os.Getenv("COMPOSE_PROJECT_NAME"),
 		HealthPort:  HealthContainerPort,
+		WebhookURL:  os.Getenv("ARK_UPDATE_WEBHOOK_URL"),
 	}, nil
 }
 
@@ -176,6 +178,9 @@ func RenderService(s ServiceSettings) string {
 	}
 	if s.BackupDir != "" {
 		env = append(env, "ARK_BACKUP_DIR="+s.BackupDir)
+	}
+	if s.WebhookURL != "" { // $$ keeps compose from interpolating a $ in the URL
+		env = append(env, "ARK_UPDATE_WEBHOOK_URL="+strings.ReplaceAll(s.WebhookURL, "$", "$$"))
 	}
 	for _, e := range env {
 		line("      - %s", q(e))

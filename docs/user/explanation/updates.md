@@ -20,7 +20,7 @@ new image even when ARK hasn't updated.
   `<compose dir>/.ark-manage/build/work/cache` (about 12 GB, kept), with
   SteamCMD's depot manifests, so later updates download only changed files.
 - Before a build, free space in `.ark-manage` must be at least
-  `ARK_BUILD_REQUIRED_FREE_GB` (default 50) GiB. A lock stops two builds from
+  `ARK_BUILD_REQUIRED_FREE_GB` (default 90) GiB, minus the size of the SteamCMD cache already in `.ark-manage/build/work/cache`. A lock stops two builds from
   running at once.
 
 A build takes 15-25 minutes. Host, disk and network requirements:
@@ -73,6 +73,15 @@ change the exit code.
 Set `ARK_UPDATE_WEBHOOK_URL` to be notified: on `build_failed`, `rolled_back`
 or `rollback_failed`, `ark-cli` posts a Discord-format JSON message to that
 URL. See [Configuration variables](../reference/configuration.md).
+
+## Scheduled updates
+
+An `update` schedule (see [Schedule updates](../how-to/schedule-backups.md#schedule-updates))
+runs `update instance --rollout` inside the scheduler container, for running
+targets only: stopped ones are skipped, and a run with every target stopped
+records `skipped` and builds nothing. The first failure or rollback ends the
+run. The scheduler posts to `ARK_UPDATE_WEBHOOK_URL` when `enable scheduler`
+was run with it set; its alerts name the scheduler container, not the host.
 
 ## Old images are removed
 

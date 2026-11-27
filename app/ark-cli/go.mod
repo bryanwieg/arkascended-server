@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/compose-spec/compose-go/v2 v2.17.0
 	github.com/goccy/go-yaml v1.19.2
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261123192653-4dc4fb521066
 )
 
 require (

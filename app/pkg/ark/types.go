@@ -2,6 +2,7 @@ package ark
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -122,6 +123,19 @@ type BuildRequest struct {
 	Context    string
 	NoCache    bool
 	UseBuildx  bool
+}
+
+// RunContainerRequest describes a container run to completion. Binds are
+// host:container[:ro]; User is uid:gid, or empty for the image's user; a nil
+// Output discards the container's combined stdout/stderr.
+type RunContainerRequest struct {
+	Name   string
+	Image  string
+	Cmd    []string
+	Env    []string
+	Binds  []string
+	User   string
+	Output io.Writer
 }
 
 // UpOptions controls compose up behavior.

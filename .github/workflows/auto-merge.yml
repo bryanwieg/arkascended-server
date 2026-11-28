@@ -6,17 +6,16 @@
 #   branches are named in the summary and left alone.
 # - Each bot PR's `Release:` line is kept matching its title and the latest cli-v* tag
 #   (release-version.py); a PR behind main is updated through the update-branch API. Both
-#   start the checks again (pushes and edits made with GITHUB_TOKEN trigger nothing, but
-#   workflow_dispatch does). A chore/* PR whose branch can't be updated is closed and opened
+#   use the bot App token, so the edit or push starts the PR checks again. A chore/* PR whose branch can't be updated is closed and opened
 #   again from main by its update workflow.
 # - Merged when the newest runs of ruff, lint, test, unit, smoke and version passed or
 #   skipped and nothing failed; one merge per run, so each merge releases on its own.
 #   A failed check, checks missing after a day, or a passing PR still unmergeable after
 #   3 days opens one issue per PR, which is the only thing to act on. Issues close
 #   themselves once their PR is merged or closed.
-# Merges made with GITHUB_TOKEN don't trigger push workflows, so this starts image.yml
-# (publishes a changed base image) after a merge and release.yml (tags and builds the
-# release) on every run, which retries a missed or failed release each hour.
+# A merge with the App token triggers main's push workflows (release.yml, image.yml's
+# base publish); this also starts release.yml on every run, which retries a missed or
+# failed release each hour.
 name: Auto-merge updates
 
 on:
@@ -25,23 +24,26 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write # start the checks, the update workflows, image.yml and release.yml
-  checks: read
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read # the App token does the writing
 
 jobs:
   merge:
     runs-on: ubuntu-latest
     steps:
+      # The bot App's token, not GITHUB_TOKEN: its pushes, PRs and edits trigger the PR checks.
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v7
         with:
+          token: ${{ steps.app.outputs.token }}
           fetch-depth: 0 # cli-v* tags for release-version.py latest
           fetch-tags: true
       - name: Update and merge passing bot PRs, report failing ones
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -85,23 +87,11 @@ jobs:
             return 1
           }
 
-          recheck_version() { # $1 branch, $2 head sha: re-run its pull_request version run, else dispatch one
-            local run
-            # GitHub keeps judging the PR by its pull_request run, so a second (dispatched) run can't replace a failed one.
-            run="$(gh run list --workflow version.yml --event pull_request --commit "$2" --limit 1 \
-              --json databaseId --jq '.[0].databaseId // empty')" || run=""
-            if [[ -n "$run" ]]; then
-              gh run rerun "$run" || summary "Could not re-run version on $1"
-            else
-              dispatch "$1" version.yml
-            fi
-          }
 
           older_than() { # $1 created timestamp, $2 days
             (( $(date +%s) - $(date -d "$1" +%s) > $2 * 86400 ))
           }
 
-          checks=(python.yml cli.yml image.yml version.yml)
           merged=0
           while IFS=$'\t' read -r number branch sha created url state trusted title; do
             case "$branch" in
@@ -124,14 +114,13 @@ jobs:
 
             if [[ "$state" == BEHIND ]]; then
               if gh api -X PUT "repos/$GH_REPO/pulls/$number/update-branch" -f expected_head_sha="$sha" >/dev/null; then
-                # The update is asynchronous; dispatching before the head moves would check the old commit.
+                # The update is asynchronous; editing the line before the head moves would check the old commit.
                 for _ in {1..12}; do
                   [[ "$(gh pr view "$number" --json headRefOid --jq .headRefOid)" == "$sha" ]] || break
                   sleep 5
                 done
                 release_current "$number" "$title" || true
-                dispatch "$branch" "${checks[@]}"
-                summary "Updated #$number with main; checks started"
+                summary "Updated #$number with main; its checks run again"
               elif [[ -n "$updater" ]]; then
                 # GITHUB_TOKEN may not push main's workflow changes into the branch: start over from main.
                 if gh pr close "$number" --delete-branch \
@@ -150,7 +139,6 @@ jobs:
             fi
 
             if ! release_current "$number" "$title"; then
-              recheck_version "$branch" "$sha"
               continue
             fi
 
@@ -202,9 +190,6 @@ jobs:
               fi
             done
 
-          if (( merged > 0 )); then
-            gh workflow run image.yml --ref main
-          fi
           # Always: a merge can succeed even when gh reports an error (e.g. a 502), and
           # release.yml also finishes a release an earlier run left incomplete.
           gh workflow run release.yml --ref main

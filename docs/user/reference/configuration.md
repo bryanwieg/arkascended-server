@@ -94,10 +94,10 @@ backups).
 |---|---|---|
 | `BACKUP_RCON_SAVE_MAX_RETRIES` | `3` | Retries for sending `saveworld`. |
 | `BACKUP_RCON_SAVE_RETRY_DELAY_SECONDS` | `2` | Delay between send retries. |
-| `BACKUP_SAVE_CONFIRM_MAX_RETRIES` | `3` | Confirmation attempts (each sends `saveworld` and polls the log for the save marker). |
+| `BACKUP_SAVE_CONFIRM_MAX_RETRIES` | `3` | Confirmation attempts (each sends `saveworld`, polls the log for the save marker, then waits until no save file changes between two polls). |
 | `BACKUP_SAVE_CONFIRM_RETRY_DELAY_SECONDS` | `3` | Delay between confirmation attempts. |
-| `BACKUP_SAVE_CONFIRM_TIMEOUT_SECONDS` | `60` | Per-attempt log polling limit. |
-| `BACKUP_SAVE_CONFIRM_POLL_SECONDS` | `2` | Log polling interval. |
+| `BACKUP_SAVE_CONFIRM_TIMEOUT_SECONDS` | `60` | Per-attempt limit for the save marker, and again for the save files to stop changing. |
+| `BACKUP_SAVE_CONFIRM_POLL_SECONDS` | `2` | Polling interval for the log and the save files; files must be unchanged for one interval. |
 | `BACKUP_VERIFY_MAX_RETRIES` | `1` | Archive verification attempts (`1` = verify once). |
 | `BACKUP_VERIFY_RETRY_DELAY_SECONDS` | `3` | Delay between verification attempts. |
 

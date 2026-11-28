@@ -6,10 +6,11 @@ import time
 from typing import NamedTuple
 
 from _logging import emit_event, emit_warning
-from runtime_utils import SERVER_LOG, ark_server_running, env_int, file_size_or_none
+from runtime_utils import SAVED_DIR, SERVER_LOG, ark_server_running, env_int, file_size_or_none
 
+from .common import ARCHIVE_EXCLUDED_DIRS
 from .rcon_save import run_rcon_save
-from .save_markers import save_related_log_tail, wait_for_save_complete
+from .save_markers import save_related_log_tail, wait_for_save_complete, wait_for_saves_settled
 
 
 class SaveConfirmSettings(NamedTuple):
@@ -46,15 +47,21 @@ def pre_backup_save() -> bool:
                 "waiting for 'World Save Complete' marker before archiving "
                 f"(timeout={settings.save_timeout}s; {attempt_label}).",
             )
-            if wait_for_save_complete(cursor, settings.save_timeout, settings.poll_seconds):
-                emit_event("backup", "save completion marker detected in server log.")
+            if not wait_for_save_complete(cursor, settings.save_timeout, settings.poll_seconds):
+                tail_lines = save_related_log_tail(SERVER_LOG)
+                emit_warning(
+                    "backup",
+                    "did not observe 'World Save Complete' in server log before timeout "
+                    f"({attempt_label}); recent_save_log_tail={' | '.join(tail_lines) or 'none'}",
+                )
+            elif wait_for_saves_settled(SAVED_DIR, ARCHIVE_EXCLUDED_DIRS, settings.save_timeout, settings.poll_seconds):
+                emit_event("backup", "save completion marker detected and save files settled.")
                 return True
-            tail_lines = save_related_log_tail(SERVER_LOG)
-            emit_warning(
-                "backup",
-                "did not observe 'World Save Complete' in server log before timeout "
-                f"({attempt_label}); recent_save_log_tail={' | '.join(tail_lines) or 'none'}",
-            )
+            else:
+                emit_warning(
+                    "backup",
+                    f"save files still changing {settings.save_timeout}s after the save marker ({attempt_label}).",
+                )
         else:
             emit_warning("backup", f"RCON save request did not succeed ({attempt_label}).")
         if confirm_attempt < settings.confirm_retries:

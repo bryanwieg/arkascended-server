@@ -109,6 +109,76 @@ def test_wait_for_save_complete_accepts_marker_after_cursor(sm_mod, tmp_path: Pa
 
 
 # ---------------------------------------------------------------------------
+# saved_files_state / wait_for_saves_settled
+# ---------------------------------------------------------------------------
+
+
+def _saved_tree(root: Path) -> Path:
+    ark = root / "SavedArks" / "Ragnarok_WP" / "Ragnarok_WP.ark"
+    ark.parent.mkdir(parents=True)
+    ark.write_bytes(b"world")
+    (root / "Logs").mkdir()
+    (root / "Logs" / "ShooterGame.log").write_text("log\n")
+    return ark
+
+
+def test_saved_files_state_skips_excluded_top_level_dirs(sm_mod, tmp_path: Path) -> None:
+    _saved_tree(tmp_path)
+    assert list(sm_mod.saved_files_state(tmp_path, ("Logs",))) == ["SavedArks/Ragnarok_WP/Ragnarok_WP.ark"]
+
+
+def test_wait_for_saves_settled_true_when_files_are_quiet(sm_mod, tmp_path: Path) -> None:
+    _saved_tree(tmp_path)
+    assert sm_mod.wait_for_saves_settled(tmp_path, ("Logs",), 1, 0.05) is True
+
+
+def test_wait_for_saves_settled_ignores_writes_to_excluded_dirs(sm_mod, tmp_path: Path, monkeypatch) -> None:
+    _saved_tree(tmp_path)
+    log = tmp_path / "Logs" / "ShooterGame.log"
+    real_sleep = sm_mod.time.sleep
+
+    def sleep_and_log(seconds: float) -> None:
+        real_sleep(seconds)
+        with log.open("a") as handle:
+            handle.write("more\n")
+
+    monkeypatch.setattr(sm_mod.time, "sleep", sleep_and_log)
+    assert sm_mod.wait_for_saves_settled(tmp_path, ("Logs",), 1, 0.05) is True
+
+
+def test_wait_for_saves_settled_false_while_the_save_keeps_changing(sm_mod, tmp_path: Path, monkeypatch) -> None:
+    """The .ark still growing after 'World Save Complete' must hold the archive back."""
+    ark = _saved_tree(tmp_path)
+    real_sleep = sm_mod.time.sleep
+
+    def sleep_and_write(seconds: float) -> None:
+        real_sleep(seconds)
+        with ark.open("ab") as handle:
+            handle.write(b"x")
+
+    monkeypatch.setattr(sm_mod.time, "sleep", sleep_and_write)
+    assert sm_mod.wait_for_saves_settled(tmp_path, ("Logs",), 0.3, 0.05) is False
+
+
+def test_wait_for_saves_settled_waits_for_a_rotated_copy_to_be_removed(sm_mod, tmp_path: Path, monkeypatch) -> None:
+    ark = _saved_tree(tmp_path)
+    old = ark.with_name("Ragnarok_WP_27.11.2026_23.28.58.arkrbf")
+    old.write_bytes(b"old")
+    polls = []
+    real_sleep = sm_mod.time.sleep
+
+    def sleep_then_prune(seconds: float) -> None:
+        real_sleep(seconds)
+        polls.append(seconds)
+        if len(polls) == 1:
+            old.unlink()
+
+    monkeypatch.setattr(sm_mod.time, "sleep", sleep_then_prune)
+    assert sm_mod.wait_for_saves_settled(tmp_path, ("Logs",), 1, 0.05) is True
+    assert len(polls) == 2
+
+
+# ---------------------------------------------------------------------------
 # save_related_log_tail
 # ---------------------------------------------------------------------------
 

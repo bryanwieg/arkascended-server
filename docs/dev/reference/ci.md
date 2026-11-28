@@ -38,7 +38,7 @@ count. Each group includes its own workflow file and `changed.sh`.
 `passed-<job>-<group hash>` (one prefix per job). The `changes` job of each
 workflow looks the markers up (`lookup-only`); a job skips when its group has no
 work or its own marker exists, so re-running unchanged content (a rebase, a
-docs commit, a bot re-dispatch) costs nothing. *Why per job:* `test` passing must
+docs commit, a branch update that brought in only docs) costs nothing. *Why per job:* `test` passing must
 never skip `lint` on the same hash.
 
 **A failed `changes` job fails the checks:** each required job runs under
@@ -69,8 +69,7 @@ All under `.github/workflows/`.
 ## Base image publishing
 
 Job `publish-base` (`image.yml`) runs on `main` only: on a push touching
-`container/base.dockerfile`, on a manual run on `main` (which `auto-merge.yml`
-starts after a merge) and daily. It needs neither `unit` nor `smoke`. If GHCR
+`container/base.dockerfile`, on a manual run on `main` and daily. It needs neither `unit` nor `smoke`. If GHCR
 lacks `ghcr.io/bryanwieg/ark-server-base:<tag>` (the tag is the first 12 hex of
 the sha256 of `container/base.dockerfile`, like `build-image.sh` and `ark-cli`
 compute it), it builds the base, logs in with `GITHUB_TOKEN` (`packages:
@@ -159,7 +158,15 @@ Ubuntu packages and publishes it.
 
 ## Repository settings
 
-No secrets or variables needed; workflows use `GITHUB_TOKEN`. The GHCR package
+**Bot App:** the update workflows and `auto-merge.yml` act as a GitHub App
+owned by the repository owner and installed on this repository: variable
+`BOT_APP_ID`, secret `BOT_APP_PRIVATE_KEY`, permissions Actions, Contents,
+Issues, Pull requests and Workflows read and write, Checks read.
+`actions/create-github-app-token` turns them into a short-lived token per run.
+*Why:* pushes, PRs and edits made with `GITHUB_TOKEN` start no `pull_request`
+runs, and check runs from `workflow_dispatch` don't count for a PR's required
+checks, so bot PRs would never merge. These workflows run only on schedule or
+manual dispatch, never on PR code. Other workflows use `GITHUB_TOKEN`. The GHCR package
 `ark-server-base` is linked to this repository (the base image's
 `org.opencontainers.image.source` label) and public, so hosts pull it
 anonymously.
@@ -203,25 +210,20 @@ Updates merge and release themselves; the only thing to act on is an issue.
 | Go | `go-update.yml`, Tuesdays | `chore/go-update-*`, `build:` |
 | Dependabot | Dependabot, weekly | `dependabot/*` |
 
-The update workflows write the PR's `Release:` line (`release-version.py next`).
-PRs opened with `GITHUB_TOKEN` don't trigger workflows, but `workflow_dispatch`
-does, so they start `python.yml`, `cli.yml`, `image.yml` and `version.yml` on
-their branches; the runs report on the branch's head commit, and skip without
-work like on any PR.
+The update workflows write the PR's `Release:` line (`release-version.py next`)
+and push and open the PR with the bot App's token, so its checks run as on any
+PR.
 
 `auto-merge.yml`, hourly, per bot PR (head in this repository; a `dependabot/*`
 branch only when authored by Dependabot; others, such as forks with bot branch
 names, are named in the summary and left alone):
 
 - rewrites its `Release:` line when it no longer matches the title and the
-  latest tag, then re-runs the PR's `pull_request` `version` run (a Dependabot
-  PR), or dispatches `version.yml` when there is none. *Why re-run:* GitHub
-  keeps judging a PR by its `pull_request` run of a check, so a second,
-  dispatched run on the same commit doesn't replace a failed one; `version.yml`
-  reads the PR through the API, so the re-run sees the new line;
-- updates a PR behind `main` through the update-branch API and dispatches all
-  four check workflows on it. A `chore/*` PR whose branch can't be updated is
-  closed and opened again from `main` by its update workflow;
+  latest tag; the edit (`edited`) re-runs `version`, which reads the PR through
+  the API;
+- updates a PR behind `main` through the update-branch API; the push re-runs
+  its checks. A `chore/*` PR whose branch can't be updated is closed and opened
+  again from `main` by its update workflow;
 - all six checks' newest runs passed or skipped, none failed: squash-merge
   (subject `<PR title> (#<n>)`, blank body), **at most one per run**, so each
   merge releases on its own;
@@ -229,10 +231,10 @@ names, are named in the summary and left alone):
   PR open;
 - no checks after a day, or passing but unmergeable for 3 days: open an issue.
 
-Then it closes `automated-update` issues whose PR is no longer open. Merges made
-with `GITHUB_TOKEN` don't trigger push workflows, so it starts `image.yml` on
-`main` after a merge (publishes a changed base) and `release.yml` on every run,
-which retries a missed or failed release each hour.
+Then it closes `automated-update` issues whose PR is no longer open. Its merges
+trigger `main`'s push workflows (`release.yml`, the base publish); it also
+starts `release.yml` on every run, which retries a missed or failed release
+each hour.
 
 A failing smoke run on `main` opens the issue "Image smoke test failing on main"
 (or comments on the open one). Hosts keep their current image meanwhile:

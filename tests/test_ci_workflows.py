@@ -253,11 +253,20 @@ def test_smoke_concurrency_per_ref() -> None:
     assert "github.ref" in workflow("image.yml")["jobs"]["smoke"]["concurrency"]["group"]
 
 
-def test_bot_workflows_dispatch_checks() -> None:
-    checks = ("python.yml", "cli.yml", "image.yml", "version.yml")
+def test_bot_workflows_use_app_token() -> None:
+    # GITHUB_TOKEN pushes, PRs and edits trigger no pull_request runs, and dispatched runs
+    # don't count for a PR's required checks, so bot PRs must be written with the App token.
     for name in BOT_WORKFLOWS:
-        scripts = [runs(job) for job in workflow(name)["jobs"].values()]
-        assert any("gh workflow run" in s and all(c in s for c in checks) for s in scripts), name
+        for job in workflow(name)["jobs"].values():
+            steps = job["steps"]
+            app = [st for st in steps if str(st.get("uses", "")).startswith("actions/create-github-app-token@")]
+            assert app, name
+            assert app[0].get("id") == "app", name
+            checkout = next(st for st in steps if str(st.get("uses", "")).startswith("actions/checkout@"))
+            assert checkout["with"]["token"] == "${{ steps.app.outputs.token }}", name
+            for st in steps:
+                if "run" in st and "gh " in st["run"]:
+                    assert st["env"]["GH_TOKEN"] == "${{ steps.app.outputs.token }}", name
     assert workflow("auto-merge.yml")["on"]["schedule"] == [{"cron": "0 * * * *"}]
 
 

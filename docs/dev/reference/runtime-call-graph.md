@@ -75,7 +75,7 @@ flowchart TD
     A2 -->|"no"| B2[ComposeService.RunOneOffDetached: same script in a helper container, then touch .ready]
     B --> C[archive_args: validate extension tar/tar.gz/tar.zst]
     B2 --> C
-    C --> D[pre_backup_save: RCON saveworld + wait for save marker, skipped if server not running]
+    C --> D[pre_backup_save: RCON saveworld + wait for save marker, then until save files stop changing; skipped if server not running]
     D --> D1[write metadata, tar Saved excluding Logs and clusters]
     D1 --> D2[validate_archive_contents: SQLite check of SavedArks .ark files]
     D2 -->|"fail, retries left"| D

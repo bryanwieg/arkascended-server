@@ -34,10 +34,14 @@ def tar_create_args(output: Path, source_dir: Path, excludes: Sequence[str], des
     raise ValueError(f"output must end with .tar, .tar.gz, or .tar.zst: {output}")
 
 
+# Top-level Saved/ folders left out of the archive. The live server appends to Logs/ constantly;
+# tar exits 1 ("file changed as we read it") on it.
+ARCHIVE_EXCLUDED_DIRS = ("Logs", CLUSTER_DIR_NAME)
+
+
 def archive_args(output: Path) -> list[str]:
     """Return the tar command arguments for the given output archive path and extension."""
-    # The live server appends to Logs/ constantly; tar exits 1 ("file changed as we read it") on it.
-    return tar_create_args(output, SAVED_DIR, ["./Logs", f"./{CLUSTER_DIR_NAME}"])
+    return tar_create_args(output, SAVED_DIR, [f"./{name}" for name in ARCHIVE_EXCLUDED_DIRS])
 
 
 def combined_process_output(result: subprocess.CompletedProcess[str]) -> str:

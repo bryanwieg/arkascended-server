@@ -1,8 +1,10 @@
-"""Log-based save-complete marker detection used to confirm world saves before backup."""
+"""Save detection before backup: the save-complete log marker, then save files that stopped changing."""
 
 from __future__ import annotations
 
+import os
 import time
+from collections.abc import Collection
 from pathlib import Path
 
 from runtime_utils import SERVER_LOG, file_size_or_none, read_log_tail
@@ -60,4 +62,42 @@ def wait_for_save_complete(
         if SAVE_COMPLETE_MARKER in data:
             return True
         time.sleep(poll_seconds)
+    return False
+
+
+def saved_files_state(root: Path, excluded_dirs: Collection[str]) -> dict[str, tuple[int, int]]:
+    """Return {relative path: (size, mtime_ns)} of the files under root, skipping top-level excluded_dirs."""
+    state = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        if Path(dirpath) == root:
+            dirnames[:] = [name for name in dirnames if name not in excluded_dirs]
+        for name in filenames:
+            path = Path(dirpath, name)
+            try:
+                info = path.stat()
+            except OSError:
+                continue  # removed between listing and stat: the next poll sees the change
+            state[str(path.relative_to(root))] = (info.st_size, info.st_mtime_ns)
+    return state
+
+
+def wait_for_saves_settled(
+    root: Path,
+    excluded_dirs: Collection[str],
+    timeout_seconds: int,
+    poll_seconds: float,
+) -> bool:
+    """Return True once no file under root changes between two polls; False at timeout.
+
+    ARK logs 'World Save Complete' before it has finished writing the .ark file and pruning
+    its rotated copies; archiving then makes tar fail with "file changed as we read it".
+    """
+    deadline = time.monotonic() + timeout_seconds
+    previous = saved_files_state(root, excluded_dirs)
+    while time.monotonic() < deadline:
+        time.sleep(poll_seconds)
+        current = saved_files_state(root, excluded_dirs)
+        if current == previous:
+            return True
+        previous = current
     return False

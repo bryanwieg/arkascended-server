@@ -1,7 +1,6 @@
 # Weekly: if GloriousEggroll/proton-ge-custom has a newer GE-Proton release than
 # container/base.dockerfile's PROTON_VERSION, open a PR bumping it, with its `Release:` line,
-# and start the checks (python, cli, image, version) on its branch (PRs opened with
-# GITHUB_TOKEN don't trigger CI, but workflow_dispatch does). auto-merge.yml merges the PR
+# opened with the bot App token so the PR checks run. auto-merge.yml merges the PR
 # once they pass.
 name: GE-Proton update
 
@@ -11,21 +10,26 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write # start the checks on the branch
-  contents: write
-  pull-requests: write
+  contents: read # the App token does the writing
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
+      # The bot App's token, not GITHUB_TOKEN: its pushes, PRs and edits trigger the PR checks.
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v7
         with:
+          token: ${{ steps.app.outputs.token }}
           fetch-depth: 0 # cli-v* tags for release-version.py latest
           fetch-tags: true
       - name: Open a PR for a newer GE-Proton
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           file=container/base.dockerfile
           tag="$(gh api repos/GloriousEggroll/proton-ge-custom/releases/latest --jq .tag_name)"
@@ -60,6 +64,3 @@ jobs:
             commit -am "$title"
           git push -u origin "$branch"
           gh pr create --base main --head "$branch" --title "$title" --body "$body"
-          for workflow in python.yml cli.yml image.yml version.yml; do
-            gh workflow run "$workflow" --ref "$branch"
-          done

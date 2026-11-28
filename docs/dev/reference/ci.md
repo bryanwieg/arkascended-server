@@ -214,9 +214,14 @@ branch only when authored by Dependabot; others, such as forks with bot branch
 names, are named in the summary and left alone):
 
 - rewrites its `Release:` line when it no longer matches the title and the
-  latest tag, and updates a PR behind `main` through the update-branch API; both
-  start the checks again by dispatch. A `chore/*` PR whose branch can't be
-  updated is closed and opened again from `main` by its update workflow;
+  latest tag, then re-runs the PR's `pull_request` `version` run (a Dependabot
+  PR), or dispatches `version.yml` when there is none. *Why re-run:* GitHub
+  keeps judging a PR by its `pull_request` run of a check, so a second,
+  dispatched run on the same commit doesn't replace a failed one; `version.yml`
+  reads the PR through the API, so the re-run sees the new line;
+- updates a PR behind `main` through the update-branch API and dispatches all
+  four check workflows on it. A `chore/*` PR whose branch can't be updated is
+  closed and opened again from `main` by its update workflow;
 - all six checks' newest runs passed or skipped, none failed: squash-merge
   (subject `<PR title> (#<n>)`, blank body), **at most one per run**, so each
   merge releases on its own;

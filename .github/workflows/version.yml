@@ -23,12 +23,15 @@ jobs:
           fetch-depth: 0 # cli-v* tags for release-version.py latest
           fetch-tags: true
       # Title and body come from a JSON file, never from expressions in shell.
+      # The current title and body from the API, not the event: a re-run reuses the
+      # event payload, so it would miss a Release: line added since (auto-merge.yml re-runs).
       - name: Read the PR
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            jq '.pull_request' "$GITHUB_EVENT_PATH" > pr.json
+            gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json title,body > pr.json
           else
             gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open --json title,body > prs.json
             count=$(jq length prs.json)

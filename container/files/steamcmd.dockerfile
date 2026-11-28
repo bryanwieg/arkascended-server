@@ -1,7 +1,7 @@
 # SteamCMD in a throwaway container: build.sh runs download.sh in it, so the
 # machine running the build needs only Docker.
 # Pinned so a new Ubuntu release can't change the downloader. Bump the digest deliberately.
-FROM ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
 RUN echo steam steam/question select "I AGREE" | debconf-set-selections \
     && echo steam steam/license note '' | debconf-set-selections
 RUN set -eux; \
